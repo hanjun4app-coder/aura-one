@@ -51,6 +51,8 @@ const CAROUSEL_PARTS = [
   },
 ] as const;
 
+const INSPECT_ROTATION_STEP = 0.32;
+
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
 }
@@ -724,7 +726,7 @@ export default function SpatialScene() {
         event.preventDefault();
 
         if (inspectMode) {
-          inspectRotationRef.current.y -= 0.22;
+          inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
           return;
         }
 
@@ -738,7 +740,7 @@ export default function SpatialScene() {
         event.preventDefault();
 
         if (inspectMode) {
-          inspectRotationRef.current.y += 0.22;
+          inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
           return;
         }
 
@@ -748,20 +750,12 @@ export default function SpatialScene() {
 
       if (event.key === "ArrowUp" && inspectMode) {
         event.preventDefault();
-        inspectRotationRef.current.x = THREE.MathUtils.clamp(
-          inspectRotationRef.current.x - 0.18,
-          -0.82,
-          0.82
-        );
+        inspectRotationRef.current.x += INSPECT_ROTATION_STEP;
       }
 
       if (event.key === "ArrowDown" && inspectMode) {
         event.preventDefault();
-        inspectRotationRef.current.x = THREE.MathUtils.clamp(
-          inspectRotationRef.current.x + 0.18,
-          -0.82,
-          0.82
-        );
+        inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
       }
 
       if (event.key === "Enter") {
