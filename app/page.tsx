@@ -5,12 +5,12 @@ export default function Home() {
     <main className="relative w-screen h-screen overflow-hidden bg-black text-white">
       <SpatialScene />
 
-      <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-start pt-8">
-        <p className="mb-3 text-xs tracking-[0.5em] text-cyan-200/70">
+      <div className="pointer-events-none absolute bottom-4 left-4 flex max-w-[18rem] flex-col items-start text-left md:left-6">
+        <p className="mb-2 text-[0.62rem] tracking-[0.42em] text-cyan-200/55">
           SPATIAL AI SYSTEM
         </p>
 
-        <p className="text-xs md:text-sm text-white/50 tracking-wide">
+        <p className="text-[0.68rem] tracking-[0.16em] text-white/38 md:text-xs">
           Gesture-Controlled Spatial Product Experience
         </p>
       </div>

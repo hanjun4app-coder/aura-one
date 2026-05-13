@@ -152,8 +152,10 @@ function wrappedSlot(partIndex: number, activePartIndex: number, totalParts: num
 
 function createLogoParticles() {
   const particles: LogoParticle[] = [];
-  const cellSize = 0.09;
-  const letterGap = 1.35;
+  const cellSize = 0.066;
+  const letterGap = 1.5;
+  const logoY = -1.12;
+  const logoZ = 1.02;
   let cursor = 0;
 
   LOGO_TEXT.split("").forEach((letter) => {
@@ -170,7 +172,7 @@ function createLogoParticles() {
 
         const x = (cursor + columnIndex) * cellSize;
         const y = (3 - rowIndex) * cellSize;
-        const home = new THREE.Vector3(x, y, -1.35);
+        const home = new THREE.Vector3(x, y, logoZ);
         const seed = particles.length + 1;
         const scatter = new THREE.Vector3();
 
@@ -187,16 +189,16 @@ function createLogoParticles() {
 
   particles.forEach((particle) => {
     particle.home.x -= centerX;
-    particle.home.y += 2.12;
+    particle.home.y += logoY;
     const horizontal = particle.home.x >= 0 ? 1 : -1;
-    const vertical = particle.home.y >= 2.12 ? 1 : -1;
+    const vertical = particle.home.y >= logoY ? 1 : -1;
 
     particle.scatter.set(
       particle.home.x * 1.22 +
-        horizontal * (0.82 + seededUnit(particle.seed * 4) * 0.72),
-      particle.home.y * 1.08 +
-        vertical * (0.42 + seededUnit(particle.seed * 5) * 0.42),
-      -2.18 - seededUnit(particle.seed * 6) * 1.28
+        horizontal * (0.74 + seededUnit(particle.seed * 4) * 0.58),
+      particle.home.y * 1.04 +
+        vertical * (0.34 + seededUnit(particle.seed * 5) * 0.34),
+      -1.68 - seededUnit(particle.seed * 6) * 1.05
     );
   });
 
@@ -781,7 +783,7 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
 
     const t = clock.getElapsedTime();
     const p = smoothStep(progressRef.current);
-    const scale = THREE.MathUtils.lerp(0.062, 0.036, p);
+    const scale = THREE.MathUtils.lerp(0.042, 0.024, p);
 
     particles.forEach((particle, index) => {
       const idle = Math.sin(t * 0.42 + particle.seed) * 0.008 * (1 - p);
@@ -806,8 +808,8 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
 
     mesh.instanceMatrix.needsUpdate = true;
     const material = mesh.material as THREE.MeshStandardMaterial;
-    material.opacity = THREE.MathUtils.lerp(0.82, 0.34, p);
-    material.emissiveIntensity = THREE.MathUtils.lerp(0.28, 0.08, p);
+    material.opacity = THREE.MathUtils.lerp(0.78, 0.28, p);
+    material.emissiveIntensity = THREE.MathUtils.lerp(0.18, 0.06, p);
   });
 
   return (
@@ -816,14 +818,14 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
       args={[undefined, undefined, particles.length]}
       frustumCulled={false}
     >
-      <boxGeometry args={[1, 1, 0.35]} />
+      <boxGeometry args={[1, 1, 0.18]} />
       <meshStandardMaterial
         color="#e0faff"
         emissive="#67e8f9"
-        emissiveIntensity={0.22}
+        emissiveIntensity={0.18}
         metalness={0.28}
-        opacity={0.82}
-        roughness={0.34}
+        opacity={0.78}
+        roughness={0.38}
         transparent
       />
     </instancedMesh>
@@ -836,6 +838,10 @@ export default function SpatialScene() {
   const [inspectMode, setInspectMode] = useState(false);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const activePart = CAROUSEL_PARTS[activePartIndex];
+  const hudOnRight = activePartIndex % 2 === 0;
+  const hudPositionClass = hudOnRight
+    ? "right-4 bottom-36 md:right-10 md:bottom-32"
+    : "left-4 bottom-36 md:left-10 md:bottom-32";
 
   const resetInspectRotation = () => {
     inspectRotationRef.current.x = 0;
@@ -933,7 +939,7 @@ export default function SpatialScene() {
       </Canvas>
 
       <div
-        className={`pointer-events-none absolute bottom-28 left-1/2 w-[min(28rem,calc(100vw-3rem))] -translate-x-1/2 border border-cyan-200/20 bg-slate-950/45 p-5 text-center text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition duration-500 ${
+        className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-cyan-200/20 bg-slate-950/48 p-4 text-left text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:p-5 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-3 opacity-0"
