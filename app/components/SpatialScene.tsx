@@ -60,6 +60,16 @@ const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+// Swipe detection tuning — all distances are normalized palm-X (0.0–1.0).
+const SWIPE_WINDOW_MS = 400;         // rolling sample buffer (shorter = less drift accumulation)
+const SWIPE_COOLDOWN_MS = 1100;      // all swipes blocked immediately after firing
+const OPPOSITE_LOCK_MS = 1400;       // extra block for the return direction specifically
+const NEUTRAL_HOLD_MS = 300;         // ms of low-velocity required to confirm settled hand
+const MIN_SWIPE_DISTANCE = 0.18;     // minimum palm-X displacement
+const MIN_SWIPE_VELOCITY = 0.00048;  // palm-X per ms (~0.48 normalized units/s) — rejects slow drift
+const NEUTRAL_VELOCITY_MAX = 0.00020; // palm-X per ms below which hand is considered still
+
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -99,6 +109,10 @@ type CameraGestureStatus =
   | "HAND DETECTED"
   | "SWIPE LEFT"
   | "SWIPE RIGHT"
+  | "SWIPE LEFT LOCKED"
+  | "SWIPE RIGHT LOCKED"
+  | "WAITING FOR NEUTRAL"
+  | "READY FOR NEXT SWIPE"
   | "CAMERA ERROR";
 
 type CameraDebugStep =
@@ -902,8 +916,11 @@ function CameraGestureLayer({
   const samplesRef = useRef<Array<{ time: number; x: number }>>([]);
   const statusRef = useRef<CameraGestureStatus>("CAMERA OFF");
   const statusHoldUntilRef = useRef(0);
-  const cooldownUntilRef = useRef(0);
   const lastDetectionAtRef = useRef(0);
+  const lastSwipeDirectionRef = useRef<"left" | "right" | null>(null);
+  const lastSwipeTimeRef = useRef(0);
+  const isNeutralRef = useRef(false);
+  const neutralEntryTimeRef = useRef<number | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -943,6 +960,10 @@ function CameraGestureLayer({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     samplesRef.current = [];
+    lastSwipeDirectionRef.current = null;
+    lastSwipeTimeRef.current = 0;
+    isNeutralRef.current = false;
+    neutralEntryTimeRef.current = null;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -965,6 +986,8 @@ function CameraGestureLayer({
 
       if (!landmarks?.length) {
         samplesRef.current = [];
+        isNeutralRef.current = false;
+        neutralEntryTimeRef.current = null;
 
         if (now > statusHoldUntilRef.current) {
           updateStatus("CAMERA READY");
@@ -980,33 +1003,96 @@ function CameraGestureLayer({
         3;
 
       samplesRef.current = [
-        ...samplesRef.current.filter((sample) => now - sample.time <= 520),
+        ...samplesRef.current.filter((s) => now - s.time <= SWIPE_WINDOW_MS),
         { time: now, x: palmX },
       ];
 
-      if (now > statusHoldUntilRef.current) {
-        updateStatus("HAND DETECTED");
+      // Velocity from last 200 ms — used for neutral detection and slow-drift rejection.
+      const velSamples = samplesRef.current.filter((s) => now - s.time <= 200);
+      const currentVelocity =
+        velSamples.length >= 2
+          ? Math.abs(palmX - velSamples[0].x) /
+            Math.max(now - velSamples[0].time, 1)
+          : 0;
+
+      // Neutral zone tracking — hand must stay below velocity threshold for NEUTRAL_HOLD_MS.
+      if (currentVelocity < NEUTRAL_VELOCITY_MAX) {
+        if (!isNeutralRef.current) {
+          isNeutralRef.current = true;
+          neutralEntryTimeRef.current = now;
+        }
+      } else {
+        isNeutralRef.current = false;
+        neutralEntryTimeRef.current = null;
       }
 
-      if (now < cooldownUntilRef.current) return;
+      const neutralHeld =
+        isNeutralRef.current &&
+        neutralEntryTimeRef.current !== null &&
+        now - neutralEntryTimeRef.current >= NEUTRAL_HOLD_MS;
+
+      const lastDir = lastSwipeDirectionRef.current;
+      const sinceLastSwipe = now - lastSwipeTimeRef.current;
+      const inCooldown = lastDir !== null && sinceLastSwipe < SWIPE_COOLDOWN_MS;
+
+      // HUD status reflects the current lock phase.
+      if (now > statusHoldUntilRef.current) {
+        if (inCooldown) {
+          updateStatus(
+            lastDir === "right" ? "SWIPE RIGHT LOCKED" : "SWIPE LEFT LOCKED"
+          );
+        } else if (lastDir !== null && !neutralHeld) {
+          updateStatus("WAITING FOR NEUTRAL");
+        } else if (lastDir !== null && neutralHeld) {
+          updateStatus("READY FOR NEXT SWIPE");
+        } else {
+          updateStatus("HAND DETECTED");
+        }
+      }
+
+      // Gate 1: general cooldown after any swipe.
+      if (inCooldown) return;
+
+      // Gate 2: hand must have settled before allowing another swipe.
+      if (lastDir !== null && !neutralHeld) return;
+
+      // Need at least two samples and a minimum window duration.
+      if (samplesRef.current.length < 2) return;
 
       const firstSample = samplesRef.current[0];
       const movement = palmX - firstSample.x;
       const duration = now - firstSample.time;
 
-      if (duration < 120 || Math.abs(movement) < 0.18) return;
+      if (duration < 80) return;
+      if (Math.abs(movement) < MIN_SWIPE_DISTANCE) return;
 
-      if (movement < 0) {
+      const swipeVelocity = Math.abs(movement) / Math.max(duration, 1);
+
+      // Gate 3: slow drift (return swing) fails the velocity requirement.
+      if (swipeVelocity < MIN_SWIPE_VELOCITY) return;
+
+      const swipeDir: "left" | "right" = movement < 0 ? "left" : "right";
+
+      // Gate 4: opposite direction is locked for longer than the general cooldown.
+      if (lastDir !== null && swipeDir !== lastDir && sinceLastSwipe < OPPOSITE_LOCK_MS) {
+        return;
+      }
+
+      // Commit the swipe.
+      lastSwipeDirectionRef.current = swipeDir;
+      lastSwipeTimeRef.current = now;
+      isNeutralRef.current = false;
+      neutralEntryTimeRef.current = null;
+      samplesRef.current = [];
+      statusHoldUntilRef.current = now + 700;
+
+      if (swipeDir === "left") {
         updateStatus("SWIPE LEFT");
         onGesture("swipeLeft");
       } else {
         updateStatus("SWIPE RIGHT");
         onGesture("swipeRight");
       }
-
-      statusHoldUntilRef.current = now + 650;
-      cooldownUntilRef.current = now + 1100;
-      samplesRef.current = [];
     },
     [onGesture, updateStatus]
   );
