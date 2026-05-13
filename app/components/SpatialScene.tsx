@@ -86,17 +86,19 @@ type LogoParticle = {
   seed: number;
 };
 
-type SimulatedGestureAction =
-  | "swipeLeft"
-  | "swipeRight"
-  | "select"
-  | "back"
-  | "rotateLeft"
-  | "rotateRight"
-  | "rotateUp"
-  | "rotateDown"
-  | "reset"
-  | "toggleExplode";
+type GestureAction =
+  | "EXPLODE"
+  | "ASSEMBLE"
+  | "TOGGLE_EXPLODE"
+  | "NEXT_PART"
+  | "PREV_PART"
+  | "ENTER_INSPECT"
+  | "EXIT_INSPECT"
+  | "RESET"
+  | "ROTATE_INSPECT_LEFT"
+  | "ROTATE_INSPECT_RIGHT"
+  | "ROTATE_INSPECT_UP"
+  | "ROTATE_INSPECT_DOWN";
 
 type CameraGestureStatus =
   | "CAMERA OFF"
@@ -969,7 +971,7 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
 function CameraGestureLayer({
   onGesture,
 }: {
-  onGesture: (action: SimulatedGestureAction) => void;
+  onGesture: (action: GestureAction) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
@@ -1120,10 +1122,10 @@ function CameraGestureLayer({
 
       if (swipeDir === "left") {
         updateStatus("SWIPE LEFT");
-        onGesture("swipeLeft");
+        onGesture("PREV_PART");
       } else {
         updateStatus("SWIPE RIGHT");
-        onGesture("swipeRight");
+        onGesture("NEXT_PART");
       }
     },
     [onGesture, updateStatus]
@@ -1386,11 +1388,22 @@ export default function SpatialScene() {
     setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
   }, [resetInspectRotation]);
 
-  // Future camera gesture -> simulated gesture action -> scene response.
-  // MediaPipe/webcam input can dispatch these same actions without changing
-  // the scene animation or product interaction architecture.
-  const applySimulatedGesture = useCallback((action: SimulatedGestureAction) => {
-    if (action === "toggleExplode") {
+  // Unified Gesture Action Layer — all input sources (keyboard, camera, UI buttons,
+  // future MediaPipe gestures) route through this single function.
+  const applyGestureAction = useCallback((action: GestureAction) => {
+    if (action === "EXPLODE") {
+      if (!exploded) setExploded(true);
+      return;
+    }
+
+    if (action === "ASSEMBLE") {
+      resetInspectRotation();
+      setInspectMode(false);
+      setExploded(false);
+      return;
+    }
+
+    if (action === "TOGGLE_EXPLODE") {
       setExploded((value) => {
         if (value) {
           resetInspectRotation();
@@ -1402,18 +1415,17 @@ export default function SpatialScene() {
       return;
     }
 
-    if (action === "reset") {
+    if (action === "RESET") {
       resetInspectRotation();
 
       if (!inspectMode) {
-        setInspectMode(false);
         setExploded(false);
       }
 
       return;
     }
 
-    if (action === "back") {
+    if (action === "EXIT_INSPECT") {
       resetInspectRotation();
 
       if (inspectMode) {
@@ -1425,7 +1437,7 @@ export default function SpatialScene() {
       return;
     }
 
-    if (action === "select") {
+    if (action === "ENTER_INSPECT") {
       if (exploded) {
         setInspectMode(true);
       }
@@ -1433,74 +1445,68 @@ export default function SpatialScene() {
       return;
     }
 
-    if (action === "swipeLeft") {
-      if (exploded) {
-        showPreviousPart();
-      }
-
+    if (action === "PREV_PART") {
+      if (exploded) showPreviousPart();
       return;
     }
 
-    if (action === "swipeRight") {
-      if (exploded) {
-        showNextPart();
-      }
-
+    if (action === "NEXT_PART") {
+      if (exploded) showNextPart();
       return;
     }
 
     if (!inspectMode) return;
 
-    if (action === "rotateLeft") {
+    if (action === "ROTATE_INSPECT_LEFT") {
       inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     }
 
-    if (action === "rotateRight") {
+    if (action === "ROTATE_INSPECT_RIGHT") {
       inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
     }
 
-    if (action === "rotateUp") {
+    if (action === "ROTATE_INSPECT_UP") {
       inspectRotationRef.current.x += INSPECT_ROTATION_STEP;
     }
 
-    if (action === "rotateDown") {
+    if (action === "ROTATE_INSPECT_DOWN") {
       inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
     }
   }, [exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const actionMap: Record<string, SimulatedGestureAction | undefined> = {
-        ArrowLeft: inspectMode ? "rotateLeft" : "swipeLeft",
-        ArrowRight: inspectMode ? "rotateRight" : "swipeRight",
-        ArrowUp: inspectMode ? "rotateUp" : undefined,
-        ArrowDown: inspectMode ? "rotateDown" : undefined,
-        Enter: "select",
-        Escape: "back",
-        a: "rotateLeft",
-        A: "rotateLeft",
-        d: "rotateRight",
-        D: "rotateRight",
-        w: "rotateUp",
-        W: "rotateUp",
-        s: "rotateDown",
-        S: "rotateDown",
-        r: "reset",
-        R: "reset",
-        " ": "toggleExplode",
+      const actionMap: Record<string, GestureAction | undefined> = {
+        ArrowLeft: inspectMode ? "ROTATE_INSPECT_LEFT" : "PREV_PART",
+        ArrowRight: inspectMode ? "ROTATE_INSPECT_RIGHT" : "NEXT_PART",
+        ArrowUp: inspectMode ? "ROTATE_INSPECT_UP" : undefined,
+        ArrowDown: inspectMode ? "ROTATE_INSPECT_DOWN" : undefined,
+        Enter: "ENTER_INSPECT",
+        Escape: "EXIT_INSPECT",
+        a: "ROTATE_INSPECT_LEFT",
+        A: "ROTATE_INSPECT_LEFT",
+        d: "ROTATE_INSPECT_RIGHT",
+        D: "ROTATE_INSPECT_RIGHT",
+        w: "ROTATE_INSPECT_UP",
+        W: "ROTATE_INSPECT_UP",
+        s: "ROTATE_INSPECT_DOWN",
+        S: "ROTATE_INSPECT_DOWN",
+        r: "RESET",
+        R: "RESET",
+        " ": "TOGGLE_EXPLODE",
       };
       const action = actionMap[event.key];
 
       if (!action) return;
 
       event.preventDefault();
-      applySimulatedGesture(action);
+      applyGestureAction(action);
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [applySimulatedGesture, inspectMode]);
+  }, [applyGestureAction, inspectMode]);
 
   return (
     <div className="absolute inset-0">
@@ -1524,7 +1530,7 @@ export default function SpatialScene() {
         <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
 
-      <CameraGestureLayer onGesture={applySimulatedGesture} />
+      <CameraGestureLayer onGesture={applyGestureAction} />
 
       <div
         className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-cyan-200/20 bg-slate-950/48 p-4 text-left text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:p-5 ${
@@ -1559,19 +1565,19 @@ export default function SpatialScene() {
         }`}
       >
         <button
-          onClick={showPreviousPart}
+          onClick={() => applyGestureAction("PREV_PART")}
           className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
         >
           PREV PART
         </button>
         <button
-          onClick={showNextPart}
+          onClick={() => applyGestureAction("NEXT_PART")}
           className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
         >
           NEXT PART
         </button>
         <button
-          onClick={() => applySimulatedGesture(inspectMode ? "back" : "select")}
+          onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
           className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
         >
           {inspectMode ? "EXIT INSPECT" : "INSPECT"}
@@ -1579,7 +1585,7 @@ export default function SpatialScene() {
       </div>
 
       <button
-        onClick={() => applySimulatedGesture("toggleExplode")}
+        onClick={() => applyGestureAction("TOGGLE_EXPLODE")}
         className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-cyan-300/40 bg-cyan-300/10 px-6 py-3 text-sm tracking-[0.25em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-300/20 ${
           exploded ? "bottom-20" : "bottom-8"
         }`}
