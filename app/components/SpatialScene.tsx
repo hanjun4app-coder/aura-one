@@ -63,12 +63,13 @@ const HAND_LANDMARKER_MODEL_URL =
 
 // Swipe detection tuning — all distances are normalized palm-X (0.0–1.0).
 const SWIPE_WINDOW_MS = 400;         // rolling sample buffer (shorter = less drift accumulation)
-const SWIPE_COOLDOWN_MS = 1100;      // all swipes blocked immediately after firing
-const OPPOSITE_LOCK_MS = 1400;       // extra block for the return direction specifically
-const NEUTRAL_HOLD_MS = 300;         // ms of low-velocity required to confirm settled hand
+const SWIPE_COOLDOWN_MS = 900;       // all swipes blocked immediately after firing
+const OPPOSITE_LOCK_MS = 1200;       // extra block for the return direction specifically
+const NEUTRAL_HOLD_MS = 200;         // ms of low-velocity required to confirm settled hand
 const MIN_SWIPE_DISTANCE = 0.18;     // minimum palm-X displacement
 const MIN_SWIPE_VELOCITY = 0.00048;  // palm-X per ms (~0.48 normalized units/s) — rejects slow drift
-const NEUTRAL_VELOCITY_MAX = 0.00020; // palm-X per ms below which hand is considered still
+const NEUTRAL_VELOCITY_MAX = 0.00040; // palm-X per ms below which hand is considered still
+const FORCE_UNLOCK_AFTER_MS = 2000;  // absolute max lock — bypasses neutral gate if hand just stays still
 
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
@@ -113,6 +114,7 @@ type CameraGestureStatus =
   | "SWIPE RIGHT LOCKED"
   | "WAITING FOR NEUTRAL"
   | "READY FOR NEXT SWIPE"
+  | "FORCE UNLOCKED"
   | "CAMERA ERROR";
 
 type CameraDebugStep =
@@ -1100,6 +1102,22 @@ function CameraGestureLayer({
       const lastDir = lastSwipeDirectionRef.current;
       const sinceLastSwipe = now - lastSwipeTimeRef.current;
       const inCooldown = lastDir !== null && sinceLastSwipe < SWIPE_COOLDOWN_MS;
+
+      // Force-unlock: if neutral gate never resolved after max timeout, reset the direction lock.
+      const forceUnlock =
+        lastDir !== null &&
+        !inCooldown &&
+        !neutralHeld &&
+        sinceLastSwipe >= FORCE_UNLOCK_AFTER_MS;
+
+      if (forceUnlock) {
+        lastSwipeDirectionRef.current = null;
+        isNeutralRef.current = false;
+        neutralEntryTimeRef.current = null;
+        samplesRef.current = [];
+        updateStatus("FORCE UNLOCKED");
+        return;
+      }
 
       // HUD status reflects the current lock phase.
       if (now > statusHoldUntilRef.current) {
