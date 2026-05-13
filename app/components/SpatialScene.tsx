@@ -356,14 +356,14 @@ function Part({
       dockDirection:
         travelDistance > 0.001 ? travel.normalize() : new THREE.Vector3(),
       dockRotation: new THREE.Vector3(
-        direction * (0.012 + (motionSeed % 3) * 0.004),
+        0,
         -direction * (0.018 + (motionSeed % 4) * 0.004),
-        direction * (0.01 + (motionSeed % 5) * 0.003)
+        0
       ),
       rotationSpeed: new THREE.Vector3(
-        direction * (0.045 + (motionSeed % 3) * 0.012) * selfRotationAmount,
+        0,
         -direction * (0.06 + (motionSeed % 4) * 0.012) * selfRotationAmount,
-        direction * (0.035 + (motionSeed % 5) * 0.008) * selfRotationAmount
+        0
       ),
     };
   }, [basePosition, explodedPosition, midPosition, motionSeed, selfRotationAmount]);
@@ -444,12 +444,15 @@ function Part({
     const activeRotationBoost = activePresence && !isInspectActive ? 2.1 : 1;
 
     if (!isInspectActive) {
-      selfRotationRef.current.x +=
-        delta * motion.rotationSpeed.x * separatedProgress * activeRotationBoost;
+      // Decay any legacy X/Z to zero — only Y (horizontal) rotation accumulates.
+      selfRotationRef.current.x = THREE.MathUtils.lerp(
+        selfRotationRef.current.x, 0, 1 - Math.exp(-delta * 2.5)
+      );
       selfRotationRef.current.y +=
         delta * motion.rotationSpeed.y * separatedProgress * activeRotationBoost;
-      selfRotationRef.current.z +=
-        delta * motion.rotationSpeed.z * separatedProgress * activeRotationBoost;
+      selfRotationRef.current.z = THREE.MathUtils.lerp(
+        selfRotationRef.current.z, 0, 1 - Math.exp(-delta * 2.5)
+      );
     }
 
     if (isInspectActive && separatedProgress > 0.1) {
@@ -2015,17 +2018,22 @@ export default function SpatialScene() {
             : "translate-y-3 opacity-0"
         }`}
       >
-        <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-amber-700/70">
+        <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-700/62">
           {inspectMode ? "ITEM VIEW" : "FEATURED COMBO"}
         </p>
-        <h2 className="text-lg font-light tracking-[0.16em] text-stone-800">
-          {activePart.name}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-stone-600/80">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-800">
+            {activePart.name}
+          </h2>
+          <span className="mt-0.5 shrink-0 rounded border border-amber-400/38 bg-amber-50/55 px-2 py-0.5 text-[0.66rem] font-light tracking-[0.06em] text-amber-900">
+            ${ITEM_PRICES[activePartIndex].toFixed(2)}
+          </span>
+        </div>
+        <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-500/72">
           {activePart.description}
         </p>
         {inspectMode ? (
-          <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-amber-700/50">
+          <p className="mt-3 text-[0.58rem] tracking-[0.22em] text-amber-700/45">
             WASD ROTATE • ESC BACK
           </p>
         ) : null}
