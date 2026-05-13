@@ -19,40 +19,28 @@ import type {
 
 const CAROUSEL_PARTS = [
   {
-    name: "Vehicle Body",
-    description: "Main structural platform of the vehicle.",
+    name: "Central AI Core",
+    description: "Real-time surgical intelligence and coordination module.",
   },
   {
-    name: "Cabin Module",
-    description: "Passenger and interface area.",
+    name: "Robotic Arm",
+    description: "Precision robotic arm for stable surgical assistance.",
   },
   {
-    name: "Front Module",
-    description: "Sensing and lighting section.",
+    name: "Vision Camera Module",
+    description: "High-resolution surgical vision and depth sensing system.",
   },
   {
-    name: "Rear Module",
-    description: "Rear structure and signaling area.",
+    name: "Surgical Tool Tip",
+    description: "Interchangeable precision tool interface.",
   },
   {
-    name: "Battery Plate",
-    description: "Power storage foundation.",
+    name: "Stabilization Base",
+    description: "Anti-vibration platform for stable operation.",
   },
   {
-    name: "Wheel Module",
-    description: "Motion and support system.",
-  },
-  {
-    name: "Wheel Module",
-    description: "Motion and support system.",
-  },
-  {
-    name: "Wheel Module",
-    description: "Motion and support system.",
-  },
-  {
-    name: "Wheel Module",
-    description: "Motion and support system.",
+    name: "Sensor Ring",
+    description: "Spatial awareness and patient-side safety sensor array.",
   },
 ] as const;
 
@@ -585,7 +573,7 @@ function Part({
   );
 }
 
-function SimplifiedCarProduct({
+function SurgicalRobotProduct({
   exploded,
   activePartIndex,
   inspectMode,
@@ -598,6 +586,7 @@ function SimplifiedCarProduct({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
+  const n = CAROUSEL_PARTS.length;
 
   useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
@@ -609,216 +598,288 @@ function SimplifiedCarProduct({
     if (!groupRef.current) return;
 
     const p = smoothStep(progressRef.current);
-    const assembledSpin = 1 - p;
     const t = clock.getElapsedTime();
 
-    groupRef.current.rotation.y += delta * 0.18 * assembledSpin;
-    groupRef.current.position.y = Math.sin(t * 0.65) * 0.045 * assembledSpin;
+    groupRef.current.rotation.y += delta * 0.13 * (1 - p);
+    groupRef.current.position.y = Math.sin(t * 0.52) * 0.038 * (1 - p);
   });
 
   return (
-    <group ref={groupRef} scale={0.85}>
+    <group ref={groupRef} scale={0.92}>
+
+      {/* ── Part 0: Central AI Core ── */}
       <Part
         partIndex={0}
-        basePosition={[0, 0, 0]}
-        explodedPosition={[0, 0, 0]}
-        focusScale={1.12}
-        secondaryScale={0.58}
-        selfRotationAmount={0.18}
+        basePosition={[0, 0.1, 0]}
+        explodedPosition={[0, 0.38, 0]}
+        focusScale={1.18}
+        secondaryScale={0.62}
+        selfRotationAmount={0.14}
         motionSeed={1}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
-        totalParts={CAROUSEL_PARTS.length}
+        totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
+        {/* Main body */}
         <mesh>
-          <boxGeometry args={[3.2, 0.55, 1.35]} />
-          <meshStandardMaterial
-            color="#38bdf8"
-            metalness={0.55}
-            roughness={0.22}
-          />
+          <cylinderGeometry args={[0.35, 0.42, 1.08, 32]} />
+          <meshStandardMaterial color="#e2e8f0" metalness={0.78} roughness={0.14} />
+        </mesh>
+        {/* Dome cap */}
+        <mesh position={[0, 0.6, 0]}>
+          <sphereGeometry args={[0.35, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color="#f0f9ff" metalness={0.82} roughness={0.1} />
+        </mesh>
+        {/* Upper accent ring */}
+        <mesh position={[0, 0.22, 0]}>
+          <torusGeometry args={[0.42, 0.022, 12, 48]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.55} metalness={0.6} roughness={0.1} />
+        </mesh>
+        {/* Lower accent ring */}
+        <mesh position={[0, -0.28, 0]}>
+          <torusGeometry args={[0.43, 0.016, 12, 48]} />
+          <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={0.38} metalness={0.6} roughness={0.1} />
+        </mesh>
+        {/* Inner luminous column */}
+        <mesh>
+          <cylinderGeometry args={[0.15, 0.15, 0.74, 24]} />
+          <meshStandardMaterial color="#bae6fd" emissive="#38bdf8" emissiveIntensity={0.28} metalness={0.2} roughness={0.3} transparent opacity={0.7} />
         </mesh>
       </Part>
 
+      {/* ── Part 1: Robotic Arm ── */}
       <Part
         partIndex={1}
-        basePosition={[0.15, 0.55, 0]}
-        midPosition={[0.15, 1.32, 0.08]}
-        explodedPosition={[0.15, 1.86, 0.28]}
-        focusScale={1.24}
+        basePosition={[0.95, 0.3, 0]}
+        midPosition={[1.82, 0.62, 0.18]}
+        explodedPosition={[2.95, 0.92, 0.32]}
+        focusScale={1.22}
         secondaryScale={0.6}
-        explodeDelay={0}
-        assembleDelay={0.07}
-        explodedRotation={[0, 0.08, 0]}
-        selfRotationAmount={0.55}
+        explodeDelay={0.02}
+        assembleDelay={0.05}
+        explodedRotation={[0, 0.18, 0]}
+        selfRotationAmount={0.44}
         motionSeed={2}
-        meshOpacity={0.82}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
-        totalParts={CAROUSEL_PARTS.length}
+        totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        <mesh>
-          <boxGeometry args={[1.35, 0.65, 1.05]} />
-          <meshStandardMaterial
-            color="#67e8f9"
-            metalness={0.4}
-            roughness={0.18}
-            transparent
-            opacity={0.82}
-          />
+        {/* Shoulder sphere */}
+        <mesh position={[0, 0.44, 0]}>
+          <sphereGeometry args={[0.2, 20, 14]} />
+          <meshStandardMaterial color="#e2e8f0" metalness={0.88} roughness={0.1} />
+        </mesh>
+        {/* Upper arm */}
+        <mesh position={[0, 0.02, 0]}>
+          <cylinderGeometry args={[0.1, 0.13, 0.76, 20]} />
+          <meshStandardMaterial color="#cbd5e1" metalness={0.82} roughness={0.15} />
+        </mesh>
+        {/* Elbow sphere */}
+        <mesh position={[0.12, -0.34, 0]}>
+          <sphereGeometry args={[0.155, 18, 12]} />
+          <meshStandardMaterial color="#e2e8f0" metalness={0.88} roughness={0.1} />
+        </mesh>
+        {/* Lower arm — angled */}
+        <mesh position={[0.22, -0.64, 0]} rotation={[0, 0, -0.28]}>
+          <cylinderGeometry args={[0.078, 0.1, 0.58, 18]} />
+          <meshStandardMaterial color="#cbd5e1" metalness={0.82} roughness={0.15} />
+        </mesh>
+        {/* Wrist accent ring */}
+        <mesh position={[0.32, -0.9, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <torusGeometry args={[0.11, 0.026, 10, 32]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.42} metalness={0.65} roughness={0.1} />
         </mesh>
       </Part>
 
+      {/* ── Part 2: Vision Camera Module ── */}
       <Part
         partIndex={2}
-        basePosition={[1.75, 0.05, 0]}
-        midPosition={[2.58, 0.42, 0.12]}
-        explodedPosition={[3.42, 0.3, 0.16]}
+        basePosition={[0.08, 0.9, 0.18]}
+        midPosition={[0.16, 1.74, 0.34]}
+        explodedPosition={[0.26, 2.7, 0.54]}
         focusScale={1.26}
-        secondaryScale={0.58}
-        explodeDelay={0.035}
-        assembleDelay={0.04}
-        explodedRotation={[0, 0.14, 0]}
-        selfRotationAmount={0.62}
+        secondaryScale={0.6}
+        explodeDelay={0.04}
+        assembleDelay={0.06}
+        explodedRotation={[0.1, 0.22, 0]}
+        selfRotationAmount={0.5}
         motionSeed={3}
+        meshOpacity={0.88}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
-        totalParts={CAROUSEL_PARTS.length}
+        totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
+        {/* Outer dome */}
         <mesh>
-          <boxGeometry args={[0.35, 0.35, 1.2]} />
-          <meshStandardMaterial
-            color="#0ea5e9"
-            metalness={0.5}
-            roughness={0.25}
-          />
+          <sphereGeometry args={[0.34, 32, 24]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#38bdf8" emissiveIntensity={0.18} metalness={0.35} roughness={0.08} transparent opacity={0.72} />
+        </mesh>
+        {/* Lens core */}
+        <mesh position={[0, 0, 0.22]}>
+          <sphereGeometry args={[0.16, 24, 18]} />
+          <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.38} metalness={0.5} roughness={0.05} />
+        </mesh>
+        {/* Frame ring */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.35, 0.024, 10, 48]} />
+          <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.1} />
+        </mesh>
+        {/* Neck stub */}
+        <mesh position={[0, -0.38, 0]}>
+          <cylinderGeometry args={[0.1, 0.14, 0.2, 16]} />
+          <meshStandardMaterial color="#cbd5e1" metalness={0.85} roughness={0.12} />
         </mesh>
       </Part>
 
+      {/* ── Part 3: Surgical Tool Tip ── */}
       <Part
         partIndex={3}
-        basePosition={[-1.75, 0.05, 0]}
-        midPosition={[-2.58, 0.42, -0.12]}
-        explodedPosition={[-3.42, 0.3, -0.16]}
-        focusScale={1.26}
+        basePosition={[1.08, -0.12, 0.38]}
+        midPosition={[1.9, -0.54, 0.7]}
+        explodedPosition={[2.82, -1.12, 1.02]}
+        focusScale={1.24}
         secondaryScale={0.58}
-        explodeDelay={0.035}
-        assembleDelay={0.04}
-        explodedRotation={[0, -0.14, 0]}
-        selfRotationAmount={0.62}
+        explodeDelay={0.055}
+        assembleDelay={0.035}
+        explodedRotation={[0.15, 0.22, 0.08]}
+        selfRotationAmount={0.58}
         motionSeed={4}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
-        totalParts={CAROUSEL_PARTS.length}
+        totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        <mesh>
-          <boxGeometry args={[0.35, 0.35, 1.2]} />
-          <meshStandardMaterial
-            color="#0ea5e9"
-            metalness={0.5}
-            roughness={0.25}
-          />
+        {/* Handle grip */}
+        <mesh position={[0, 0.36, 0]}>
+          <cylinderGeometry args={[0.08, 0.1, 0.54, 18]} />
+          <meshStandardMaterial color="#cbd5e1" metalness={0.8} roughness={0.2} />
+        </mesh>
+        {/* Collar ring */}
+        <mesh position={[0, 0.04, 0]}>
+          <cylinderGeometry args={[0.11, 0.11, 0.08, 18]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.48} metalness={0.7} roughness={0.1} />
+        </mesh>
+        {/* Shaft */}
+        <mesh position={[0, -0.32, 0]}>
+          <cylinderGeometry args={[0.038, 0.068, 0.6, 16]} />
+          <meshStandardMaterial color="#f1f5f9" metalness={0.92} roughness={0.08} />
+        </mesh>
+        {/* Precision tip */}
+        <mesh position={[0, -0.7, 0]}>
+          <coneGeometry args={[0.038, 0.18, 16]} />
+          <meshStandardMaterial color="#f8fafc" metalness={0.95} roughness={0.05} />
         </mesh>
       </Part>
 
+      {/* ── Part 4: Stabilization Base ── */}
       <Part
         partIndex={4}
-        basePosition={[0, -0.38, 0]}
-        midPosition={[0, -0.86, 0]}
-        explodedPosition={[0, -1.56, 0]}
-        focusScale={1.18}
-        secondaryScale={0.58}
-        explodeDelay={0.075}
+        basePosition={[0, -0.82, 0]}
+        midPosition={[0, -1.34, 0]}
+        explodedPosition={[0, -2.12, 0]}
+        focusScale={1.16}
+        secondaryScale={0.6}
+        explodeDelay={0.08}
         assembleDelay={0.02}
-        explodedRotation={[0.08, 0, 0]}
-        selfRotationAmount={0.45}
+        explodedRotation={[0.06, 0, 0]}
+        selfRotationAmount={0.3}
         motionSeed={5}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
-        totalParts={CAROUSEL_PARTS.length}
+        totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
+        {/* Main platform disc */}
         <mesh>
-          <boxGeometry args={[2.2, 0.16, 1.05]} />
-          <meshStandardMaterial
-            color="#22c55e"
-            metalness={0.35}
-            roughness={0.3}
-          />
+          <cylinderGeometry args={[0.95, 1.05, 0.14, 32]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.25} />
         </mesh>
+        {/* Raised pedestal */}
+        <mesh position={[0, 0.13, 0]}>
+          <cylinderGeometry args={[0.44, 0.52, 0.12, 24]} />
+          <meshStandardMaterial color="#334155" metalness={0.7} roughness={0.2} />
+        </mesh>
+        {/* Anti-vibration ring */}
+        <mesh position={[0, 0.02, 0]}>
+          <torusGeometry args={[0.77, 0.03, 10, 48]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.3} metalness={0.6} roughness={0.15} />
+        </mesh>
+        {/* Four foot pads */}
+        {([0, 1, 2, 3] as const).map((i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((i / 4) * Math.PI * 2) * 0.82,
+              -0.12,
+              Math.sin((i / 4) * Math.PI * 2) * 0.82,
+            ]}
+          >
+            <cylinderGeometry args={[0.06, 0.08, 0.1, 10]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.6} roughness={0.3} />
+          </mesh>
+        ))}
       </Part>
 
-      {[
-        {
-          base: [1.05, -0.35, 0.78],
-          mid: [1.56, -0.58, 1.18],
-          exploded: [2.32, -0.92, 1.72],
-          rot: [Math.PI / 2, 0.18, 0],
-        },
-        {
-          base: [-1.05, -0.35, 0.78],
-          mid: [-1.56, -0.58, 1.18],
-          exploded: [-2.32, -0.92, 1.72],
-          rot: [Math.PI / 2, -0.18, 0],
-        },
-        {
-          base: [1.05, -0.35, -0.78],
-          mid: [1.56, -0.58, -1.18],
-          exploded: [2.32, -0.92, -1.72],
-          rot: [Math.PI / 2, -0.18, 0],
-        },
-        {
-          base: [-1.05, -0.35, -0.78],
-          mid: [-1.56, -0.58, -1.18],
-          exploded: [-2.32, -0.92, -1.72],
-          rot: [Math.PI / 2, 0.18, 0],
-        },
-      ].map((wheel, index) => (
-        <Part
-          key={index}
-          partIndex={index + 5}
-          basePosition={wheel.base as [number, number, number]}
-          midPosition={wheel.mid as [number, number, number]}
-          explodedPosition={wheel.exploded as [number, number, number]}
-          focusScale={1.3}
-          secondaryScale={0.56}
-          explodeDelay={0.095 + index * 0.012}
-          assembleDelay={index * 0.008}
-          baseRotation={[Math.PI / 2, 0, 0]}
-          explodedRotation={wheel.rot as [number, number, number]}
-          selfRotationAmount={0.48}
-          motionSeed={index + 6}
-          progressRef={progressRef}
-          activePartIndex={activePartIndex}
-          totalParts={CAROUSEL_PARTS.length}
-          carouselEnabled={exploded}
-          inspectMode={inspectMode}
-          inspectRotationRef={inspectRotationRef}
-        >
-          <mesh>
-            <cylinderGeometry args={[0.34, 0.34, 0.22, 32]} />
-            <meshStandardMaterial
-              color="#020617"
-              metalness={0.45}
-              roughness={0.3}
-            />
+      {/* ── Part 5: Sensor Ring ── */}
+      <Part
+        partIndex={5}
+        basePosition={[0, 0.08, 0]}
+        midPosition={[0, -0.22, 0]}
+        explodedPosition={[0, -0.58, 0]}
+        focusScale={1.2}
+        secondaryScale={0.58}
+        explodeDelay={0.065}
+        assembleDelay={0.045}
+        explodedRotation={[0.12, 0.35, 0]}
+        selfRotationAmount={0.54}
+        motionSeed={6}
+        meshOpacity={0.86}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+      >
+        {/* Primary sensor torus */}
+        <mesh>
+          <torusGeometry args={[0.72, 0.058, 14, 64]} />
+          <meshStandardMaterial color="#67e8f9" emissive="#38bdf8" emissiveIntensity={0.24} metalness={0.45} roughness={0.1} transparent opacity={0.84} />
+        </mesh>
+        {/* Structural spine ring */}
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.72, 0.02, 10, 64]} />
+          <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.1} />
+        </mesh>
+        {/* Eight sensor nodes */}
+        {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((i / 8) * Math.PI * 2) * 0.72,
+              0,
+              Math.sin((i / 8) * Math.PI * 2) * 0.72,
+            ]}
+          >
+            <sphereGeometry args={[0.04, 10, 8]} />
+            <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.55} metalness={0.7} roughness={0.1} />
           </mesh>
-        </Part>
-      ))}
+        ))}
+      </Part>
+
     </group>
   );
 }
@@ -1520,7 +1581,7 @@ export default function SpatialScene() {
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
-        <SimplifiedCarProduct
+        <SurgicalRobotProduct
           exploded={exploded}
           activePartIndex={activePartIndex}
           inspectMode={inspectMode}
