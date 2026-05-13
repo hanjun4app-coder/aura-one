@@ -151,6 +151,7 @@ function Part({
   activePartIndex,
   totalParts,
   carouselEnabled,
+  inspectMode,
 }: {
   partIndex: number;
   basePosition: [number, number, number];
@@ -169,6 +170,7 @@ function Part({
   activePartIndex: number;
   totalParts: number;
   carouselEnabled: boolean;
+  inspectMode: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const activeLightRef = useRef<THREE.PointLight>(null);
@@ -182,7 +184,9 @@ function Part({
   const pathPositionRef = useRef(new THREE.Vector3());
   const renderPositionRef = useRef(new THREE.Vector3());
   const targetPositionRef = useRef(new THREE.Vector3());
+  const inspectPositionRef = useRef(new THREE.Vector3());
   const positionInitializedRef = useRef(false);
+  const inspectBlendRef = useRef(0);
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
     const dockStart = midPosition ?? explodedPosition;
@@ -245,6 +249,7 @@ function Part({
     const angle = (slot / totalParts) * Math.PI * 2;
     const activePresence = carouselEnabled && slot === 0 ? separatedProgress : 0;
     const carouselPresence = carouselEnabled ? separatedProgress : 0;
+    const inspectPresence = inspectMode && carouselEnabled ? separatedProgress : 0;
     const depth = Math.cos(angle);
     const side = Math.abs(Math.sin(angle));
     const slotDistance = Math.abs(slot);
@@ -252,12 +257,13 @@ function Part({
       slot === 0
         ? focusScale
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
+    const inspectScale = slot === 0 ? focusScale * 1.34 : 0.48;
     const scaleTarget = THREE.MathUtils.lerp(
-      1,
-      carouselScale,
-      carouselPresence
+      THREE.MathUtils.lerp(1, carouselScale, carouselPresence),
+      inspectScale,
+      inspectPresence
     );
-    const highlightTarget = activePresence * 0.86;
+    const highlightTarget = activePresence * (inspectMode ? 1.0 : 0.86);
 
     if (!assembling && localProgress > dockThreshold * 2) {
       dockedRef.current = false;
@@ -287,12 +293,14 @@ function Part({
       }
     }
 
+    const activeRotationBoost = activePresence ? (inspectMode ? 2.75 : 2.1) : 1;
+
     selfRotationRef.current.x +=
-      delta * motion.rotationSpeed.x * separatedProgress * (activePresence ? 2.1 : 1);
+      delta * motion.rotationSpeed.x * separatedProgress * activeRotationBoost;
     selfRotationRef.current.y +=
-      delta * motion.rotationSpeed.y * separatedProgress * (activePresence ? 2.1 : 1);
+      delta * motion.rotationSpeed.y * separatedProgress * activeRotationBoost;
     selfRotationRef.current.z +=
-      delta * motion.rotationSpeed.z * separatedProgress * (activePresence ? 2.1 : 1);
+      delta * motion.rotationSpeed.z * separatedProgress * activeRotationBoost;
     partScaleRef.current = THREE.MathUtils.lerp(
       partScaleRef.current,
       scaleTarget,
@@ -306,6 +314,11 @@ function Part({
     if (activeLightRef.current) {
       activeLightRef.current.intensity = highlightRef.current * 0.66;
     }
+    inspectBlendRef.current = THREE.MathUtils.lerp(
+      inspectBlendRef.current,
+      inspectPresence,
+      1 - Math.exp(-delta * 4.8)
+    );
 
     const normalX =
       pathPosition.x +
@@ -324,11 +337,20 @@ function Part({
     const carouselX = Math.sin(angle) * (4.25 + neighborSpread);
     const carouselY = 0.24 + Math.sin(angle * 2) * 0.14 - side * 0.1;
     const carouselZ = 0.04 + depth * 2.7 - side * 0.68 - neighborDepthOffset;
+    const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
+    const inspectX = slot === 0 ? 0 : rearDirection * (3.6 + slotDistance * 0.45);
+    const inspectY = slot === 0 ? 0.28 : 0.12 - slotDistance * 0.05;
+    const inspectZ = slot === 0 ? 1.72 : -2.65 - slotDistance * 0.18;
+    inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     targetPositionRef.current.set(
       THREE.MathUtils.lerp(normalX, carouselX, carouselPresence),
       THREE.MathUtils.lerp(normalY, carouselY, carouselPresence),
       THREE.MathUtils.lerp(normalZ, carouselZ, carouselPresence)
+    );
+    targetPositionRef.current.lerp(
+      inspectPositionRef.current,
+      inspectBlendRef.current
     );
     if (!positionInitializedRef.current) {
       renderPositionRef.current.copy(targetPositionRef.current);
@@ -385,9 +407,11 @@ function Part({
 function SimplifiedCarProduct({
   exploded,
   activePartIndex,
+  inspectMode,
 }: {
   exploded: boolean;
   activePartIndex: number;
+  inspectMode: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
@@ -423,6 +447,7 @@ function SimplifiedCarProduct({
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
+        inspectMode={inspectMode}
       >
         <mesh>
           <boxGeometry args={[3.2, 0.55, 1.35]} />
@@ -450,6 +475,7 @@ function SimplifiedCarProduct({
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
+        inspectMode={inspectMode}
       >
         <mesh>
           <boxGeometry args={[1.35, 0.65, 1.05]} />
@@ -479,6 +505,7 @@ function SimplifiedCarProduct({
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
+        inspectMode={inspectMode}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -506,6 +533,7 @@ function SimplifiedCarProduct({
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
+        inspectMode={inspectMode}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -533,6 +561,7 @@ function SimplifiedCarProduct({
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
+        inspectMode={inspectMode}
       >
         <mesh>
           <boxGeometry args={[2.2, 0.16, 1.05]} />
@@ -588,6 +617,7 @@ function SimplifiedCarProduct({
           activePartIndex={activePartIndex}
           totalParts={CAROUSEL_PARTS.length}
           carouselEnabled={exploded}
+          inspectMode={inspectMode}
         >
           <mesh>
             <cylinderGeometry args={[0.34, 0.34, 0.22, 32]} />
@@ -643,6 +673,7 @@ function AmbientParticles() {
 export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
+  const [inspectMode, setInspectMode] = useState(false);
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
   const showPreviousPart = () => {
@@ -668,6 +699,14 @@ export default function SpatialScene() {
       if (event.key === "ArrowRight") {
         setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
       }
+
+      if (event.key === "Enter") {
+        setInspectMode(true);
+      }
+
+      if (event.key === "Escape") {
+        setInspectMode(false);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -688,6 +727,7 @@ export default function SpatialScene() {
         <SimplifiedCarProduct
           exploded={exploded}
           activePartIndex={activePartIndex}
+          inspectMode={inspectMode}
         />
 
         <OrbitControls enableZoom={false} enablePan={false} />
@@ -701,7 +741,7 @@ export default function SpatialScene() {
         }`}
       >
         <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-cyan-200/60">
-          ACTIVE COMPONENT
+          {inspectMode ? "INSPECT MODE" : "ACTIVE COMPONENT"}
         </p>
         <h2 className="text-lg font-light tracking-[0.16em]">
           {activePart.name}
@@ -728,11 +768,21 @@ export default function SpatialScene() {
         >
           NEXT PART
         </button>
+        <button
+          onClick={() => setInspectMode((value) => !value)}
+          className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
+        >
+          {inspectMode ? "EXIT INSPECT" : "INSPECT"}
+        </button>
       </div>
 
       <button
         onClick={() =>
           setExploded((value) => {
+            if (value) {
+              setInspectMode(false);
+            }
+
             return !value;
           })
         }
