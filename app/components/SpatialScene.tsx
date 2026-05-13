@@ -257,7 +257,7 @@ function Part({
       slot === 0
         ? focusScale
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
-    const inspectScale = slot === 0 ? focusScale * 1.34 : 0.48;
+    const inspectScale = slot === 0 ? focusScale * 1.18 : 0.44;
     const scaleTarget = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(1, carouselScale, carouselPresence),
       inspectScale,
@@ -338,9 +338,9 @@ function Part({
     const carouselY = 0.24 + Math.sin(angle * 2) * 0.14 - side * 0.1;
     const carouselZ = 0.04 + depth * 2.7 - side * 0.68 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
-    const inspectX = slot === 0 ? 0 : rearDirection * (3.6 + slotDistance * 0.45);
-    const inspectY = slot === 0 ? 0.28 : 0.12 - slotDistance * 0.05;
-    const inspectZ = slot === 0 ? 1.72 : -2.65 - slotDistance * 0.18;
+    const inspectX = slot === 0 ? 0 : rearDirection * (4.15 + slotDistance * 0.52);
+    const inspectY = slot === 0 ? 0.22 : 0.08 - slotDistance * 0.05;
+    const inspectZ = slot === 0 ? 1.18 : -3.45 - slotDistance * 0.28;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     targetPositionRef.current.set(
@@ -439,7 +439,7 @@ function SimplifiedCarProduct({
         partIndex={0}
         basePosition={[0, 0, 0]}
         explodedPosition={[0, 0, 0]}
-        focusScale={1.18}
+        focusScale={1.12}
         secondaryScale={0.58}
         selfRotationAmount={0.18}
         motionSeed={1}
@@ -464,7 +464,7 @@ function SimplifiedCarProduct({
         basePosition={[0.15, 0.55, 0]}
         midPosition={[0.15, 1.32, 0.08]}
         explodedPosition={[0.15, 1.86, 0.28]}
-        focusScale={1.34}
+        focusScale={1.24}
         secondaryScale={0.6}
         explodeDelay={0}
         assembleDelay={0.07}
@@ -494,7 +494,7 @@ function SimplifiedCarProduct({
         basePosition={[1.75, 0.05, 0]}
         midPosition={[2.58, 0.42, 0.12]}
         explodedPosition={[3.42, 0.3, 0.16]}
-        focusScale={1.38}
+        focusScale={1.26}
         secondaryScale={0.58}
         explodeDelay={0.035}
         assembleDelay={0.04}
@@ -522,7 +522,7 @@ function SimplifiedCarProduct({
         basePosition={[-1.75, 0.05, 0]}
         midPosition={[-2.58, 0.42, -0.12]}
         explodedPosition={[-3.42, 0.3, -0.16]}
-        focusScale={1.38}
+        focusScale={1.26}
         secondaryScale={0.58}
         explodeDelay={0.035}
         assembleDelay={0.04}
@@ -550,7 +550,7 @@ function SimplifiedCarProduct({
         basePosition={[0, -0.38, 0]}
         midPosition={[0, -0.86, 0]}
         explodedPosition={[0, -1.56, 0]}
-        focusScale={1.28}
+        focusScale={1.18}
         secondaryScale={0.58}
         explodeDelay={0.075}
         assembleDelay={0.02}
@@ -605,7 +605,7 @@ function SimplifiedCarProduct({
           basePosition={wheel.base as [number, number, number]}
           midPosition={wheel.mid as [number, number, number]}
           explodedPosition={wheel.exploded as [number, number, number]}
-          focusScale={1.42}
+          focusScale={1.3}
           secondaryScale={0.56}
           explodeDelay={0.095 + index * 0.012}
           assembleDelay={index * 0.008}
