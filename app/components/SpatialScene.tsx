@@ -52,6 +52,21 @@ const CAROUSEL_PARTS = [
 ] as const;
 
 const INSPECT_ROTATION_STEP = 0.32;
+const LOGO_TEXT = "AURA ONE";
+const LOGO_LETTERS: Record<string, string[]> = {
+  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
+  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
+  N: ["10001", "11001", "10101", "10011", "10001", "10001", "10001"],
+  O: ["01110", "10001", "10001", "10001", "10001", "10001", "01110"],
+  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
+  U: ["10001", "10001", "10001", "10001", "10001", "10001", "01110"],
+};
+
+type LogoParticle = {
+  home: THREE.Vector3;
+  scatter: THREE.Vector3;
+  seed: number;
+};
 
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
@@ -133,6 +148,59 @@ function wrappedSlot(partIndex: number, activePartIndex: number, totalParts: num
   const wrapped = ((rawSlot % totalParts) + totalParts) % totalParts;
 
   return wrapped > totalParts / 2 ? wrapped - totalParts : wrapped;
+}
+
+function createLogoParticles() {
+  const particles: LogoParticle[] = [];
+  const cellSize = 0.09;
+  const letterGap = 1.35;
+  let cursor = 0;
+
+  LOGO_TEXT.split("").forEach((letter) => {
+    if (letter === " ") {
+      cursor += 2.1;
+      return;
+    }
+
+    const grid = LOGO_LETTERS[letter];
+
+    grid.forEach((row, rowIndex) => {
+      row.split("").forEach((filled, columnIndex) => {
+        if (filled !== "1") return;
+
+        const x = (cursor + columnIndex) * cellSize;
+        const y = (3 - rowIndex) * cellSize;
+        const home = new THREE.Vector3(x, y, -1.35);
+        const seed = particles.length + 1;
+        const scatter = new THREE.Vector3();
+
+        particles.push({ home, scatter, seed });
+      });
+    });
+
+    cursor += 5 + letterGap;
+  });
+
+  const centerX =
+    particles.reduce((total, particle) => total + particle.home.x, 0) /
+    particles.length;
+
+  particles.forEach((particle) => {
+    particle.home.x -= centerX;
+    particle.home.y += 2.12;
+    const horizontal = particle.home.x >= 0 ? 1 : -1;
+    const vertical = particle.home.y >= 2.12 ? 1 : -1;
+
+    particle.scatter.set(
+      particle.home.x * 1.22 +
+        horizontal * (0.82 + seededUnit(particle.seed * 4) * 0.72),
+      particle.home.y * 1.08 +
+        vertical * (0.42 + seededUnit(particle.seed * 5) * 0.42),
+      -2.18 - seededUnit(particle.seed * 6) * 1.28
+    );
+  });
+
+  return particles;
 }
 
 function Part({
@@ -694,6 +762,74 @@ function AmbientParticles() {
   );
 }
 
+function AuraLogoParticles({ exploded }: { exploded: boolean }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const progressRef = useRef(0);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const particles = useMemo(() => createLogoParticles(), []);
+
+  useFrame(({ clock }, delta) => {
+    if (!meshRef.current) return;
+
+    const mesh = meshRef.current;
+
+    progressRef.current = THREE.MathUtils.lerp(
+      progressRef.current,
+      exploded ? 1 : 0,
+      1 - Math.exp(-delta * 2.35)
+    );
+
+    const t = clock.getElapsedTime();
+    const p = smoothStep(progressRef.current);
+    const scale = THREE.MathUtils.lerp(0.062, 0.036, p);
+
+    particles.forEach((particle, index) => {
+      const idle = Math.sin(t * 0.42 + particle.seed) * 0.008 * (1 - p);
+      const shockDrift = Math.sin(t * 0.32 + particle.seed * 0.7) * 0.024 * p;
+
+      dummy.position.set(
+        THREE.MathUtils.lerp(particle.home.x, particle.scatter.x, p) +
+          shockDrift,
+        THREE.MathUtils.lerp(particle.home.y, particle.scatter.y, p) +
+          idle,
+        THREE.MathUtils.lerp(particle.home.z, particle.scatter.z, p)
+      );
+      dummy.rotation.set(
+        p * (0.35 + seededUnit(particle.seed * 2) * 0.65),
+        p * (0.45 + seededUnit(particle.seed * 3) * 0.8),
+        p * 0.18
+      );
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+    });
+
+    mesh.instanceMatrix.needsUpdate = true;
+    const material = mesh.material as THREE.MeshStandardMaterial;
+    material.opacity = THREE.MathUtils.lerp(0.82, 0.34, p);
+    material.emissiveIntensity = THREE.MathUtils.lerp(0.28, 0.08, p);
+  });
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, particles.length]}
+      frustumCulled={false}
+    >
+      <boxGeometry args={[1, 1, 0.35]} />
+      <meshStandardMaterial
+        color="#e0faff"
+        emissive="#67e8f9"
+        emissiveIntensity={0.22}
+        metalness={0.28}
+        opacity={0.82}
+        roughness={0.34}
+        transparent
+      />
+    </instancedMesh>
+  );
+}
+
 export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
@@ -785,6 +921,7 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={2} color="#38bdf8" />
 
         <AmbientParticles />
+        <AuraLogoParticles exploded={exploded} />
         <SimplifiedCarProduct
           exploded={exploded}
           activePartIndex={activePartIndex}
