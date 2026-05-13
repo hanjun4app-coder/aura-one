@@ -5,6 +5,7 @@ import { OrbitControls } from "@react-three/drei";
 import {
   type MutableRefObject,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -52,6 +53,12 @@ const CAROUSEL_PARTS = [
 ] as const;
 
 const INSPECT_ROTATION_STEP = 0.32;
+const MEDIAPIPE_TASKS_URL =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22";
+const MEDIAPIPE_WASM_URL =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm";
+const HAND_LANDMARKER_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -68,6 +75,79 @@ type LogoParticle = {
   seed: number;
 };
 
+type SimulatedGestureAction =
+  | "swipeLeft"
+  | "swipeRight"
+  | "select"
+  | "back"
+  | "rotateLeft"
+  | "rotateRight"
+  | "rotateUp"
+  | "rotateDown"
+  | "reset"
+  | "toggleExplode";
+
+type CameraGestureStatus =
+  | "CAMERA OFF"
+  | "LOADING CAMERA"
+  | "CAMERA READY"
+  | "HAND DETECTED"
+  | "SWIPE LEFT"
+  | "SWIPE RIGHT"
+  | "CAMERA ERROR";
+
+type CameraDebugStep =
+  | "Idle"
+  | "Requesting camera"
+  | "Camera stream received"
+  | "Video element assigned"
+  | "Video playback started"
+  | "Loading MediaPipe"
+  | "MediaPipe loaded"
+  | "Initializing HandLandmarker"
+  | "HandLandmarker ready"
+  | "Detection loop started";
+
+type HandLandmark = {
+  x: number;
+  y: number;
+  z?: number;
+};
+
+type HandLandmarkerResult = {
+  landmarks?: HandLandmark[][];
+};
+
+type HandLandmarkerRuntime = {
+  close?: () => void;
+  detectForVideo: (
+    video: HTMLVideoElement,
+    timestampMs: number
+  ) => HandLandmarkerResult;
+};
+
+type VisionTasksModule = {
+  FilesetResolver: {
+    forVisionTasks: (wasmPath: string) => Promise<unknown>;
+  };
+  HandLandmarker: {
+    createFromOptions: (
+      vision: unknown,
+      options: {
+        baseOptions: {
+          delegate: "GPU" | "CPU";
+          modelAssetPath: string;
+        };
+        minHandDetectionConfidence: number;
+        minHandPresenceConfidence: number;
+        minTrackingConfidence: number;
+        numHands: number;
+        runningMode: "VIDEO";
+      }
+    ) => Promise<HandLandmarkerRuntime>;
+  };
+};
+
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
 }
@@ -76,6 +156,22 @@ function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898) * 43758.5453;
 
   return value - Math.floor(value);
+}
+
+async function loadVisionTasks() {
+  const importFromUrl = new Function("url", "return import(url)") as (
+    url: string
+  ) => Promise<VisionTasksModule>;
+
+  return importFromUrl(MEDIAPIPE_TASKS_URL);
+}
+
+function formatCameraError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }
 
 function phasedPathProgress(progress: number, phase = 0) {
@@ -832,6 +928,310 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
   );
 }
 
+function CameraGestureLayer({
+  onGesture,
+}: {
+  onGesture: (action: SimulatedGestureAction) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const handLandmarkerRef = useRef<HandLandmarkerRuntime | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const runDetectionLoopRef = useRef<() => void>(() => undefined);
+  const samplesRef = useRef<Array<{ time: number; x: number }>>([]);
+  const statusRef = useRef<CameraGestureStatus>("CAMERA OFF");
+  const statusHoldUntilRef = useRef(0);
+  const cooldownUntilRef = useRef(0);
+  const lastDetectionAtRef = useRef(0);
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [cameraDebugStep, setCameraDebugStep] =
+    useState<CameraDebugStep>("Idle");
+  const [cameraErrorMessage, setCameraErrorMessage] = useState("");
+  const [cameraStatus, setCameraStatus] =
+    useState<CameraGestureStatus>("CAMERA OFF");
+
+  const updateStatus = useCallback((status: CameraGestureStatus) => {
+    if (statusRef.current === status) return;
+
+    statusRef.current = status;
+    setCameraStatus(status);
+  }, []);
+
+  const updateDebugStep = useCallback((step: CameraDebugStep) => {
+    console.info(`[AURA CAMERA] ${step}`);
+    setCameraDebugStep(step);
+  }, []);
+
+  const reportCameraError = useCallback(
+    (prefix: string, error: unknown) => {
+      const message = `${prefix}: ${formatCameraError(error)}`;
+
+      console.error(`[AURA CAMERA] ${prefix}`, error);
+      setCameraErrorMessage(message);
+      updateStatus("CAMERA ERROR");
+    },
+    [updateStatus]
+  );
+
+  const releaseCameraResources = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    samplesRef.current = [];
+    handLandmarkerRef.current?.close?.();
+    handLandmarkerRef.current = null;
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const stopCamera = useCallback(() => {
+    releaseCameraResources();
+
+    setCameraEnabled(false);
+    setCameraDebugStep("Idle");
+    updateStatus("CAMERA OFF");
+  }, [releaseCameraResources, updateStatus]);
+
+  const processHandResult = useCallback(
+    (result: HandLandmarkerResult, now: number) => {
+      const landmarks = result.landmarks?.[0];
+
+      if (!landmarks?.length) {
+        samplesRef.current = [];
+
+        if (now > statusHoldUntilRef.current) {
+          updateStatus("CAMERA READY");
+        }
+
+        return;
+      }
+
+      const palmX =
+        ((landmarks[0]?.x ?? 0) +
+          (landmarks[5]?.x ?? 0) +
+          (landmarks[17]?.x ?? 0)) /
+        3;
+
+      samplesRef.current = [
+        ...samplesRef.current.filter((sample) => now - sample.time <= 520),
+        { time: now, x: palmX },
+      ];
+
+      if (now > statusHoldUntilRef.current) {
+        updateStatus("HAND DETECTED");
+      }
+
+      if (now < cooldownUntilRef.current) return;
+
+      const firstSample = samplesRef.current[0];
+      const movement = palmX - firstSample.x;
+      const duration = now - firstSample.time;
+
+      if (duration < 120 || Math.abs(movement) < 0.18) return;
+
+      if (movement < 0) {
+        updateStatus("SWIPE LEFT");
+        onGesture("swipeLeft");
+      } else {
+        updateStatus("SWIPE RIGHT");
+        onGesture("swipeRight");
+      }
+
+      statusHoldUntilRef.current = now + 650;
+      cooldownUntilRef.current = now + 1100;
+      samplesRef.current = [];
+    },
+    [onGesture, updateStatus]
+  );
+
+  const runDetectionLoop = useCallback(() => {
+    const video = videoRef.current;
+    const handLandmarker = handLandmarkerRef.current;
+    const now = performance.now();
+
+    if (video && handLandmarker && video.readyState >= 2) {
+      if (now - lastDetectionAtRef.current > 72) {
+        lastDetectionAtRef.current = now;
+
+        try {
+          processHandResult(handLandmarker.detectForVideo(video, now), now);
+        } catch (error) {
+          console.error("[AURA CAMERA] detect loop failed", error);
+          setCameraErrorMessage(
+            `detectForVideo failed: ${formatCameraError(error)}`
+          );
+          updateStatus("CAMERA ERROR");
+          handLandmarkerRef.current = null;
+          return;
+        }
+      }
+    }
+
+    frameRef.current = requestAnimationFrame(() => runDetectionLoopRef.current());
+  }, [processHandResult, updateStatus]);
+
+  useEffect(() => {
+    runDetectionLoopRef.current = runDetectionLoop;
+  }, [runDetectionLoop]);
+
+  const enableCamera = useCallback(async () => {
+    if (cameraEnabled) {
+      stopCamera();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      updateStatus("CAMERA ERROR");
+      setCameraErrorMessage("getUserMedia failed: API unavailable");
+      console.error("[AURA CAMERA] getUserMedia failed", "API unavailable");
+      return;
+    }
+
+    setCameraErrorMessage("");
+    updateStatus("LOADING CAMERA");
+    updateDebugStep("Requesting camera");
+
+    let stream: MediaStream;
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: "user",
+          height: { ideal: 360 },
+          width: { ideal: 480 },
+        },
+      });
+      updateDebugStep("Camera stream received");
+    } catch (error) {
+      reportCameraError("getUserMedia failed", error);
+      return;
+    }
+
+    const video = videoRef.current;
+
+    if (!video) {
+      stream.getTracks().forEach((track) => track.stop());
+      reportCameraError("video element failed", "Video element unavailable");
+      return;
+    }
+
+    streamRef.current = stream;
+    video.srcObject = stream;
+    updateDebugStep("Video element assigned");
+
+    try {
+      await video.play();
+      updateDebugStep("Video playback started");
+    } catch (error) {
+      releaseCameraResources();
+      console.error("[AURA CAMERA] video play failed", error);
+      setCameraErrorMessage(`video.play failed: ${formatCameraError(error)}`);
+      updateStatus("CAMERA ERROR");
+      return;
+    }
+
+    let visionModule: VisionTasksModule;
+
+    try {
+      updateDebugStep("Loading MediaPipe");
+      visionModule = await loadVisionTasks();
+      updateDebugStep("MediaPipe loaded");
+    } catch (error) {
+      releaseCameraResources();
+      reportCameraError("MediaPipe load failed", error);
+      return;
+    }
+
+    try {
+      updateDebugStep("Initializing HandLandmarker");
+      const { FilesetResolver, HandLandmarker } = visionModule;
+      const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
+
+      handLandmarkerRef.current = await HandLandmarker.createFromOptions(
+        vision,
+        {
+          baseOptions: {
+            delegate: "GPU",
+            modelAssetPath: HAND_LANDMARKER_MODEL_URL,
+          },
+          minHandDetectionConfidence: 0.58,
+          minHandPresenceConfidence: 0.55,
+          minTrackingConfidence: 0.55,
+          numHands: 1,
+          runningMode: "VIDEO",
+        }
+      );
+
+      setCameraEnabled(true);
+      updateStatus("CAMERA READY");
+      updateDebugStep("HandLandmarker ready");
+      runDetectionLoop();
+      updateDebugStep("Detection loop started");
+    } catch (error) {
+      releaseCameraResources();
+      reportCameraError("HandLandmarker init failed", error);
+    }
+  }, [
+    cameraEnabled,
+    releaseCameraResources,
+    reportCameraError,
+    runDetectionLoop,
+    stopCamera,
+    updateDebugStep,
+    updateStatus,
+  ]);
+
+  useEffect(() => stopCamera, [stopCamera]);
+
+  return (
+    <div className="absolute right-4 top-4 w-40 border border-cyan-200/15 bg-slate-950/45 p-2 text-cyan-50 shadow-xl shadow-cyan-950/20 backdrop-blur-md md:right-6 md:top-6">
+      <div className="relative aspect-video overflow-hidden bg-slate-950/80">
+        <video
+          ref={videoRef}
+          autoPlay
+          className={`h-full w-full scale-x-[-1] object-cover transition duration-500 ${
+            cameraEnabled ? "opacity-70" : "opacity-20"
+          }`}
+          muted
+          playsInline
+        />
+        {!cameraEnabled ? (
+          <div className="absolute inset-0 flex items-center justify-center text-[0.56rem] tracking-[0.2em] text-cyan-100/42">
+            CAMERA
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p className="text-[0.56rem] tracking-[0.18em] text-cyan-100/60">
+          {cameraStatus}
+        </p>
+        <button
+          onClick={enableCamera}
+          className="border border-cyan-200/20 bg-cyan-200/10 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-200/18"
+        >
+          {cameraEnabled ? "OFF" : "ENABLE"}
+        </button>
+      </div>
+      <p className="mt-2 text-[0.52rem] leading-4 text-cyan-100/42">
+        {cameraDebugStep}
+      </p>
+      {cameraErrorMessage ? (
+        <p className="mt-1 text-[0.5rem] leading-4 text-rose-200/75">
+          {cameraErrorMessage}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
@@ -842,80 +1242,144 @@ export default function SpatialScene() {
   const hudPositionClass = hudOnRight
     ? "right-4 bottom-36 md:right-10 md:bottom-32"
     : "left-4 bottom-36 md:left-10 md:bottom-32";
+  const gestureHint = !exploded
+    ? "SPACE EXPLODE"
+    : inspectMode
+      ? "WASD ROTATE • ESC EXIT • R RESET"
+      : "← → CHANGE PART • ENTER INSPECT • ESC BACK";
 
-  const resetInspectRotation = () => {
+  const resetInspectRotation = useCallback(() => {
     inspectRotationRef.current.x = 0;
     inspectRotationRef.current.y = 0;
-  };
+  }, []);
 
-  const showPreviousPart = () => {
+  const showPreviousPart = useCallback(() => {
     resetInspectRotation();
     setActivePartIndex(
       (value) => (value - 1 + CAROUSEL_PARTS.length) % CAROUSEL_PARTS.length
     );
-  };
+  }, [resetInspectRotation]);
 
-  const showNextPart = () => {
+  const showNextPart = useCallback(() => {
     resetInspectRotation();
     setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
-  };
+  }, [resetInspectRotation]);
 
-  useEffect(() => {
-    if (!exploded) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-
-        if (inspectMode) {
-          inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
-          return;
+  // Future camera gesture -> simulated gesture action -> scene response.
+  // MediaPipe/webcam input can dispatch these same actions without changing
+  // the scene animation or product interaction architecture.
+  const applySimulatedGesture = useCallback((action: SimulatedGestureAction) => {
+    if (action === "toggleExplode") {
+      setExploded((value) => {
+        if (value) {
+          resetInspectRotation();
+          setInspectMode(false);
         }
 
-        resetInspectRotation();
-        setActivePartIndex(
-          (value) => (value - 1 + CAROUSEL_PARTS.length) % CAROUSEL_PARTS.length
-        );
+        return !value;
+      });
+      return;
+    }
+
+    if (action === "reset") {
+      resetInspectRotation();
+
+      if (!inspectMode) {
+        setInspectMode(false);
+        setExploded(false);
       }
 
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
+      return;
+    }
 
-        if (inspectMode) {
-          inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
-          return;
-        }
+    if (action === "back") {
+      resetInspectRotation();
 
-        resetInspectRotation();
-        setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
+      if (inspectMode) {
+        setInspectMode(false);
+      } else if (exploded) {
+        setExploded(false);
       }
 
-      if (event.key === "ArrowUp" && inspectMode) {
-        event.preventDefault();
-        inspectRotationRef.current.x += INSPECT_ROTATION_STEP;
-      }
+      return;
+    }
 
-      if (event.key === "ArrowDown" && inspectMode) {
-        event.preventDefault();
-        inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
+    if (action === "select") {
+      if (exploded) {
         setInspectMode(true);
       }
 
-      if (event.key === "Escape") {
-        event.preventDefault();
-        resetInspectRotation();
-        setInspectMode(false);
+      return;
+    }
+
+    if (action === "swipeLeft") {
+      if (exploded) {
+        showPreviousPart();
       }
+
+      return;
+    }
+
+    if (action === "swipeRight") {
+      if (exploded) {
+        showNextPart();
+      }
+
+      return;
+    }
+
+    if (!inspectMode) return;
+
+    if (action === "rotateLeft") {
+      inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
+    }
+
+    if (action === "rotateRight") {
+      inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
+    }
+
+    if (action === "rotateUp") {
+      inspectRotationRef.current.x += INSPECT_ROTATION_STEP;
+    }
+
+    if (action === "rotateDown") {
+      inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
+    }
+  }, [exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const actionMap: Record<string, SimulatedGestureAction | undefined> = {
+        ArrowLeft: inspectMode ? "rotateLeft" : "swipeLeft",
+        ArrowRight: inspectMode ? "rotateRight" : "swipeRight",
+        ArrowUp: inspectMode ? "rotateUp" : undefined,
+        ArrowDown: inspectMode ? "rotateDown" : undefined,
+        Enter: "select",
+        Escape: "back",
+        a: "rotateLeft",
+        A: "rotateLeft",
+        d: "rotateRight",
+        D: "rotateRight",
+        w: "rotateUp",
+        W: "rotateUp",
+        s: "rotateDown",
+        S: "rotateDown",
+        r: "reset",
+        R: "reset",
+        " ": "toggleExplode",
+      };
+      const action = actionMap[event.key];
+
+      if (!action) return;
+
+      event.preventDefault();
+      applySimulatedGesture(action);
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [exploded, inspectMode]);
+  }, [applySimulatedGesture, inspectMode]);
 
   return (
     <div className="absolute inset-0">
@@ -938,6 +1402,8 @@ export default function SpatialScene() {
         <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
 
+      <CameraGestureLayer onGesture={applySimulatedGesture} />
+
       <div
         className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-cyan-200/20 bg-slate-950/48 p-4 text-left text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:p-5 ${
           exploded
@@ -956,9 +1422,13 @@ export default function SpatialScene() {
         </p>
         {inspectMode ? (
           <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-cyan-200/50">
-            ARROWS ROTATE PART • ESC EXIT
+            WASD ROTATE • ESC EXIT
           </p>
         ) : null}
+      </div>
+
+      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[18rem] border border-cyan-200/15 bg-slate-950/35 px-3 py-2 text-right text-[0.6rem] tracking-[0.2em] text-cyan-100/52 backdrop-blur-md md:right-6">
+        {gestureHint}
       </div>
 
       <div
@@ -979,15 +1449,7 @@ export default function SpatialScene() {
           NEXT PART
         </button>
         <button
-          onClick={() =>
-            setInspectMode((value) => {
-              if (value) {
-                resetInspectRotation();
-              }
-
-              return !value;
-            })
-          }
+          onClick={() => applySimulatedGesture(inspectMode ? "back" : "select")}
           className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
         >
           {inspectMode ? "EXIT INSPECT" : "INSPECT"}
@@ -995,16 +1457,7 @@ export default function SpatialScene() {
       </div>
 
       <button
-        onClick={() =>
-          setExploded((value) => {
-            if (value) {
-              resetInspectRotation();
-              setInspectMode(false);
-            }
-
-            return !value;
-          })
-        }
+        onClick={() => applySimulatedGesture("toggleExplode")}
         className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-cyan-300/40 bg-cyan-300/10 px-6 py-3 text-sm tracking-[0.25em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-300/20 ${
           exploded ? "bottom-20" : "bottom-8"
         }`}
