@@ -152,6 +152,7 @@ function Part({
   totalParts,
   carouselEnabled,
   inspectMode,
+  inspectRotationRef,
 }: {
   partIndex: number;
   basePosition: [number, number, number];
@@ -171,10 +172,13 @@ function Part({
   totalParts: number;
   carouselEnabled: boolean;
   inspectMode: boolean;
+  inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const activeLightRef = useRef<THREE.PointLight>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
+  const manualRotationRef = useRef(new THREE.Vector2());
+  const manualRotationTargetRef = useRef(new THREE.Vector2());
   const partScaleRef = useRef(1);
   const highlightRef = useRef(0);
   const previousProgressRef = useRef(0);
@@ -257,7 +261,7 @@ function Part({
       slot === 0
         ? focusScale
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
-    const inspectScale = slot === 0 ? focusScale * 1.18 : 0.44;
+    const inspectScale = slot === 0 ? focusScale * 1.08 : 0.42;
     const scaleTarget = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(1, carouselScale, carouselPresence),
       inspectScale,
@@ -336,11 +340,11 @@ function Part({
     const neighborDepthOffset = slotDistance === 1 ? 0.62 : 0;
     const carouselX = Math.sin(angle) * (4.25 + neighborSpread);
     const carouselY = 0.24 + Math.sin(angle * 2) * 0.14 - side * 0.1;
-    const carouselZ = 0.04 + depth * 2.7 - side * 0.68 - neighborDepthOffset;
+    const carouselZ = depth * 1.85 - side * 0.78 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     const inspectX = slot === 0 ? 0 : rearDirection * (4.15 + slotDistance * 0.52);
     const inspectY = slot === 0 ? 0.22 : 0.08 - slotDistance * 0.05;
-    const inspectZ = slot === 0 ? 1.18 : -3.45 - slotDistance * 0.28;
+    const inspectZ = slot === 0 ? 0.72 : -3.95 - slotDistance * 0.34;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     targetPositionRef.current.set(
@@ -362,13 +366,23 @@ function Part({
       1 - Math.exp(-delta * 5.5)
     );
     groupRef.current.position.copy(renderPositionRef.current);
+    manualRotationTargetRef.current.set(
+      inspectMode && activePresence ? inspectRotationRef.current.x : 0,
+      inspectMode && activePresence ? inspectRotationRef.current.y : 0
+    );
+    manualRotationRef.current.lerp(
+      manualRotationTargetRef.current,
+      1 - Math.exp(-delta * 6)
+    );
 
     groupRef.current.rotation.set(
       THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
         selfRotationRef.current.x * separatedProgress +
+        manualRotationRef.current.x +
         motion.dockRotation.x * dockPulse,
       THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
         selfRotationRef.current.y * separatedProgress +
+        manualRotationRef.current.y +
         motion.dockRotation.y * dockPulse,
       THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
         selfRotationRef.current.z * separatedProgress +
@@ -408,10 +422,12 @@ function SimplifiedCarProduct({
   exploded,
   activePartIndex,
   inspectMode,
+  inspectRotationRef,
 }: {
   exploded: boolean;
   activePartIndex: number;
   inspectMode: boolean;
+  inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
@@ -448,6 +464,7 @@ function SimplifiedCarProduct({
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
       >
         <mesh>
           <boxGeometry args={[3.2, 0.55, 1.35]} />
@@ -476,6 +493,7 @@ function SimplifiedCarProduct({
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
       >
         <mesh>
           <boxGeometry args={[1.35, 0.65, 1.05]} />
@@ -506,6 +524,7 @@ function SimplifiedCarProduct({
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -534,6 +553,7 @@ function SimplifiedCarProduct({
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -562,6 +582,7 @@ function SimplifiedCarProduct({
         totalParts={CAROUSEL_PARTS.length}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
       >
         <mesh>
           <boxGeometry args={[2.2, 0.16, 1.05]} />
@@ -618,6 +639,7 @@ function SimplifiedCarProduct({
           totalParts={CAROUSEL_PARTS.length}
           carouselEnabled={exploded}
           inspectMode={inspectMode}
+          inspectRotationRef={inspectRotationRef}
         >
           <mesh>
             <cylinderGeometry args={[0.34, 0.34, 0.22, 32]} />
@@ -674,15 +696,23 @@ export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [inspectMode, setInspectMode] = useState(false);
+  const inspectRotationRef = useRef({ x: 0, y: 0 });
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
+  const resetInspectRotation = () => {
+    inspectRotationRef.current.x = 0;
+    inspectRotationRef.current.y = 0;
+  };
+
   const showPreviousPart = () => {
+    resetInspectRotation();
     setActivePartIndex(
       (value) => (value - 1 + CAROUSEL_PARTS.length) % CAROUSEL_PARTS.length
     );
   };
 
   const showNextPart = () => {
+    resetInspectRotation();
     setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
   };
 
@@ -691,20 +721,57 @@ export default function SpatialScene() {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "ArrowLeft") {
+        event.preventDefault();
+
+        if (inspectMode) {
+          inspectRotationRef.current.y -= 0.22;
+          return;
+        }
+
+        resetInspectRotation();
         setActivePartIndex(
           (value) => (value - 1 + CAROUSEL_PARTS.length) % CAROUSEL_PARTS.length
         );
       }
 
       if (event.key === "ArrowRight") {
+        event.preventDefault();
+
+        if (inspectMode) {
+          inspectRotationRef.current.y += 0.22;
+          return;
+        }
+
+        resetInspectRotation();
         setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
       }
 
+      if (event.key === "ArrowUp" && inspectMode) {
+        event.preventDefault();
+        inspectRotationRef.current.x = THREE.MathUtils.clamp(
+          inspectRotationRef.current.x - 0.18,
+          -0.82,
+          0.82
+        );
+      }
+
+      if (event.key === "ArrowDown" && inspectMode) {
+        event.preventDefault();
+        inspectRotationRef.current.x = THREE.MathUtils.clamp(
+          inspectRotationRef.current.x + 0.18,
+          -0.82,
+          0.82
+        );
+      }
+
       if (event.key === "Enter") {
+        event.preventDefault();
         setInspectMode(true);
       }
 
       if (event.key === "Escape") {
+        event.preventDefault();
+        resetInspectRotation();
         setInspectMode(false);
       }
     };
@@ -712,7 +779,7 @@ export default function SpatialScene() {
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [exploded]);
+  }, [exploded, inspectMode]);
 
   return (
     <div className="absolute inset-0">
@@ -728,6 +795,7 @@ export default function SpatialScene() {
           exploded={exploded}
           activePartIndex={activePartIndex}
           inspectMode={inspectMode}
+          inspectRotationRef={inspectRotationRef}
         />
 
         <OrbitControls enableZoom={false} enablePan={false} />
@@ -749,6 +817,11 @@ export default function SpatialScene() {
         <p className="mt-3 text-sm leading-6 text-cyan-50/65">
           {activePart.description}
         </p>
+        {inspectMode ? (
+          <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-cyan-200/50">
+            ARROWS ROTATE PART • ESC EXIT
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -769,7 +842,15 @@ export default function SpatialScene() {
           NEXT PART
         </button>
         <button
-          onClick={() => setInspectMode((value) => !value)}
+          onClick={() =>
+            setInspectMode((value) => {
+              if (value) {
+                resetInspectRotation();
+              }
+
+              return !value;
+            })
+          }
           className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
         >
           {inspectMode ? "EXIT INSPECT" : "INSPECT"}
@@ -780,6 +861,7 @@ export default function SpatialScene() {
         onClick={() =>
           setExploded((value) => {
             if (value) {
+              resetInspectRotation();
               setInspectMode(false);
             }
 
