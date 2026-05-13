@@ -11,6 +11,41 @@ import {
 } from "react";
 import * as THREE from "three";
 
+type PartId =
+  | "vehicle-body"
+  | "cabin-module"
+  | "front-module"
+  | "rear-module"
+  | "battery-plate"
+  | "wheel-module";
+
+const PART_INFO: Record<PartId, { name: string; description: string }> = {
+  "vehicle-body": {
+    name: "Vehicle Body",
+    description: "Main structural platform that anchors the vehicle assembly.",
+  },
+  "cabin-module": {
+    name: "Cabin Module",
+    description: "Passenger and interface area with a quiet panoramic shell.",
+  },
+  "front-module": {
+    name: "Front Module",
+    description: "Forward sensing and lighting section for spatial awareness.",
+  },
+  "rear-module": {
+    name: "Rear Module",
+    description: "Rear structure and signaling area for vehicle presence.",
+  },
+  "battery-plate": {
+    name: "Battery Plate",
+    description: "Power storage foundation positioned below the main body.",
+  },
+  "wheel-module": {
+    name: "Wheel Module",
+    description: "Motion and support system separated for inspection.",
+  },
+};
+
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
 }
@@ -87,6 +122,7 @@ function resolvePathPosition(
 }
 
 function Part({
+  partId,
   basePosition,
   midPosition,
   explodedPosition,
@@ -98,7 +134,11 @@ function Part({
   motionSeed = 0,
   children,
   progressRef,
+  selectedPartId,
+  selectionEnabled,
+  onSelect,
 }: {
+  partId: PartId;
   basePosition: [number, number, number];
   midPosition?: [number, number, number];
   explodedPosition: [number, number, number];
@@ -110,9 +150,14 @@ function Part({
   motionSeed?: number;
   children: ReactNode;
   progressRef: MutableRefObject<number>;
+  selectedPartId: PartId | null;
+  selectionEnabled: boolean;
+  onSelect: (partId: PartId) => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
+  const selectionScaleRef = useRef(1);
+  const highlightRef = useRef(0);
   const previousProgressRef = useRef(0);
   const previousRawProgressRef = useRef(0);
   const dockedRef = useRef(true);
@@ -176,6 +221,10 @@ function Part({
       p
     );
     const dockThreshold = 0.045;
+    const selected = selectionEnabled && selectedPartId === partId;
+    const selectionPresence = selected ? separatedProgress : 0;
+    const scaleTarget = 1 + selectionPresence * 0.07;
+    const highlightTarget = selectionPresence * 0.55;
 
     if (!assembling && localProgress > dockThreshold * 2) {
       dockedRef.current = false;
@@ -206,11 +255,21 @@ function Part({
     }
 
     selfRotationRef.current.x +=
-      delta * motion.rotationSpeed.x * separatedProgress;
+      delta * motion.rotationSpeed.x * separatedProgress * (selected ? 1.42 : 1);
     selfRotationRef.current.y +=
-      delta * motion.rotationSpeed.y * separatedProgress;
+      delta * motion.rotationSpeed.y * separatedProgress * (selected ? 1.42 : 1);
     selfRotationRef.current.z +=
-      delta * motion.rotationSpeed.z * separatedProgress;
+      delta * motion.rotationSpeed.z * separatedProgress * (selected ? 1.42 : 1);
+    selectionScaleRef.current = THREE.MathUtils.lerp(
+      selectionScaleRef.current,
+      scaleTarget,
+      1 - Math.exp(-delta * 7)
+    );
+    highlightRef.current = THREE.MathUtils.lerp(
+      highlightRef.current,
+      highlightTarget,
+      1 - Math.exp(-delta * 6)
+    );
 
     groupRef.current.position.set(
       pathPosition.x +
@@ -235,15 +294,54 @@ function Part({
         selfRotationRef.current.z * separatedProgress +
         motion.dockRotation.z * dockPulse
     );
+    groupRef.current.scale.setScalar(selectionScaleRef.current);
+
+    groupRef.current.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      const material = mesh.material as THREE.MeshStandardMaterial | undefined;
+
+      if (!material || !("emissiveIntensity" in material)) return;
+
+      material.emissive.set("#67e8f9");
+      material.emissiveIntensity = highlightRef.current;
+    });
 
     previousProgressRef.current = localProgress;
     previousRawProgressRef.current = rawProgress;
   });
 
-  return <group ref={groupRef}>{children}</group>;
+  return (
+    <group
+      ref={groupRef}
+      onPointerDown={(event) => {
+        if (!selectionEnabled) return;
+
+        event.stopPropagation();
+        onSelect(partId);
+      }}
+    >
+      {children}
+      {selectionEnabled && selectedPartId === partId ? (
+        <pointLight
+          color="#67e8f9"
+          distance={1.8}
+          intensity={0.28}
+          position={[0, 0.25, 0]}
+        />
+      ) : null}
+    </group>
+  );
 }
 
-function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
+function SimplifiedCarProduct({
+  exploded,
+  selectedPartId,
+  onSelectPart,
+}: {
+  exploded: boolean;
+  selectedPartId: PartId | null;
+  onSelectPart: (partId: PartId) => void;
+}) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
 
@@ -267,11 +365,15 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
   return (
     <group ref={groupRef} scale={0.85}>
       <Part
+        partId="vehicle-body"
         basePosition={[0, 0, 0]}
         explodedPosition={[0, 0, 0]}
         selfRotationAmount={0}
         motionSeed={1}
         progressRef={progressRef}
+        selectedPartId={selectedPartId}
+        selectionEnabled={exploded}
+        onSelect={onSelectPart}
       >
         <mesh>
           <boxGeometry args={[3.2, 0.55, 1.35]} />
@@ -284,6 +386,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       </Part>
 
       <Part
+        partId="cabin-module"
         basePosition={[0.15, 0.55, 0]}
         midPosition={[0.15, 1.32, 0.08]}
         explodedPosition={[0.15, 1.86, 0.28]}
@@ -293,6 +396,9 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
         selfRotationAmount={0.55}
         motionSeed={2}
         progressRef={progressRef}
+        selectedPartId={selectedPartId}
+        selectionEnabled={exploded}
+        onSelect={onSelectPart}
       >
         <mesh>
           <boxGeometry args={[1.35, 0.65, 1.05]} />
@@ -307,6 +413,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       </Part>
 
       <Part
+        partId="front-module"
         basePosition={[1.75, 0.05, 0]}
         midPosition={[2.58, 0.42, 0.12]}
         explodedPosition={[3.42, 0.3, 0.16]}
@@ -316,6 +423,9 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
         selfRotationAmount={0.62}
         motionSeed={3}
         progressRef={progressRef}
+        selectedPartId={selectedPartId}
+        selectionEnabled={exploded}
+        onSelect={onSelectPart}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -328,6 +438,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       </Part>
 
       <Part
+        partId="rear-module"
         basePosition={[-1.75, 0.05, 0]}
         midPosition={[-2.58, 0.42, -0.12]}
         explodedPosition={[-3.42, 0.3, -0.16]}
@@ -337,6 +448,9 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
         selfRotationAmount={0.62}
         motionSeed={4}
         progressRef={progressRef}
+        selectedPartId={selectedPartId}
+        selectionEnabled={exploded}
+        onSelect={onSelectPart}
       >
         <mesh>
           <boxGeometry args={[0.35, 0.35, 1.2]} />
@@ -349,6 +463,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       </Part>
 
       <Part
+        partId="battery-plate"
         basePosition={[0, -0.38, 0]}
         midPosition={[0, -0.86, 0]}
         explodedPosition={[0, -1.56, 0]}
@@ -358,6 +473,9 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
         selfRotationAmount={0.45}
         motionSeed={5}
         progressRef={progressRef}
+        selectedPartId={selectedPartId}
+        selectionEnabled={exploded}
+        onSelect={onSelectPart}
       >
         <mesh>
           <boxGeometry args={[2.2, 0.16, 1.05]} />
@@ -397,6 +515,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       ].map((wheel, index) => (
         <Part
           key={index}
+          partId="wheel-module"
           basePosition={wheel.base as [number, number, number]}
           midPosition={wheel.mid as [number, number, number]}
           explodedPosition={wheel.exploded as [number, number, number]}
@@ -407,6 +526,9 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
           selfRotationAmount={0.48}
           motionSeed={index + 6}
           progressRef={progressRef}
+          selectedPartId={selectedPartId}
+          selectionEnabled={exploded}
+          onSelect={onSelectPart}
         >
           <mesh>
             <cylinderGeometry args={[0.34, 0.34, 0.22, 32]} />
@@ -461,6 +583,8 @@ function AmbientParticles() {
 
 export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
+  const [selectedPartId, setSelectedPartId] = useState<PartId | null>(null);
+  const selectedPart = selectedPartId ? PART_INFO[selectedPartId] : null;
 
   return (
     <div className="absolute inset-0">
@@ -472,13 +596,43 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={2} color="#38bdf8" />
 
         <AmbientParticles />
-        <SimplifiedCarProduct exploded={exploded} />
+        <SimplifiedCarProduct
+          exploded={exploded}
+          selectedPartId={selectedPartId}
+          onSelectPart={setSelectedPartId}
+        />
 
         <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
 
+      <div
+        className={`pointer-events-none absolute left-6 top-6 w-[min(22rem,calc(100vw-3rem))] border border-cyan-200/20 bg-slate-950/45 p-5 text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition duration-500 ${
+          exploded && selectedPart
+            ? "translate-y-0 opacity-100"
+            : "-translate-y-2 opacity-0"
+        }`}
+      >
+        <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-cyan-200/60">
+          COMPONENT
+        </p>
+        <h2 className="text-lg font-light tracking-[0.14em]">
+          {selectedPart?.name}
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-cyan-50/65">
+          {selectedPart?.description}
+        </p>
+      </div>
+
       <button
-        onClick={() => setExploded((value) => !value)}
+        onClick={() =>
+          setExploded((value) => {
+            if (value) {
+              setSelectedPartId(null);
+            }
+
+            return !value;
+          })
+        }
         className="absolute bottom-8 left-1/2 -translate-x-1/2 rounded-full border border-cyan-300/40 bg-cyan-300/10 px-6 py-3 text-sm tracking-[0.25em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-300/20"
       >
         {exploded ? "ASSEMBLE" : "EXPLODE"}
