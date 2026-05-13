@@ -40,27 +40,80 @@ function Part({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
+  const previousProgressRef = useRef(0);
+  const dockedRef = useRef(true);
+  const dockPhaseRef = useRef<number | null>(null);
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
+    const travel = new THREE.Vector3(
+      basePosition[0] - explodedPosition[0],
+      basePosition[1] - explodedPosition[1],
+      basePosition[2] - explodedPosition[2]
+    );
+    const travelDistance = travel.length();
 
     return {
       floatSpeed: 0.55 + (motionSeed % 5) * 0.08,
       floatAmount: 0.035 + (motionSeed % 4) * 0.007,
       driftAmount: 0.018 + (motionSeed % 3) * 0.006,
+      dockAmplitude:
+        travelDistance > 0.001
+          ? Math.min(travelDistance * 0.045, 0.07) *
+            (0.86 + (motionSeed % 3) * 0.08)
+          : 0,
+      dockDirection:
+        travelDistance > 0.001 ? travel.normalize() : new THREE.Vector3(),
+      dockRotation: new THREE.Vector3(
+        direction * (0.012 + (motionSeed % 3) * 0.004),
+        -direction * (0.018 + (motionSeed % 4) * 0.004),
+        direction * (0.01 + (motionSeed % 5) * 0.003)
+      ),
       rotationSpeed: new THREE.Vector3(
         direction * (0.08 + (motionSeed % 3) * 0.018),
         -direction * (0.11 + (motionSeed % 4) * 0.016),
         direction * (0.06 + (motionSeed % 5) * 0.012)
       ),
     };
-  }, [motionSeed]);
+  }, [basePosition, explodedPosition, motionSeed]);
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
 
     const t = clock.getElapsedTime();
-    const p = smoothStep(progressRef.current);
+    const rawProgress = progressRef.current;
+    const previousProgress = previousProgressRef.current;
+    const assembling = rawProgress < previousProgress;
+    const p = smoothStep(rawProgress);
     const floatPhase = t * motion.floatSpeed + motionSeed;
+    const dockThreshold = 0.045;
+
+    if (!assembling && rawProgress > dockThreshold * 2) {
+      dockedRef.current = false;
+      dockPhaseRef.current = null;
+    }
+
+    if (
+      assembling &&
+      !dockedRef.current &&
+      previousProgress > dockThreshold &&
+      rawProgress <= dockThreshold
+    ) {
+      dockedRef.current = true;
+      dockPhaseRef.current = 0;
+    }
+
+    let dockPulse = 0;
+
+    if (dockPhaseRef.current !== null) {
+      dockPhaseRef.current += delta;
+      dockPulse =
+        Math.sin(dockPhaseRef.current * 15) *
+        Math.exp(-dockPhaseRef.current * 5.2);
+
+      if (dockPhaseRef.current > 1.1) {
+        dockPhaseRef.current = null;
+      }
+    }
 
     selfRotationRef.current.x += delta * motion.rotationSpeed.x * p;
     selfRotationRef.current.y += delta * motion.rotationSpeed.y * p;
@@ -68,21 +121,29 @@ function Part({
 
     groupRef.current.position.set(
       THREE.MathUtils.lerp(basePosition[0], explodedPosition[0], p) +
-        Math.cos(floatPhase * 0.7) * motion.driftAmount * p,
+        Math.cos(floatPhase * 0.7) * motion.driftAmount * p +
+        motion.dockDirection.x * motion.dockAmplitude * dockPulse,
       THREE.MathUtils.lerp(basePosition[1], explodedPosition[1], p) +
-        Math.sin(floatPhase) * motion.floatAmount * p,
+        Math.sin(floatPhase) * motion.floatAmount * p +
+        motion.dockDirection.y * motion.dockAmplitude * dockPulse,
       THREE.MathUtils.lerp(basePosition[2], explodedPosition[2], p) +
-        Math.sin(floatPhase * 0.8) * motion.driftAmount * p
+        Math.sin(floatPhase * 0.8) * motion.driftAmount * p +
+        motion.dockDirection.z * motion.dockAmplitude * dockPulse
     );
 
     groupRef.current.rotation.set(
       THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], p) +
-        selfRotationRef.current.x * p,
+        selfRotationRef.current.x * p +
+        motion.dockRotation.x * dockPulse,
       THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], p) +
-        selfRotationRef.current.y * p,
+        selfRotationRef.current.y * p +
+        motion.dockRotation.y * dockPulse,
       THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], p) +
-        selfRotationRef.current.z * p
+        selfRotationRef.current.z * p +
+        motion.dockRotation.z * dockPulse
     );
+
+    previousProgressRef.current = rawProgress;
   });
 
   return <group ref={groupRef}>{children}</group>;
