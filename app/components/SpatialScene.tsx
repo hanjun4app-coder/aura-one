@@ -40,6 +40,16 @@ const CAROUSEL_PARTS = [
   },
 ] as const;
 
+const BURGER_INGREDIENTS = [
+  { name: "Bottom Bun", cal: "160 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche base, golden butter crust" },
+  { name: "Truffle Sauce", cal: "90 kcal", allergen: "Eggs, Mustard", flavor: "House truffle mayo with Dijon, earthy and tangy" },
+  { name: "Wagyu Patty", cal: "340 kcal", allergen: "None", flavor: "Flame-grilled premium wagyu, rich umami char" },
+  { name: "Aged Cheddar", cal: "110 kcal", allergen: "Dairy", flavor: "Two-year reserve, sharp and creamy" },
+  { name: "Tomato", cal: "10 kcal", allergen: "None", flavor: "Vine-ripened beefsteak, sweet and bright" },
+  { name: "Crisp Lettuce", cal: "5 kcal", allergen: "None", flavor: "Iceberg leaf, cool and fresh" },
+  { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
+] as const;
+
 const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
@@ -82,7 +92,8 @@ type GestureAction =
   | "ROTATE_INSPECT_LEFT"
   | "ROTATE_INSPECT_RIGHT"
   | "ROTATE_INSPECT_UP"
-  | "ROTATE_INSPECT_DOWN";
+  | "ROTATE_INSPECT_DOWN"
+  | "TOGGLE_BURGER_EXPLODE";
 
 type CameraGestureStatus =
   | "CAMERA OFF"
@@ -569,16 +580,183 @@ function Part({
   );
 }
 
+// Assembled Y positions match the stacked burger look; exploded positions give 0.65 spacing.
+const BURGER_ASSEMBLED_Y = [-0.40, -0.23, -0.13, -0.03, 0.04, 0.09, 0.22] as const;
+const BURGER_EXPLODED_Y  = [-1.95, -1.30, -0.65,  0.0,  0.65, 1.30, 1.95] as const;
+
+function BurgerExplodedView({ active }: { active: boolean }) {
+  const progressRef = useRef(0);
+  const g0 = useRef<THREE.Group>(null);
+  const g1 = useRef<THREE.Group>(null);
+  const g2 = useRef<THREE.Group>(null);
+  const g3 = useRef<THREE.Group>(null);
+  const g4 = useRef<THREE.Group>(null);
+  const g5 = useRef<THREE.Group>(null);
+  const g6 = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }, delta) => {
+    progressRef.current = THREE.MathUtils.lerp(
+      progressRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 2.0)
+    );
+    const p = smoothStep(progressRef.current);
+    const t = clock.getElapsedTime();
+
+    const yFor = (assembled: number, exploded: number, i: number) =>
+      THREE.MathUtils.lerp(assembled, exploded, p) +
+      Math.sin(t * 0.38 + i * 0.72) * 0.018 * p;
+
+    if (g0.current) g0.current.position.y = yFor(BURGER_ASSEMBLED_Y[0], BURGER_EXPLODED_Y[0], 0);
+    if (g1.current) g1.current.position.y = yFor(BURGER_ASSEMBLED_Y[1], BURGER_EXPLODED_Y[1], 1);
+    if (g2.current) g2.current.position.y = yFor(BURGER_ASSEMBLED_Y[2], BURGER_EXPLODED_Y[2], 2);
+    if (g3.current) g3.current.position.y = yFor(BURGER_ASSEMBLED_Y[3], BURGER_EXPLODED_Y[3], 3);
+    if (g4.current) g4.current.position.y = yFor(BURGER_ASSEMBLED_Y[4], BURGER_EXPLODED_Y[4], 4);
+    if (g5.current) g5.current.position.y = yFor(BURGER_ASSEMBLED_Y[5], BURGER_EXPLODED_Y[5], 5);
+    if (g6.current) g6.current.position.y = yFor(BURGER_ASSEMBLED_Y[6], BURGER_EXPLODED_Y[6], 6);
+  });
+
+  return (
+    <>
+      {/* Layer 0 — Bottom Bun */}
+      <group ref={g0}>
+        <mesh>
+          <cylinderGeometry args={[0.42, 0.44, 0.18, 28]} />
+          <meshStandardMaterial color="#c87941" metalness={0.06} roughness={0.80} />
+        </mesh>
+        <mesh position={[0, -0.10, 0]}>
+          <cylinderGeometry args={[0.44, 0.44, 0.04, 28]} />
+          <meshStandardMaterial color="#a86030" metalness={0.05} roughness={0.86} />
+        </mesh>
+        <mesh position={[0, -0.10, 0]}>
+          <torusGeometry args={[0.46, 0.008, 8, 40]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.5} roughness={0.1} />
+        </mesh>
+      </group>
+
+      {/* Layer 1 — Truffle Sauce */}
+      <group ref={g1}>
+        <mesh>
+          <cylinderGeometry args={[0.38, 0.39, 0.07, 24]} />
+          <meshStandardMaterial color="#d4b050" metalness={0.05} roughness={0.74} />
+        </mesh>
+        <mesh position={[0, -0.03, 0]}>
+          <cylinderGeometry args={[0.41, 0.41, 0.02, 24]} />
+          <meshStandardMaterial color="#e0c060" metalness={0.04} roughness={0.78} />
+        </mesh>
+      </group>
+
+      {/* Layer 2 — Wagyu Patty */}
+      <group ref={g2}>
+        <mesh>
+          <cylinderGeometry args={[0.40, 0.42, 0.20, 24]} />
+          <meshStandardMaterial color="#2e1208" metalness={0.10} roughness={0.88} />
+        </mesh>
+        <mesh position={[0, 0.09, 0]}>
+          <cylinderGeometry args={[0.40, 0.40, 0.025, 24]} />
+          <meshStandardMaterial color="#180804" metalness={0.08} roughness={0.92} />
+        </mesh>
+        {([0, 1, 2] as const).map((i) => (
+          <mesh key={i} position={[(i - 1) * 0.14, 0.10, 0]} rotation={[0, 0, 0.08]}>
+            <boxGeometry args={[0.038, 0.012, 0.72]} />
+            <meshStandardMaterial color="#0c0604" metalness={0.1} roughness={0.94} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Layer 3 — Aged Cheddar */}
+      <group ref={g3}>
+        <mesh>
+          <boxGeometry args={[0.76, 0.055, 0.76]} />
+          <meshStandardMaterial color="#f4b428" metalness={0.06} roughness={0.64} />
+        </mesh>
+        <mesh position={[0.37, -0.024, 0]}>
+          <boxGeometry args={[0.04, 0.055, 0.72]} />
+          <meshStandardMaterial color="#e8a820" metalness={0.05} roughness={0.70} />
+        </mesh>
+        <mesh position={[-0.37, -0.024, 0]}>
+          <boxGeometry args={[0.04, 0.055, 0.72]} />
+          <meshStandardMaterial color="#e8a820" metalness={0.05} roughness={0.70} />
+        </mesh>
+      </group>
+
+      {/* Layer 4 — Tomato */}
+      <group ref={g4}>
+        <mesh>
+          <cylinderGeometry args={[0.37, 0.38, 0.08, 24]} />
+          <meshStandardMaterial color="#c83428" metalness={0.08} roughness={0.70} />
+        </mesh>
+        {([0, 1, 2, 3, 4, 5] as const).map((i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((i / 6) * Math.PI * 2) * 0.18,
+              0.038,
+              Math.sin((i / 6) * Math.PI * 2) * 0.18,
+            ]}
+          >
+            <sphereGeometry args={[0.030, 6, 5]} />
+            <meshStandardMaterial color="#f8d0c0" metalness={0.04} roughness={0.82} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Layer 5 — Crisp Lettuce */}
+      <group ref={g5}>
+        <mesh>
+          <cylinderGeometry args={[0.46, 0.46, 0.046, 24]} />
+          <meshStandardMaterial color="#4a8c3a" metalness={0.04} roughness={0.88} />
+        </mesh>
+        <mesh position={[0, 0.018, 0]}>
+          <cylinderGeometry args={[0.36, 0.36, 0.02, 24]} />
+          <meshStandardMaterial color="#6ab050" metalness={0.04} roughness={0.86} />
+        </mesh>
+        <mesh>
+          <torusGeometry args={[0.44, 0.022, 8, 32]} />
+          <meshStandardMaterial color="#3a7230" metalness={0.04} roughness={0.90} />
+        </mesh>
+      </group>
+
+      {/* Layer 6 — Top Bun */}
+      <group ref={g6}>
+        <mesh position={[0, -0.07, 0]}>
+          <cylinderGeometry args={[0.40, 0.43, 0.20, 28]} />
+          <meshStandardMaterial color="#d4874a" metalness={0.06} roughness={0.78} />
+        </mesh>
+        <mesh position={[0, 0.07, 0]}>
+          <sphereGeometry args={[0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.80} />
+        </mesh>
+        {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
+              0.15,
+              Math.sin((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
+            ]}
+          >
+            <sphereGeometry args={[0.022, 6, 5]} />
+            <meshStandardMaterial color="#f0e8c8" metalness={0.06} roughness={0.70} />
+          </mesh>
+        ))}
+      </group>
+    </>
+  );
+}
+
 function SpatialMenuCarousel({
   exploded,
   activePartIndex,
   inspectMode,
   inspectRotationRef,
+  burgerExploded,
 }: {
   exploded: boolean;
   activePartIndex: number;
   inspectMode: boolean;
   inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
+  burgerExploded: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
@@ -619,65 +797,7 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.12}
         motionSeed={1}
       >
-        {/* Bottom bun */}
-        <mesh position={[0, -0.44, 0]}>
-          <cylinderGeometry args={[0.42, 0.44, 0.18, 28]} />
-          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.82} />
-        </mesh>
-        {/* Patty */}
-        <mesh position={[0, -0.28, 0]}>
-          <cylinderGeometry args={[0.39, 0.41, 0.1, 24]} />
-          <meshStandardMaterial color="#4a2410" metalness={0.08} roughness={0.88} />
-        </mesh>
-        {/* Sauce disc */}
-        <mesh position={[0, -0.21, 0]}>
-          <cylinderGeometry args={[0.38, 0.38, 0.03, 24]} />
-          <meshStandardMaterial color="#e8c060" metalness={0.04} roughness={0.76} />
-        </mesh>
-        {/* Cheese slice */}
-        <mesh position={[0, -0.17, 0]}>
-          <boxGeometry args={[0.72, 0.04, 0.72]} />
-          <meshStandardMaterial color="#f0b030" metalness={0.04} roughness={0.7} />
-        </mesh>
-        {/* Second patty */}
-        <mesh position={[0, -0.1, 0]}>
-          <cylinderGeometry args={[0.38, 0.4, 0.1, 24]} />
-          <meshStandardMaterial color="#3d1e0c" metalness={0.08} roughness={0.88} />
-        </mesh>
-        {/* Lettuce disc */}
-        <mesh position={[0, -0.02, 0]}>
-          <cylinderGeometry args={[0.44, 0.44, 0.04, 24]} />
-          <meshStandardMaterial color="#4a8c3a" metalness={0.04} roughness={0.9} />
-        </mesh>
-        {/* Top bun body */}
-        <mesh position={[0, 0.14, 0]}>
-          <cylinderGeometry args={[0.4, 0.43, 0.2, 28]} />
-          <meshStandardMaterial color="#d4874a" metalness={0.05} roughness={0.78} />
-        </mesh>
-        {/* Top bun dome */}
-        <mesh position={[0, 0.28, 0]}>
-          <sphereGeometry args={[0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
-          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.8} />
-        </mesh>
-        {/* 8 sesame seeds */}
-        {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
-          <mesh
-            key={i}
-            position={[
-              Math.cos((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
-              0.36,
-              Math.sin((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
-            ]}
-          >
-            <sphereGeometry args={[0.022, 6, 5]} />
-            <meshStandardMaterial color="#f0e8c8" metalness={0.06} roughness={0.7} />
-          </mesh>
-        ))}
-        {/* Cyan brand accent ring */}
-        <mesh position={[0, -0.44, 0]}>
-          <torusGeometry args={[0.46, 0.008, 8, 40]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.5} roughness={0.1} />
-        </mesh>
+        <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
       </Part>
 
       {/* ── Item 1: Crispy Chicken Combo ── */}
@@ -1457,6 +1577,7 @@ export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [inspectMode, setInspectMode] = useState(false);
+  const [burgerExploded, setBurgerExploded] = useState(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [introFading, setIntroFading] = useState(false);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
@@ -1465,10 +1586,13 @@ export default function SpatialScene() {
   const hudPositionClass = hudOnRight
     ? "right-4 bottom-36 md:right-10 md:bottom-32"
     : "left-4 bottom-36 md:left-10 md:bottom-32";
+  const burgerInspectActive = inspectMode && activePartIndex === 0;
   const gestureHint = !exploded
     ? "SPACE — BROWSE MENU"
     : inspectMode
-      ? "WASD ROTATE • ESC EXIT • R RESET"
+      ? burgerInspectActive
+        ? "WASD ROTATE • ESC BACK • E LAYERS"
+        : "WASD ROTATE • ESC BACK • R RESET"
       : "← → BROWSE • ENTER VIEW ITEM • ESC BACK";
 
   useEffect(() => {
@@ -1509,6 +1633,7 @@ export default function SpatialScene() {
 
     if (action === "ASSEMBLE") {
       resetInspectRotation();
+      setBurgerExploded(false);
       setInspectMode(false);
       setExploded(false);
       return;
@@ -1518,6 +1643,7 @@ export default function SpatialScene() {
       setExploded((value) => {
         if (value) {
           resetInspectRotation();
+          setBurgerExploded(false);
           setInspectMode(false);
         }
 
@@ -1528,6 +1654,7 @@ export default function SpatialScene() {
 
     if (action === "RESET") {
       resetInspectRotation();
+      setBurgerExploded(false);
 
       if (!inspectMode) {
         setExploded(false);
@@ -1540,6 +1667,7 @@ export default function SpatialScene() {
       resetInspectRotation();
 
       if (inspectMode) {
+        setBurgerExploded(false);
         setInspectMode(false);
       } else if (exploded) {
         setExploded(false);
@@ -1556,13 +1684,29 @@ export default function SpatialScene() {
       return;
     }
 
+    if (action === "TOGGLE_BURGER_EXPLODE") {
+      if (inspectMode && activePartIndex === 0) {
+        setBurgerExploded((v) => !v);
+      }
+
+      return;
+    }
+
     if (action === "PREV_PART") {
-      if (exploded) showPreviousPart();
+      if (exploded) {
+        setBurgerExploded(false);
+        showPreviousPart();
+      }
+
       return;
     }
 
     if (action === "NEXT_PART") {
-      if (exploded) showNextPart();
+      if (exploded) {
+        setBurgerExploded(false);
+        showNextPart();
+      }
+
       return;
     }
 
@@ -1583,7 +1727,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_DOWN") {
       inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
     }
-  }, [exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1604,6 +1748,8 @@ export default function SpatialScene() {
         S: "ROTATE_INSPECT_DOWN",
         r: "RESET",
         R: "RESET",
+        e: "TOGGLE_BURGER_EXPLODE",
+        E: "TOGGLE_BURGER_EXPLODE",
         " ": "TOGGLE_EXPLODE",
       };
       const action = actionMap[event.key];
@@ -1654,6 +1800,7 @@ export default function SpatialScene() {
           activePartIndex={activePartIndex}
           inspectMode={inspectMode}
           inspectRotationRef={inspectRotationRef}
+          burgerExploded={burgerExploded}
         />
 
         <OrbitControls enableZoom={false} enablePan={false} />
@@ -1684,6 +1831,39 @@ export default function SpatialScene() {
         ) : null}
       </div>
 
+      {/* Ingredient HUD — appears only when burger layers are exploded in inspect mode */}
+      <div
+        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-cyan-200/18 bg-slate-950/52 p-4 text-cyan-50 shadow-xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
+          burgerExploded && inspectMode && activePartIndex === 0
+            ? "opacity-100"
+            : "pointer-events-none opacity-0"
+        }`}
+      >
+        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-cyan-200/55">
+          INGREDIENTS
+        </p>
+        <ul className="space-y-2.5">
+          {BURGER_INGREDIENTS.map((ingredient) => (
+            <li key={ingredient.name} className="border-b border-cyan-200/8 pb-2 last:border-0 last:pb-0">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-[0.75rem] font-light tracking-[0.1em] text-cyan-50">
+                  {ingredient.name}
+                </span>
+                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-cyan-200/45">
+                  {ingredient.cal}
+                </span>
+              </div>
+              <p className="mt-0.5 text-[0.6rem] leading-4 text-cyan-50/50">
+                {ingredient.flavor}
+              </p>
+              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-cyan-200/35">
+                {ingredient.allergen !== "None" ? `Allergens: ${ingredient.allergen}` : ""}
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
+
       <div className="pointer-events-none absolute bottom-4 right-4 max-w-[18rem] border border-cyan-200/15 bg-slate-950/35 px-3 py-2 text-right text-[0.6rem] tracking-[0.2em] text-cyan-100/52 backdrop-blur-md md:right-6">
         {gestureHint}
       </div>
@@ -1711,6 +1891,14 @@ export default function SpatialScene() {
         >
           {inspectMode ? "BACK" : "VIEW ITEM"}
         </button>
+        {burgerInspectActive && (
+          <button
+            onClick={() => applyGestureAction("TOGGLE_BURGER_EXPLODE")}
+            className="rounded-full border border-amber-300/35 bg-amber-300/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-100 backdrop-blur-md transition hover:bg-amber-300/20"
+          >
+            {burgerExploded ? "ASSEMBLE" : "EXPLODE LAYERS"}
+          </button>
+        )}
       </div>
 
       <button
