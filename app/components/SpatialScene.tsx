@@ -62,14 +62,13 @@ const HAND_LANDMARKER_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 // Swipe detection tuning — all distances are normalized palm-X (0.0–1.0).
-const SWIPE_WINDOW_MS = 400;         // rolling sample buffer (shorter = less drift accumulation)
-const SWIPE_COOLDOWN_MS = 900;       // all swipes blocked immediately after firing
-const OPPOSITE_LOCK_MS = 1200;       // extra block for the return direction specifically
-const NEUTRAL_HOLD_MS = 200;         // ms of low-velocity required to confirm settled hand
-const MIN_SWIPE_DISTANCE = 0.18;     // minimum palm-X displacement
-const MIN_SWIPE_VELOCITY = 0.00048;  // palm-X per ms (~0.48 normalized units/s) — rejects slow drift
-const NEUTRAL_VELOCITY_MAX = 0.00040; // palm-X per ms below which hand is considered still
-const FORCE_UNLOCK_AFTER_MS = 2000;  // absolute max lock — bypasses neutral gate if hand just stays still
+const SWIPE_WINDOW_MS = 350;              // rolling sample buffer
+const SWIPE_COOLDOWN_MS = 600;            // hard block after any swipe fires
+const OPPOSITE_LOCK_MS = 900;             // opposite direction requires elevated thresholds within this window
+const MIN_SWIPE_DISTANCE = 0.17;          // minimum palm-X displacement for a same/unlocked direction
+const MIN_SWIPE_VELOCITY = 0.00042;       // palm-X per ms — rejects slow drift
+const OPPOSITE_DISTANCE_MULT = 1.55;      // extra distance required for opposite swipe within OPPOSITE_LOCK_MS
+const OPPOSITE_VELOCITY_MULT = 1.45;      // extra velocity required for opposite swipe within OPPOSITE_LOCK_MS
 
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
@@ -107,14 +106,11 @@ type CameraGestureStatus =
   | "FALLBACK CPU"
   | "HAND TRACKING READY"
   | "CAMERA READY"
-  | "HAND DETECTED"
+  | "READY"
   | "SWIPE LEFT"
   | "SWIPE RIGHT"
-  | "SWIPE LEFT LOCKED"
-  | "SWIPE RIGHT LOCKED"
-  | "WAITING FOR NEUTRAL"
-  | "READY FOR NEXT SWIPE"
-  | "FORCE UNLOCKED"
+  | "COOLDOWN"
+  | "OPPOSITE LOCK"
   | "CAMERA ERROR";
 
 type CameraDebugStep =
@@ -987,8 +983,6 @@ function CameraGestureLayer({
   const lastDetectionAtRef = useRef(0);
   const lastSwipeDirectionRef = useRef<"left" | "right" | null>(null);
   const lastSwipeTimeRef = useRef(0);
-  const isNeutralRef = useRef(false);
-  const neutralEntryTimeRef = useRef<number | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -1030,8 +1024,6 @@ function CameraGestureLayer({
     samplesRef.current = [];
     lastSwipeDirectionRef.current = null;
     lastSwipeTimeRef.current = 0;
-    isNeutralRef.current = false;
-    neutralEntryTimeRef.current = null;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1054,8 +1046,6 @@ function CameraGestureLayer({
 
       if (!landmarks?.length) {
         samplesRef.current = [];
-        isNeutralRef.current = false;
-        neutralEntryTimeRef.current = null;
 
         if (now > statusHoldUntilRef.current) {
           updateStatus("CAMERA READY");
@@ -1075,72 +1065,27 @@ function CameraGestureLayer({
         { time: now, x: palmX },
       ];
 
-      // Velocity from last 200 ms — used for neutral detection and slow-drift rejection.
-      const velSamples = samplesRef.current.filter((s) => now - s.time <= 200);
-      const currentVelocity =
-        velSamples.length >= 2
-          ? Math.abs(palmX - velSamples[0].x) /
-            Math.max(now - velSamples[0].time, 1)
-          : 0;
-
-      // Neutral zone tracking — hand must stay below velocity threshold for NEUTRAL_HOLD_MS.
-      if (currentVelocity < NEUTRAL_VELOCITY_MAX) {
-        if (!isNeutralRef.current) {
-          isNeutralRef.current = true;
-          neutralEntryTimeRef.current = now;
-        }
-      } else {
-        isNeutralRef.current = false;
-        neutralEntryTimeRef.current = null;
-      }
-
-      const neutralHeld =
-        isNeutralRef.current &&
-        neutralEntryTimeRef.current !== null &&
-        now - neutralEntryTimeRef.current >= NEUTRAL_HOLD_MS;
-
       const lastDir = lastSwipeDirectionRef.current;
       const sinceLastSwipe = now - lastSwipeTimeRef.current;
       const inCooldown = lastDir !== null && sinceLastSwipe < SWIPE_COOLDOWN_MS;
+      const inOppositeLock =
+        lastDir !== null && sinceLastSwipe < OPPOSITE_LOCK_MS;
 
-      // Force-unlock: if neutral gate never resolved after max timeout, reset the direction lock.
-      const forceUnlock =
-        lastDir !== null &&
-        !inCooldown &&
-        !neutralHeld &&
-        sinceLastSwipe >= FORCE_UNLOCK_AFTER_MS;
-
-      if (forceUnlock) {
-        lastSwipeDirectionRef.current = null;
-        isNeutralRef.current = false;
-        neutralEntryTimeRef.current = null;
-        samplesRef.current = [];
-        updateStatus("FORCE UNLOCKED");
-        return;
-      }
-
-      // HUD status reflects the current lock phase.
+      // HUD status reflects the current gate phase.
       if (now > statusHoldUntilRef.current) {
         if (inCooldown) {
-          updateStatus(
-            lastDir === "right" ? "SWIPE RIGHT LOCKED" : "SWIPE LEFT LOCKED"
-          );
-        } else if (lastDir !== null && !neutralHeld) {
-          updateStatus("WAITING FOR NEUTRAL");
-        } else if (lastDir !== null && neutralHeld) {
-          updateStatus("READY FOR NEXT SWIPE");
+          updateStatus("COOLDOWN");
+        } else if (inOppositeLock) {
+          updateStatus("OPPOSITE LOCK");
         } else {
-          updateStatus("HAND DETECTED");
+          updateStatus("READY");
         }
       }
 
-      // Gate 1: general cooldown after any swipe.
+      // Gate 1: hard cooldown — no input at all.
       if (inCooldown) return;
 
-      // Gate 2: hand must have settled before allowing another swipe.
-      if (lastDir !== null && !neutralHeld) return;
-
-      // Need at least two samples and a minimum window duration.
+      // Need at least two samples spanning a minimum window.
       if (samplesRef.current.length < 2) return;
 
       const firstSample = samplesRef.current[0];
@@ -1148,27 +1093,30 @@ function CameraGestureLayer({
       const duration = now - firstSample.time;
 
       if (duration < 80) return;
-      if (Math.abs(movement) < MIN_SWIPE_DISTANCE) return;
+
+      const swipeDir: "left" | "right" = movement < 0 ? "left" : "right";
+      const isOpposite = lastDir !== null && swipeDir !== lastDir;
+
+      // Apply elevated thresholds for opposite-direction swipes within OPPOSITE_LOCK_MS.
+      const distThreshold = isOpposite && inOppositeLock
+        ? MIN_SWIPE_DISTANCE * OPPOSITE_DISTANCE_MULT
+        : MIN_SWIPE_DISTANCE;
+      const velThreshold = isOpposite && inOppositeLock
+        ? MIN_SWIPE_VELOCITY * OPPOSITE_VELOCITY_MULT
+        : MIN_SWIPE_VELOCITY;
+
+      if (Math.abs(movement) < distThreshold) return;
 
       const swipeVelocity = Math.abs(movement) / Math.max(duration, 1);
 
-      // Gate 3: slow drift (return swing) fails the velocity requirement.
-      if (swipeVelocity < MIN_SWIPE_VELOCITY) return;
-
-      const swipeDir: "left" | "right" = movement < 0 ? "left" : "right";
-
-      // Gate 4: opposite direction is locked for longer than the general cooldown.
-      if (lastDir !== null && swipeDir !== lastDir && sinceLastSwipe < OPPOSITE_LOCK_MS) {
-        return;
-      }
+      // Gate 2: velocity check (rejects slow drift and weak opposite returns).
+      if (swipeVelocity < velThreshold) return;
 
       // Commit the swipe.
       lastSwipeDirectionRef.current = swipeDir;
       lastSwipeTimeRef.current = now;
-      isNeutralRef.current = false;
-      neutralEntryTimeRef.current = null;
       samplesRef.current = [];
-      statusHoldUntilRef.current = now + 700;
+      statusHoldUntilRef.current = now + 600;
 
       if (swipeDir === "left") {
         updateStatus("SWIPE LEFT");
