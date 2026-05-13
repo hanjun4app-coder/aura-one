@@ -600,21 +600,21 @@ function SurgicalRobotProduct({
     const p = smoothStep(progressRef.current);
     const t = clock.getElapsedTime();
 
-    groupRef.current.rotation.y += delta * 0.13 * (1 - p);
-    groupRef.current.position.y = Math.sin(t * 0.52) * 0.038 * (1 - p);
+    groupRef.current.rotation.y += delta * 0.1 * (1 - p);
+    groupRef.current.position.y = Math.sin(t * 0.46) * 0.03 * (1 - p);
   });
 
   return (
-    <group ref={groupRef} scale={0.92}>
+    <group ref={groupRef} scale={0.9}>
 
-      {/* ── Part 0: Central AI Core ── */}
+      {/* ── Part 0: Central AI Core — tall precision column ── */}
       <Part
         partIndex={0}
-        basePosition={[0, 0.1, 0]}
-        explodedPosition={[0, 0.38, 0]}
+        basePosition={[0, 0.06, 0]}
+        explodedPosition={[0, 0.32, 0]}
         focusScale={1.18}
-        secondaryScale={0.62}
-        selfRotationAmount={0.14}
+        secondaryScale={0.64}
+        selfRotationAmount={0.1}
         motionSeed={1}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
@@ -623,45 +623,57 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Main body */}
-        <mesh>
-          <cylinderGeometry args={[0.35, 0.42, 1.08, 32]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.78} roughness={0.14} />
-        </mesh>
-        {/* Dome cap */}
-        <mesh position={[0, 0.6, 0]}>
-          <sphereGeometry args={[0.35, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color="#f0f9ff" metalness={0.82} roughness={0.1} />
-        </mesh>
-        {/* Upper accent ring */}
-        <mesh position={[0, 0.22, 0]}>
-          <torusGeometry args={[0.42, 0.022, 12, 48]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.55} metalness={0.6} roughness={0.1} />
-        </mesh>
-        {/* Lower accent ring */}
+        {/* Main lower column body — matte white ceramic */}
         <mesh position={[0, -0.28, 0]}>
-          <torusGeometry args={[0.43, 0.016, 12, 48]} />
-          <meshStandardMaterial color="#38bdf8" emissive="#38bdf8" emissiveIntensity={0.38} metalness={0.6} roughness={0.1} />
+          <cylinderGeometry args={[0.182, 0.212, 1.6, 32]} />
+          <meshStandardMaterial color="#F0F4F8" metalness={0.38} roughness={0.42} />
         </mesh>
-        {/* Inner luminous column */}
-        <mesh>
-          <cylinderGeometry args={[0.15, 0.15, 0.74, 24]} />
-          <meshStandardMaterial color="#bae6fd" emissive="#38bdf8" emissiveIntensity={0.28} metalness={0.2} roughness={0.3} transparent opacity={0.7} />
+        {/* Shoulder mount flare — slightly wider section where arms attach */}
+        <mesh position={[0, 0.24, 0]}>
+          <cylinderGeometry args={[0.268, 0.262, 0.09, 32]} />
+          <meshStandardMaterial color="#E2E8F0" metalness={0.52} roughness={0.3} />
+        </mesh>
+        {/* Upper column — tapers toward vision head */}
+        <mesh position={[0, 0.66, 0]}>
+          <cylinderGeometry args={[0.158, 0.182, 0.72, 28]} />
+          <meshStandardMaterial color="#F0F4F8" metalness={0.38} roughness={0.42} />
+        </mesh>
+        {/* Vision module neck transition */}
+        <mesh position={[0, 1.07, 0]}>
+          <cylinderGeometry args={[0.128, 0.158, 0.24, 24]} />
+          <meshStandardMaterial color="#E8EDF2" metalness={0.46} roughness={0.34} />
+        </mesh>
+        {/* Base pedestal stub — connects to stabilization base */}
+        <mesh position={[0, -1.04, 0]}>
+          <cylinderGeometry args={[0.218, 0.258, 0.14, 24]} />
+          <meshStandardMaterial color="#D0D8E4" metalness={0.62} roughness={0.24} />
+        </mesh>
+        {/* Shoulder status ring — single thin cyan line only */}
+        <mesh position={[0, 0.25, 0]}>
+          <torusGeometry args={[0.292, 0.01, 10, 48]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.7} metalness={0.5} roughness={0.1} />
+        </mesh>
+        {/* Panel seam rings — subtle surface language */}
+        <mesh position={[0, -0.5, 0]}>
+          <torusGeometry args={[0.202, 0.006, 8, 48]} />
+          <meshStandardMaterial color="#C8D4E0" metalness={0.7} roughness={0.22} />
+        </mesh>
+        <mesh position={[0, 0.48, 0]}>
+          <torusGeometry args={[0.178, 0.006, 8, 48]} />
+          <meshStandardMaterial color="#C8D4E0" metalness={0.7} roughness={0.22} />
         </mesh>
       </Part>
 
-      {/* ── Part 1: Robotic Arm ── */}
+      {/* ── Part 1: Robotic Arms — 4-arm precision cross array ── */}
       <Part
         partIndex={1}
-        basePosition={[0.95, 0.3, 0]}
-        midPosition={[1.82, 0.62, 0.18]}
-        explodedPosition={[2.95, 0.92, 0.32]}
-        focusScale={1.22}
+        basePosition={[0, 0.24, 0]}
+        explodedPosition={[0, 0.65, 0]}
+        focusScale={1.14}
         secondaryScale={0.6}
-        explodeDelay={0.02}
-        assembleDelay={0.05}
-        explodedRotation={[0, 0.18, 0]}
-        selfRotationAmount={0.44}
+        explodeDelay={0.022}
+        assembleDelay={0.042}
+        selfRotationAmount={0.15}
         motionSeed={2}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
@@ -670,47 +682,56 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Shoulder sphere */}
-        <mesh position={[0, 0.44, 0]}>
-          <sphereGeometry args={[0.2, 20, 14]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.88} roughness={0.1} />
-        </mesh>
-        {/* Upper arm */}
-        <mesh position={[0, 0.02, 0]}>
-          <cylinderGeometry args={[0.1, 0.13, 0.76, 20]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.82} roughness={0.15} />
-        </mesh>
-        {/* Elbow sphere */}
-        <mesh position={[0.12, -0.34, 0]}>
-          <sphereGeometry args={[0.155, 18, 12]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.88} roughness={0.1} />
-        </mesh>
-        {/* Lower arm — angled */}
-        <mesh position={[0.22, -0.64, 0]} rotation={[0, 0, -0.28]}>
-          <cylinderGeometry args={[0.078, 0.1, 0.58, 18]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.82} roughness={0.15} />
-        </mesh>
-        {/* Wrist accent ring */}
-        <mesh position={[0.32, -0.9, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <torusGeometry args={[0.11, 0.026, 10, 32]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.42} metalness={0.65} roughness={0.1} />
-        </mesh>
+        {/* 4 arms at 90° intervals — each a rotated group along +X */}
+        {([0, 1, 2, 3] as const).map((i) => (
+          <group key={i} rotation={[0, (i / 4) * Math.PI * 2, 0]}>
+            {/* Shoulder mount sphere — ball joint at column face */}
+            <mesh position={[0.27, 0, 0]}>
+              <sphereGeometry args={[0.07, 14, 10]} />
+              <meshStandardMaterial color="#E8EDF2" metalness={0.84} roughness={0.14} />
+            </mesh>
+            {/* Upper arm segment — brushed aluminum */}
+            <mesh position={[0.52, -0.09, 0]} rotation={[0, 0, -0.26]}>
+              <cylinderGeometry args={[0.038, 0.052, 0.52, 14]} />
+              <meshStandardMaterial color="#D0D8E4" metalness={0.8} roughness={0.2} />
+            </mesh>
+            {/* Elbow joint sphere */}
+            <mesh position={[0.8, -0.23, 0]}>
+              <sphereGeometry args={[0.058, 12, 10]} />
+              <meshStandardMaterial color="#E2E8F0" metalness={0.86} roughness={0.13} />
+            </mesh>
+            {/* Forearm segment — slimmer, more precise */}
+            <mesh position={[1.04, -0.42, 0]} rotation={[0, 0, -0.42]}>
+              <cylinderGeometry args={[0.026, 0.038, 0.5, 12]} />
+              <meshStandardMaterial color="#CBD5E1" metalness={0.82} roughness={0.18} />
+            </mesh>
+            {/* Wrist joint sphere */}
+            <mesh position={[1.23, -0.63, 0]}>
+              <sphereGeometry args={[0.044, 10, 8]} />
+              <meshStandardMaterial color="#E2E8F0" metalness={0.86} roughness={0.13} />
+            </mesh>
+            {/* Instrument shaft — precision thin */}
+            <mesh position={[1.4, -0.82, 0]} rotation={[0, 0, -0.56]}>
+              <cylinderGeometry args={[0.012, 0.018, 0.42, 10]} />
+              <meshStandardMaterial color="#F0F4F8" metalness={0.92} roughness={0.07} />
+            </mesh>
+          </group>
+        ))}
       </Part>
 
-      {/* ── Part 2: Vision Camera Module ── */}
+      {/* ── Part 2: Vision Camera Module — Vision Pro black-glass face ── */}
       <Part
         partIndex={2}
-        basePosition={[0.08, 0.9, 0.18]}
-        midPosition={[0.16, 1.74, 0.34]}
-        explodedPosition={[0.26, 2.7, 0.54]}
-        focusScale={1.26}
-        secondaryScale={0.6}
+        basePosition={[0, 1.16, 0.04]}
+        midPosition={[0.06, 2.05, 0.1]}
+        explodedPosition={[0.12, 2.82, 0.18]}
+        focusScale={1.28}
+        secondaryScale={0.64}
         explodeDelay={0.04}
-        assembleDelay={0.06}
-        explodedRotation={[0.1, 0.22, 0]}
-        selfRotationAmount={0.5}
+        assembleDelay={0.065}
+        explodedRotation={[0.08, 0.18, 0]}
+        selfRotationAmount={0.44}
         motionSeed={3}
-        meshOpacity={0.88}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -718,40 +739,50 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Outer dome */}
+        {/* White ceramic housing body */}
         <mesh>
-          <sphereGeometry args={[0.34, 32, 24]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#38bdf8" emissiveIntensity={0.18} metalness={0.35} roughness={0.08} transparent opacity={0.72} />
+          <cylinderGeometry args={[0.222, 0.222, 0.26, 32]} />
+          <meshStandardMaterial color="#F0F4F8" metalness={0.42} roughness={0.36} />
         </mesh>
-        {/* Lens core */}
-        <mesh position={[0, 0, 0.22]}>
-          <sphereGeometry args={[0.16, 24, 18]} />
-          <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.38} metalness={0.5} roughness={0.05} />
+        {/* Black glass front face — Vision Pro language */}
+        <mesh position={[0, 0, 0.19]}>
+          <cylinderGeometry args={[0.19, 0.19, 0.055, 32]} />
+          <meshStandardMaterial color="#06090f" metalness={0.94} roughness={0.04} />
         </mesh>
-        {/* Frame ring */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.35, 0.024, 10, 48]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.1} />
+        {/* Left stereo camera aperture */}
+        <mesh position={[-0.076, 0, 0.22]}>
+          <cylinderGeometry args={[0.04, 0.04, 0.036, 18]} />
+          <meshStandardMaterial color="#020408" metalness={0.96} roughness={0.02} />
         </mesh>
-        {/* Neck stub */}
-        <mesh position={[0, -0.38, 0]}>
-          <cylinderGeometry args={[0.1, 0.14, 0.2, 16]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.85} roughness={0.12} />
+        {/* Right stereo camera aperture */}
+        <mesh position={[0.076, 0, 0.22]}>
+          <cylinderGeometry args={[0.04, 0.04, 0.036, 18]} />
+          <meshStandardMaterial color="#020408" metalness={0.96} roughness={0.02} />
+        </mesh>
+        {/* Depth sensing ring — single restrained cyan line */}
+        <mesh position={[0, -0.11, 0]}>
+          <torusGeometry args={[0.228, 0.01, 8, 48]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.55} metalness={0.5} roughness={0.1} />
+        </mesh>
+        {/* Mount stub — connects to column neck */}
+        <mesh position={[0, -0.2, 0]}>
+          <cylinderGeometry args={[0.098, 0.138, 0.11, 18]} />
+          <meshStandardMaterial color="#D0D8E4" metalness={0.66} roughness={0.24} />
         </mesh>
       </Part>
 
-      {/* ── Part 3: Surgical Tool Tip ── */}
+      {/* ── Part 3: Surgical Tool Tip — precision instrument ── */}
       <Part
         partIndex={3}
-        basePosition={[1.08, -0.12, 0.38]}
-        midPosition={[1.9, -0.54, 0.7]}
-        explodedPosition={[2.82, -1.12, 1.02]}
-        focusScale={1.24}
-        secondaryScale={0.58}
+        basePosition={[1.14, -0.74, 0.38]}
+        midPosition={[1.95, -1.02, 0.72]}
+        explodedPosition={[2.88, -1.32, 1.08]}
+        focusScale={1.26}
+        secondaryScale={0.62}
         explodeDelay={0.055}
-        assembleDelay={0.035}
-        explodedRotation={[0.15, 0.22, 0.08]}
-        selfRotationAmount={0.58}
+        assembleDelay={0.038}
+        explodedRotation={[0.18, 0.28, 0.1]}
+        selfRotationAmount={0.5}
         motionSeed={4}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
@@ -760,40 +791,40 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Handle grip */}
-        <mesh position={[0, 0.36, 0]}>
-          <cylinderGeometry args={[0.08, 0.1, 0.54, 18]} />
-          <meshStandardMaterial color="#cbd5e1" metalness={0.8} roughness={0.2} />
+        {/* Handle grip — brushed aluminum */}
+        <mesh position={[0, 0.38, 0]}>
+          <cylinderGeometry args={[0.062, 0.078, 0.54, 18]} />
+          <meshStandardMaterial color="#CBD5E1" metalness={0.84} roughness={0.18} />
         </mesh>
-        {/* Collar ring */}
-        <mesh position={[0, 0.04, 0]}>
-          <cylinderGeometry args={[0.11, 0.11, 0.08, 18]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.48} metalness={0.7} roughness={0.1} />
+        {/* Interface collar — single cyan accent band */}
+        <mesh position={[0, 0.07, 0]}>
+          <cylinderGeometry args={[0.088, 0.088, 0.066, 18]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.65} roughness={0.1} />
         </mesh>
-        {/* Shaft */}
-        <mesh position={[0, -0.32, 0]}>
-          <cylinderGeometry args={[0.038, 0.068, 0.6, 16]} />
-          <meshStandardMaterial color="#f1f5f9" metalness={0.92} roughness={0.08} />
+        {/* Tapered precision shaft */}
+        <mesh position={[0, -0.3, 0]}>
+          <cylinderGeometry args={[0.02, 0.052, 0.64, 16]} />
+          <meshStandardMaterial color="#F0F4F8" metalness={0.92} roughness={0.08} />
         </mesh>
-        {/* Precision tip */}
-        <mesh position={[0, -0.7, 0]}>
-          <coneGeometry args={[0.038, 0.18, 16]} />
-          <meshStandardMaterial color="#f8fafc" metalness={0.95} roughness={0.05} />
+        {/* Precision tip — polished white */}
+        <mesh position={[0, -0.69, 0]}>
+          <coneGeometry args={[0.02, 0.14, 14]} />
+          <meshStandardMaterial color="#F8FAFC" metalness={0.96} roughness={0.04} />
         </mesh>
       </Part>
 
-      {/* ── Part 4: Stabilization Base ── */}
+      {/* ── Part 4: Stabilization Base — wide premium medical platform ── */}
       <Part
         partIndex={4}
-        basePosition={[0, -0.82, 0]}
-        midPosition={[0, -1.34, 0]}
-        explodedPosition={[0, -2.12, 0]}
-        focusScale={1.16}
-        secondaryScale={0.6}
-        explodeDelay={0.08}
-        assembleDelay={0.02}
-        explodedRotation={[0.06, 0, 0]}
-        selfRotationAmount={0.3}
+        basePosition={[0, -1.3, 0]}
+        midPosition={[0, -1.82, 0]}
+        explodedPosition={[0, -2.52, 0]}
+        focusScale={1.12}
+        secondaryScale={0.64}
+        explodeDelay={0.085}
+        assembleDelay={0.014}
+        explodedRotation={[0.04, 0, 0]}
+        selfRotationAmount={0.18}
         motionSeed={5}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
@@ -802,51 +833,60 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Main platform disc */}
+        {/* Main outer platform disc — dark gray composite */}
         <mesh>
-          <cylinderGeometry args={[0.95, 1.05, 0.14, 32]} />
-          <meshStandardMaterial color="#1e293b" metalness={0.65} roughness={0.25} />
+          <cylinderGeometry args={[1.65, 1.72, 0.1, 48]} />
+          <meshStandardMaterial color="#1a2230" metalness={0.64} roughness={0.32} />
         </mesh>
-        {/* Raised pedestal */}
-        <mesh position={[0, 0.13, 0]}>
-          <cylinderGeometry args={[0.44, 0.52, 0.12, 24]} />
-          <meshStandardMaterial color="#334155" metalness={0.7} roughness={0.2} />
+        {/* Tray rim bevel */}
+        <mesh position={[0, 0.07, 0]}>
+          <cylinderGeometry args={[1.54, 1.65, 0.04, 48]} />
+          <meshStandardMaterial color="#212d40" metalness={0.6} roughness={0.35} />
         </mesh>
-        {/* Anti-vibration ring */}
-        <mesh position={[0, 0.02, 0]}>
-          <torusGeometry args={[0.77, 0.03, 10, 48]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#67e8f9" emissiveIntensity={0.3} metalness={0.6} roughness={0.15} />
+        {/* Mid-tier riser disc */}
+        <mesh position={[0, 0.14, 0]}>
+          <cylinderGeometry args={[0.92, 1.02, 0.1, 36]} />
+          <meshStandardMaterial color="#1e293b" metalness={0.66} roughness={0.28} />
         </mesh>
-        {/* Four foot pads */}
-        {([0, 1, 2, 3] as const).map((i) => (
+        {/* Column mount center hub */}
+        <mesh position={[0, 0.24, 0]}>
+          <cylinderGeometry args={[0.3, 0.36, 0.14, 24]} />
+          <meshStandardMaterial color="#2d3a4e" metalness={0.72} roughness={0.22} />
+        </mesh>
+        {/* Anti-vibration ring — one restrained cyan line */}
+        <mesh position={[0, 0.07, 0]}>
+          <torusGeometry args={[1.3, 0.024, 10, 64]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.24} metalness={0.58} roughness={0.2} />
+        </mesh>
+        {/* 6 stabilizer foot pads */}
+        {([0, 1, 2, 3, 4, 5] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 4) * Math.PI * 2) * 0.82,
-              -0.12,
-              Math.sin((i / 4) * Math.PI * 2) * 0.82,
+              Math.cos((i / 6) * Math.PI * 2) * 1.52,
+              -0.08,
+              Math.sin((i / 6) * Math.PI * 2) * 1.52,
             ]}
           >
-            <cylinderGeometry args={[0.06, 0.08, 0.1, 10]} />
-            <meshStandardMaterial color="#0f172a" metalness={0.6} roughness={0.3} />
+            <cylinderGeometry args={[0.05, 0.065, 0.06, 10]} />
+            <meshStandardMaterial color="#0d1520" metalness={0.6} roughness={0.38} />
           </mesh>
         ))}
       </Part>
 
-      {/* ── Part 5: Sensor Ring ── */}
+      {/* ── Part 5: Sensor Ring — safety proximity array ── */}
       <Part
         partIndex={5}
-        basePosition={[0, 0.08, 0]}
-        midPosition={[0, -0.22, 0]}
-        explodedPosition={[0, -0.58, 0]}
+        basePosition={[0, -0.88, 0]}
+        midPosition={[0, -0.55, 0]}
+        explodedPosition={[0, -0.35, 0]}
         focusScale={1.2}
-        secondaryScale={0.58}
-        explodeDelay={0.065}
-        assembleDelay={0.045}
-        explodedRotation={[0.12, 0.35, 0]}
-        selfRotationAmount={0.54}
+        secondaryScale={0.62}
+        explodeDelay={0.068}
+        assembleDelay={0.05}
+        explodedRotation={[0.1, 0.3, 0]}
+        selfRotationAmount={0.46}
         motionSeed={6}
-        meshOpacity={0.86}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -854,28 +894,28 @@ function SurgicalRobotProduct({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
       >
-        {/* Primary sensor torus */}
+        {/* Outer structural band — brushed aluminum */}
         <mesh>
-          <torusGeometry args={[0.72, 0.058, 14, 64]} />
-          <meshStandardMaterial color="#67e8f9" emissive="#38bdf8" emissiveIntensity={0.24} metalness={0.45} roughness={0.1} transparent opacity={0.84} />
+          <torusGeometry args={[0.72, 0.05, 14, 72]} />
+          <meshStandardMaterial color="#D8E0EA" metalness={0.78} roughness={0.2} />
         </mesh>
-        {/* Structural spine ring */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.72, 0.02, 10, 64]} />
-          <meshStandardMaterial color="#e2e8f0" metalness={0.9} roughness={0.1} />
+        {/* Inner emissive fill — restrained cyan */}
+        <mesh>
+          <torusGeometry args={[0.72, 0.016, 10, 72]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.42} metalness={0.5} roughness={0.1} />
         </mesh>
-        {/* Eight sensor nodes */}
-        {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
+        {/* 12 sensor node blocks — evenly spaced */}
+        {([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 8) * Math.PI * 2) * 0.72,
+              Math.cos((i / 12) * Math.PI * 2) * 0.72,
               0,
-              Math.sin((i / 8) * Math.PI * 2) * 0.72,
+              Math.sin((i / 12) * Math.PI * 2) * 0.72,
             ]}
           >
-            <sphereGeometry args={[0.04, 10, 8]} />
-            <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.55} metalness={0.7} roughness={0.1} />
+            <boxGeometry args={[0.024, 0.024, 0.038]} />
+            <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.65} metalness={0.7} roughness={0.08} />
           </mesh>
         ))}
       </Part>
