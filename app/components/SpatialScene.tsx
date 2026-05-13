@@ -581,7 +581,7 @@ function Part({
 
 // Assembled Y positions match the stacked burger look; exploded positions give 0.65 spacing.
 const BURGER_ASSEMBLED_Y = [-0.40, -0.23, -0.13, -0.03, 0.04, 0.09, 0.22] as const;
-const BURGER_EXPLODED_Y  = [-1.95, -1.30, -0.65,  0.0,  0.65, 1.30, 1.95] as const;
+const BURGER_EXPLODED_Y  = [-1.20, -0.68, -0.32,  0.02, 0.36, 0.70, 1.20] as const;
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
@@ -604,7 +604,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
 
     const yFor = (assembled: number, exploded: number, i: number) =>
       THREE.MathUtils.lerp(assembled, exploded, p) +
-      Math.sin(t * 0.38 + i * 0.72) * 0.018 * p;
+      Math.sin(t * 0.38 + i * 0.72) * 0.010 * p;
 
     if (g0.current) g0.current.position.y = yFor(BURGER_ASSEMBLED_Y[0], BURGER_EXPLODED_Y[0], 0);
     if (g1.current) g1.current.position.y = yFor(BURGER_ASSEMBLED_Y[1], BURGER_EXPLODED_Y[1], 1);
