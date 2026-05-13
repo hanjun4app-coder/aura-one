@@ -464,8 +464,9 @@ function Part({
       1 - Math.exp(-delta * 6)
     );
     if (activeLightRef.current) {
+      // Warm overhead spotlight — selection presence without color distortion.
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 3.2 : 0.66);
+        highlightRef.current * (isInspectActive ? 1.1 : 0.22);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -554,10 +555,8 @@ function Part({
 
       if (!material || !("emissiveIntensity" in material)) return;
 
-      material.emissive.set("#67e8f9");
-      const emissiveBoost = isInspectActive ? 1.8 : 1;
-      material.emissiveIntensity =
-        highlightRef.current * emissiveBoost * (1 - dimRef.current * 0.85);
+      // Only manage dim/opacity — never override each material's own emissive color.
+      // Food surfaces keep their natural colors; only brand accent rings carry emissive.
       material.transparent = meshOpacity < 1 || dimRef.current > 0.005;
       material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.22, dimRef.current);
     });
@@ -571,10 +570,10 @@ function Part({
       {children}
       <pointLight
         ref={activeLightRef}
-        color="#67e8f9"
-        distance={2.4}
+        color="#fff4e0"
+        distance={3.2}
         intensity={0}
-        position={[0, 0.25, 0]}
+        position={[0, 1.1, 0.6]}
       />
     </group>
   );
@@ -1159,11 +1158,13 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 2.4;
+      // Soft warm key — food photography softbox from upper-left.
+      keyLightRef.current.intensity = blendRef.current * 1.6;
     }
 
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 1.6;
+      // Warm amber rim — separates food from background without cyan cast.
+      rimLightRef.current.intensity = blendRef.current * 0.7;
     }
   });
 
@@ -1171,15 +1172,15 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     <>
       <directionalLight
         ref={keyLightRef}
-        position={[-2.5, 4.5, 3.0]}
-        color="#ddeeff"
+        position={[-1.8, 5.5, 3.5]}
+        color="#fff8e8"
         intensity={0}
       />
       <pointLight
         ref={rimLightRef}
-        position={[4.0, 0.8, -0.8]}
-        color="#67e8f9"
-        distance={12}
+        position={[3.5, 1.8, -1.2]}
+        color="#ffe0a0"
+        distance={14}
         intensity={0}
       />
     </>
@@ -1788,9 +1789,9 @@ export default function SpatialScene() {
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
         <color attach="background" args={["#020617"]} />
 
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[4, 4, 4]} intensity={1.8} />
-        <pointLight position={[-4, -2, 3]} intensity={2} color="#38bdf8" />
+        <ambientLight intensity={0.52} color="#f8f4ee" />
+        <directionalLight position={[4, 5, 3]} intensity={1.4} color="#fff8f0" />
+        <pointLight position={[-4, -2, 3]} intensity={0.5} color="#c8d8ea" />
         <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
