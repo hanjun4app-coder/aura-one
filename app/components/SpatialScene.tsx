@@ -19,28 +19,24 @@ import type {
 
 const CAROUSEL_PARTS = [
   {
-    name: "Central AI Core",
-    description: "Real-time surgical intelligence and coordination module.",
+    name: "Signature Burger Combo",
+    description: "Double wagyu patty, truffle mayo, aged cheddar, brioche bun.",
   },
   {
-    name: "Robotic Arm",
-    description: "Precision robotic arm for stable surgical assistance.",
+    name: "Crispy Chicken Combo",
+    description: "Buttermilk fried chicken, slaw, sriracha honey glaze.",
   },
   {
-    name: "Vision Camera Module",
-    description: "High-resolution surgical vision and depth sensing system.",
+    name: "Classic Fries Set",
+    description: "Hand-cut golden fries with house seasoning and dipping sauce.",
   },
   {
-    name: "Surgical Tool Tip",
-    description: "Interchangeable precision tool interface.",
+    name: "Artisan Coffee Set",
+    description: "Single-origin espresso, oat milk foam, seasonal flavor notes.",
   },
   {
-    name: "Stabilization Base",
-    description: "Anti-vibration platform for stable operation.",
-  },
-  {
-    name: "Sensor Ring",
-    description: "Spatial awareness and patient-side safety sensor array.",
+    name: "Chef's Dessert Combo",
+    description: "Warm chocolate fondant with vanilla bean ice cream.",
   },
 ] as const;
 
@@ -478,11 +474,11 @@ function Part({
       pathPosition.z +
       Math.sin(floatPhase * 0.8) * motion.driftAmount * separatedProgress +
       motion.dockDirection.z * motion.dockAmplitude * dockPulse;
-    const neighborSpread = slotDistance === 1 ? 0.95 : slotDistance === 2 ? 0.4 : 0;
-    const neighborDepthOffset = slotDistance === 1 ? 0.62 : 0;
-    const carouselX = Math.sin(angle) * (4.25 + neighborSpread);
-    const carouselY = 0.24 + Math.sin(angle * 2) * 0.14 - side * 0.1;
-    const carouselZ = depth * 1.85 - side * 0.78 - neighborDepthOffset;
+    const neighborSpread = slotDistance === 1 ? 0.85 : slotDistance === 2 ? 0.35 : 0;
+    const neighborDepthOffset = slotDistance === 1 ? 0.55 : 0;
+    const carouselX = Math.sin(angle) * (3.8 + neighborSpread);
+    const carouselY = 0.1 - depth * 0.52;
+    const carouselZ = depth * 2.1 - side * 0.65 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     const inspectX = slot === 0 ? 0 : rearDirection * (4.2 + slotDistance * 0.85);
     const inspectY = slot === 0 ? 0.0 : -0.15 - slotDistance * 0.12;
@@ -573,7 +569,7 @@ function Part({
   );
 }
 
-function SurgicalRobotProduct({
+function SpatialMenuCarousel({
   exploded,
   activePartIndex,
   inspectMode,
@@ -592,7 +588,7 @@ function SurgicalRobotProduct({
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       exploded ? 1 : 0,
-      delta * 2.2
+      delta * 1.8
     );
 
     if (!groupRef.current) return;
@@ -600,324 +596,325 @@ function SurgicalRobotProduct({
     const p = smoothStep(progressRef.current);
     const t = clock.getElapsedTime();
 
-    groupRef.current.rotation.y += delta * 0.1 * (1 - p);
-    groupRef.current.position.y = Math.sin(t * 0.46) * 0.03 * (1 - p);
+    groupRef.current.rotation.y += delta * 0.08 * (1 - p);
+    groupRef.current.position.y = Math.sin(t * 0.38) * 0.025 * (1 - p);
   });
 
   return (
-    <group ref={groupRef} scale={0.9}>
+    <group ref={groupRef} scale={0.88}>
 
-      {/* ── Part 0: Central AI Core — tall precision column ── */}
+      {/* ── Item 0: Signature Burger Combo ── */}
       <Part
         partIndex={0}
-        basePosition={[0, 0.06, 0]}
-        explodedPosition={[0, 0.32, 0]}
-        focusScale={1.18}
-        secondaryScale={0.64}
-        selfRotationAmount={0.1}
-        motionSeed={1}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        explodedPosition={[0, 0.18, 0]}
+        focusScale={1.22}
+        secondaryScale={0.66}
+        selfRotationAmount={0.12}
+        motionSeed={1}
       >
-        {/* Main lower column body — matte white ceramic */}
+        {/* Bottom bun */}
+        <mesh position={[0, -0.44, 0]}>
+          <cylinderGeometry args={[0.42, 0.44, 0.18, 28]} />
+          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.82} />
+        </mesh>
+        {/* Patty */}
         <mesh position={[0, -0.28, 0]}>
-          <cylinderGeometry args={[0.182, 0.212, 1.6, 32]} />
-          <meshStandardMaterial color="#F0F4F8" metalness={0.38} roughness={0.42} />
+          <cylinderGeometry args={[0.39, 0.41, 0.1, 24]} />
+          <meshStandardMaterial color="#4a2410" metalness={0.08} roughness={0.88} />
         </mesh>
-        {/* Shoulder mount flare — slightly wider section where arms attach */}
-        <mesh position={[0, 0.24, 0]}>
-          <cylinderGeometry args={[0.268, 0.262, 0.09, 32]} />
-          <meshStandardMaterial color="#E2E8F0" metalness={0.52} roughness={0.3} />
+        {/* Sauce disc */}
+        <mesh position={[0, -0.21, 0]}>
+          <cylinderGeometry args={[0.38, 0.38, 0.03, 24]} />
+          <meshStandardMaterial color="#e8c060" metalness={0.04} roughness={0.76} />
         </mesh>
-        {/* Upper column — tapers toward vision head */}
-        <mesh position={[0, 0.66, 0]}>
-          <cylinderGeometry args={[0.158, 0.182, 0.72, 28]} />
-          <meshStandardMaterial color="#F0F4F8" metalness={0.38} roughness={0.42} />
+        {/* Cheese slice */}
+        <mesh position={[0, -0.17, 0]}>
+          <boxGeometry args={[0.72, 0.04, 0.72]} />
+          <meshStandardMaterial color="#f0b030" metalness={0.04} roughness={0.7} />
         </mesh>
-        {/* Vision module neck transition */}
-        <mesh position={[0, 1.07, 0]}>
-          <cylinderGeometry args={[0.128, 0.158, 0.24, 24]} />
-          <meshStandardMaterial color="#E8EDF2" metalness={0.46} roughness={0.34} />
+        {/* Second patty */}
+        <mesh position={[0, -0.1, 0]}>
+          <cylinderGeometry args={[0.38, 0.4, 0.1, 24]} />
+          <meshStandardMaterial color="#3d1e0c" metalness={0.08} roughness={0.88} />
         </mesh>
-        {/* Base pedestal stub — connects to stabilization base */}
-        <mesh position={[0, -1.04, 0]}>
-          <cylinderGeometry args={[0.218, 0.258, 0.14, 24]} />
-          <meshStandardMaterial color="#D0D8E4" metalness={0.62} roughness={0.24} />
+        {/* Lettuce disc */}
+        <mesh position={[0, -0.02, 0]}>
+          <cylinderGeometry args={[0.44, 0.44, 0.04, 24]} />
+          <meshStandardMaterial color="#4a8c3a" metalness={0.04} roughness={0.9} />
         </mesh>
-        {/* Shoulder status ring — single thin cyan line only */}
-        <mesh position={[0, 0.25, 0]}>
-          <torusGeometry args={[0.292, 0.01, 10, 48]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.7} metalness={0.5} roughness={0.1} />
+        {/* Top bun body */}
+        <mesh position={[0, 0.14, 0]}>
+          <cylinderGeometry args={[0.4, 0.43, 0.2, 28]} />
+          <meshStandardMaterial color="#d4874a" metalness={0.05} roughness={0.78} />
         </mesh>
-        {/* Panel seam rings — subtle surface language */}
-        <mesh position={[0, -0.5, 0]}>
-          <torusGeometry args={[0.202, 0.006, 8, 48]} />
-          <meshStandardMaterial color="#C8D4E0" metalness={0.7} roughness={0.22} />
+        {/* Top bun dome */}
+        <mesh position={[0, 0.28, 0]}>
+          <sphereGeometry args={[0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.8} />
         </mesh>
-        <mesh position={[0, 0.48, 0]}>
-          <torusGeometry args={[0.178, 0.006, 8, 48]} />
-          <meshStandardMaterial color="#C8D4E0" metalness={0.7} roughness={0.22} />
+        {/* 8 sesame seeds */}
+        {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
+          <mesh
+            key={i}
+            position={[
+              Math.cos((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
+              0.36,
+              Math.sin((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
+            ]}
+          >
+            <sphereGeometry args={[0.022, 6, 5]} />
+            <meshStandardMaterial color="#f0e8c8" metalness={0.06} roughness={0.7} />
+          </mesh>
+        ))}
+        {/* Cyan brand accent ring */}
+        <mesh position={[0, -0.44, 0]}>
+          <torusGeometry args={[0.46, 0.008, 8, 40]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.5} roughness={0.1} />
         </mesh>
       </Part>
 
-      {/* ── Part 1: Robotic Arms — 4-arm precision cross array ── */}
+      {/* ── Item 1: Crispy Chicken Combo ── */}
       <Part
         partIndex={1}
-        basePosition={[0, 0.24, 0]}
-        explodedPosition={[0, 0.65, 0]}
-        focusScale={1.14}
-        secondaryScale={0.6}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        explodedPosition={[0, 0.22, 0]}
+        focusScale={1.18}
+        secondaryScale={0.64}
         explodeDelay={0.022}
         assembleDelay={0.042}
-        selfRotationAmount={0.15}
+        selfRotationAmount={0.14}
         motionSeed={2}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
       >
-        {/* 4 arms at 90° intervals — each a rotated group along +X */}
-        {([0, 1, 2, 3] as const).map((i) => (
-          <group key={i} rotation={[0, (i / 4) * Math.PI * 2, 0]}>
-            {/* Shoulder mount sphere — ball joint at column face */}
-            <mesh position={[0.27, 0, 0]}>
-              <sphereGeometry args={[0.07, 14, 10]} />
-              <meshStandardMaterial color="#E8EDF2" metalness={0.84} roughness={0.14} />
-            </mesh>
-            {/* Upper arm segment — brushed aluminum */}
-            <mesh position={[0.52, -0.09, 0]} rotation={[0, 0, -0.26]}>
-              <cylinderGeometry args={[0.038, 0.052, 0.52, 14]} />
-              <meshStandardMaterial color="#D0D8E4" metalness={0.8} roughness={0.2} />
-            </mesh>
-            {/* Elbow joint sphere */}
-            <mesh position={[0.8, -0.23, 0]}>
-              <sphereGeometry args={[0.058, 12, 10]} />
-              <meshStandardMaterial color="#E2E8F0" metalness={0.86} roughness={0.13} />
-            </mesh>
-            {/* Forearm segment — slimmer, more precise */}
-            <mesh position={[1.04, -0.42, 0]} rotation={[0, 0, -0.42]}>
-              <cylinderGeometry args={[0.026, 0.038, 0.5, 12]} />
-              <meshStandardMaterial color="#CBD5E1" metalness={0.82} roughness={0.18} />
-            </mesh>
-            {/* Wrist joint sphere */}
-            <mesh position={[1.23, -0.63, 0]}>
-              <sphereGeometry args={[0.044, 10, 8]} />
-              <meshStandardMaterial color="#E2E8F0" metalness={0.86} roughness={0.13} />
-            </mesh>
-            {/* Instrument shaft — precision thin */}
-            <mesh position={[1.4, -0.82, 0]} rotation={[0, 0, -0.56]}>
-              <cylinderGeometry args={[0.012, 0.018, 0.42, 10]} />
-              <meshStandardMaterial color="#F0F4F8" metalness={0.92} roughness={0.07} />
-            </mesh>
-          </group>
-        ))}
-      </Part>
-
-      {/* ── Part 2: Vision Camera Module — Vision Pro black-glass face ── */}
-      <Part
-        partIndex={2}
-        basePosition={[0, 1.16, 0.04]}
-        midPosition={[0.06, 2.05, 0.1]}
-        explodedPosition={[0.12, 2.82, 0.18]}
-        focusScale={1.28}
-        secondaryScale={0.64}
-        explodeDelay={0.04}
-        assembleDelay={0.065}
-        explodedRotation={[0.08, 0.18, 0]}
-        selfRotationAmount={0.44}
-        motionSeed={3}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
-      >
-        {/* White ceramic housing body */}
-        <mesh>
-          <cylinderGeometry args={[0.222, 0.222, 0.26, 32]} />
-          <meshStandardMaterial color="#F0F4F8" metalness={0.42} roughness={0.36} />
+        {/* Serving box base */}
+        <mesh position={[0, -0.28, 0]}>
+          <boxGeometry args={[0.78, 0.52, 0.62]} />
+          <meshStandardMaterial color="#f5f0e8" metalness={0.06} roughness={0.72} />
         </mesh>
-        {/* Black glass front face — Vision Pro language */}
-        <mesh position={[0, 0, 0.19]}>
-          <cylinderGeometry args={[0.19, 0.19, 0.055, 32]} />
-          <meshStandardMaterial color="#06090f" metalness={0.94} roughness={0.04} />
+        {/* Box lid */}
+        <mesh position={[0, 0.02, 0]}>
+          <boxGeometry args={[0.8, 0.08, 0.64]} />
+          <meshStandardMaterial color="#e8e2d6" metalness={0.06} roughness={0.74} />
         </mesh>
-        {/* Left stereo camera aperture */}
-        <mesh position={[-0.076, 0, 0.22]}>
-          <cylinderGeometry args={[0.04, 0.04, 0.036, 18]} />
-          <meshStandardMaterial color="#020408" metalness={0.96} roughness={0.02} />
+        {/* Chicken piece 1 — main breast */}
+        <mesh position={[0, 0.14, 0.04]}>
+          <sphereGeometry args={[0.28, 16, 10]} />
+          <meshStandardMaterial color="#c8800a" metalness={0.06} roughness={0.84} />
         </mesh>
-        {/* Right stereo camera aperture */}
-        <mesh position={[0.076, 0, 0.22]}>
-          <cylinderGeometry args={[0.04, 0.04, 0.036, 18]} />
-          <meshStandardMaterial color="#020408" metalness={0.96} roughness={0.02} />
+        {/* Chicken piece 2 — offset chunk */}
+        <mesh position={[-0.18, 0.1, -0.08]} scale={[1, 0.82, 0.9]}>
+          <sphereGeometry args={[0.22, 14, 9]} />
+          <meshStandardMaterial color="#ae6408" metalness={0.06} roughness={0.86} />
         </mesh>
-        {/* Depth sensing ring — single restrained cyan line */}
-        <mesh position={[0, -0.11, 0]}>
-          <torusGeometry args={[0.228, 0.01, 8, 48]} />
+        {/* Chicken piece 3 — front bite */}
+        <mesh position={[0.16, 0.08, 0.1]} scale={[0.9, 0.78, 0.88]}>
+          <sphereGeometry args={[0.19, 12, 9]} />
+          <meshStandardMaterial color="#d8960e" metalness={0.05} roughness={0.82} />
+        </mesh>
+        {/* Slaw garnish disc */}
+        <mesh position={[0, 0.0, -0.14]}>
+          <cylinderGeometry args={[0.18, 0.18, 0.05, 16]} />
+          <meshStandardMaterial color="#d4e8c0" metalness={0.04} roughness={0.88} />
+        </mesh>
+        {/* Cyan brand stripe */}
+        <mesh position={[0, -0.02, 0.33]}>
+          <boxGeometry args={[0.78, 0.06, 0.01]} />
           <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.55} metalness={0.5} roughness={0.1} />
         </mesh>
-        {/* Mount stub — connects to column neck */}
-        <mesh position={[0, -0.2, 0]}>
-          <cylinderGeometry args={[0.098, 0.138, 0.11, 18]} />
-          <meshStandardMaterial color="#D0D8E4" metalness={0.66} roughness={0.24} />
+      </Part>
+
+      {/* ── Item 2: Classic Fries Set ── */}
+      <Part
+        partIndex={2}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        explodedPosition={[0, 0.15, 0]}
+        focusScale={1.2}
+        secondaryScale={0.64}
+        explodeDelay={0.04}
+        assembleDelay={0.06}
+        selfRotationAmount={0.16}
+        motionSeed={3}
+      >
+        {/* Red fry carton */}
+        <mesh position={[0, -0.12, 0]}>
+          <boxGeometry args={[0.52, 0.6, 0.38]} />
+          <meshStandardMaterial color="#c02820" metalness={0.08} roughness={0.64} />
+        </mesh>
+        {/* Carton top bevel */}
+        <mesh position={[0, 0.2, 0]}>
+          <boxGeometry args={[0.56, 0.06, 0.42]} />
+          <meshStandardMaterial color="#a82218" metalness={0.08} roughness={0.68} />
+        </mesh>
+        {/* 14 fry sticks via seeded positions */}
+        {([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] as const).map((i) => {
+          const offsetX = (seededUnit(i * 5) - 0.5) * 0.38;
+          const offsetZ = (seededUnit(i * 6) - 0.5) * 0.24;
+          const height = 0.52 + seededUnit(i * 7) * 0.28;
+          const tiltX = (seededUnit(i * 8) - 0.5) * 0.32;
+          const tiltZ = (seededUnit(i * 9) - 0.5) * 0.28;
+          return (
+            <mesh
+              key={i}
+              position={[offsetX, 0.26 + height * 0.5, offsetZ]}
+              rotation={[tiltX, 0, tiltZ]}
+            >
+              <cylinderGeometry args={[0.024, 0.026, height, 6]} />
+              <meshStandardMaterial color="#f0b42a" metalness={0.04} roughness={0.78} />
+            </mesh>
+          );
+        })}
+        {/* Logo badge on carton */}
+        <mesh position={[0, -0.08, 0.2]}>
+          <boxGeometry args={[0.32, 0.14, 0.01]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.45} metalness={0.5} roughness={0.12} />
         </mesh>
       </Part>
 
-      {/* ── Part 3: Surgical Tool Tip — precision instrument ── */}
+      {/* ── Item 3: Artisan Coffee Set ── */}
       <Part
         partIndex={3}
-        basePosition={[1.14, -0.74, 0.38]}
-        midPosition={[1.95, -1.02, 0.72]}
-        explodedPosition={[2.88, -1.32, 1.08]}
-        focusScale={1.26}
-        secondaryScale={0.62}
-        explodeDelay={0.055}
-        assembleDelay={0.038}
-        explodedRotation={[0.18, 0.28, 0.1]}
-        selfRotationAmount={0.5}
-        motionSeed={4}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        explodedPosition={[0, 0.2, 0]}
+        focusScale={1.18}
+        secondaryScale={0.66}
+        explodeDelay={0.055}
+        assembleDelay={0.04}
+        selfRotationAmount={0.18}
+        motionSeed={4}
       >
-        {/* Handle grip — brushed aluminum */}
-        <mesh position={[0, 0.38, 0]}>
-          <cylinderGeometry args={[0.062, 0.078, 0.54, 18]} />
-          <meshStandardMaterial color="#CBD5E1" metalness={0.84} roughness={0.18} />
+        {/* Saucer plate */}
+        <mesh position={[0, -0.5, 0]}>
+          <cylinderGeometry args={[0.46, 0.48, 0.04, 28]} />
+          <meshStandardMaterial color="#e8e0d8" metalness={0.12} roughness={0.58} />
         </mesh>
-        {/* Interface collar — single cyan accent band */}
-        <mesh position={[0, 0.07, 0]}>
-          <cylinderGeometry args={[0.088, 0.088, 0.066, 18]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.65} roughness={0.1} />
+        {/* Saucer rim */}
+        <mesh position={[0, -0.48, 0]}>
+          <torusGeometry args={[0.42, 0.022, 10, 40]} />
+          <meshStandardMaterial color="#d4ccc4" metalness={0.14} roughness={0.54} />
         </mesh>
-        {/* Tapered precision shaft */}
-        <mesh position={[0, -0.3, 0]}>
-          <cylinderGeometry args={[0.02, 0.052, 0.64, 16]} />
-          <meshStandardMaterial color="#F0F4F8" metalness={0.92} roughness={0.08} />
+        {/* Cup body — tapered */}
+        <mesh position={[0, -0.18, 0]}>
+          <cylinderGeometry args={[0.24, 0.19, 0.6, 24]} />
+          <meshStandardMaterial color="#1c0e08" metalness={0.22} roughness={0.5} />
         </mesh>
-        {/* Precision tip — polished white */}
-        <mesh position={[0, -0.69, 0]}>
-          <coneGeometry args={[0.02, 0.14, 14]} />
-          <meshStandardMaterial color="#F8FAFC" metalness={0.96} roughness={0.04} />
+        {/* Sleeve band */}
+        <mesh position={[0, -0.22, 0]}>
+          <cylinderGeometry args={[0.255, 0.21, 0.32, 24]} />
+          <meshStandardMaterial color="#2a1a10" metalness={0.18} roughness={0.62} />
+        </mesh>
+        {/* Coffee surface */}
+        <mesh position={[0, 0.12, 0]}>
+          <cylinderGeometry args={[0.232, 0.232, 0.02, 24]} />
+          <meshStandardMaterial color="#2c1408" metalness={0.1} roughness={0.72} />
+        </mesh>
+        {/* Foam microring */}
+        <mesh position={[0, 0.14, 0]}>
+          <torusGeometry args={[0.14, 0.048, 10, 28]} />
+          <meshStandardMaterial color="#f0e8dc" metalness={0.06} roughness={0.82} />
+        </mesh>
+        {/* Lid */}
+        <mesh position={[0, 0.2, 0]}>
+          <cylinderGeometry args={[0.248, 0.24, 0.1, 24]} />
+          <meshStandardMaterial color="#0e0806" metalness={0.24} roughness={0.46} />
+        </mesh>
+        {/* Cyan brand stripe on cup */}
+        <mesh position={[0, -0.14, 0.255]}>
+          <boxGeometry args={[0.18, 0.04, 0.01]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.7} metalness={0.5} roughness={0.08} />
         </mesh>
       </Part>
 
-      {/* ── Part 4: Stabilization Base — wide premium medical platform ── */}
+      {/* ── Item 4: Chef's Dessert Combo ── */}
       <Part
         partIndex={4}
-        basePosition={[0, -1.3, 0]}
-        midPosition={[0, -1.82, 0]}
-        explodedPosition={[0, -2.52, 0]}
-        focusScale={1.12}
-        secondaryScale={0.64}
-        explodeDelay={0.085}
-        assembleDelay={0.014}
-        explodedRotation={[0.04, 0, 0]}
-        selfRotationAmount={0.18}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        explodedPosition={[0, 0.16, 0]}
+        focusScale={1.22}
+        secondaryScale={0.66}
+        explodeDelay={0.07}
+        assembleDelay={0.025}
+        selfRotationAmount={0.2}
         motionSeed={5}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
       >
-        {/* Main outer platform disc — dark gray composite */}
-        <mesh>
-          <cylinderGeometry args={[1.65, 1.72, 0.1, 48]} />
-          <meshStandardMaterial color="#1a2230" metalness={0.64} roughness={0.32} />
+        {/* White plate */}
+        <mesh position={[0, -0.46, 0]}>
+          <cylinderGeometry args={[0.58, 0.6, 0.06, 32]} />
+          <meshStandardMaterial color="#f8f6f2" metalness={0.14} roughness={0.44} />
         </mesh>
-        {/* Tray rim bevel */}
-        <mesh position={[0, 0.07, 0]}>
-          <cylinderGeometry args={[1.54, 1.65, 0.04, 48]} />
-          <meshStandardMaterial color="#212d40" metalness={0.6} roughness={0.35} />
+        {/* Plate rim ring */}
+        <mesh position={[0, -0.43, 0]}>
+          <torusGeometry args={[0.54, 0.018, 10, 44]} />
+          <meshStandardMaterial color="#e8e4de" metalness={0.16} roughness={0.42} />
         </mesh>
-        {/* Mid-tier riser disc */}
-        <mesh position={[0, 0.14, 0]}>
-          <cylinderGeometry args={[0.92, 1.02, 0.1, 36]} />
-          <meshStandardMaterial color="#1e293b" metalness={0.66} roughness={0.28} />
+        {/* Chocolate fondant cylinder */}
+        <mesh position={[0, -0.22, 0]}>
+          <cylinderGeometry args={[0.2, 0.22, 0.46, 20]} />
+          <meshStandardMaterial color="#2a1208" metalness={0.1} roughness={0.72} />
         </mesh>
-        {/* Column mount center hub */}
-        <mesh position={[0, 0.24, 0]}>
-          <cylinderGeometry args={[0.3, 0.36, 0.14, 24]} />
-          <meshStandardMaterial color="#2d3a4e" metalness={0.72} roughness={0.22} />
+        {/* Melt flow disc */}
+        <mesh position={[0, -0.22, 0]}>
+          <cylinderGeometry args={[0.28, 0.28, 0.04, 24]} />
+          <meshStandardMaterial color="#4a1e0a" metalness={0.08} roughness={0.78} />
         </mesh>
-        {/* Anti-vibration ring — one restrained cyan line */}
-        <mesh position={[0, 0.07, 0]}>
-          <torusGeometry args={[1.3, 0.024, 10, 64]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.24} metalness={0.58} roughness={0.2} />
+        {/* Fondant top dome cap */}
+        <mesh position={[0, 0.02, 0]}>
+          <sphereGeometry args={[0.19, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45]} />
+          <meshStandardMaterial color="#3a1810" metalness={0.1} roughness={0.68} />
         </mesh>
-        {/* 6 stabilizer foot pads */}
-        {([0, 1, 2, 3, 4, 5] as const).map((i) => (
+        {/* Ice cream scoop */}
+        <mesh position={[0.3, -0.12, 0.08]}>
+          <sphereGeometry args={[0.2, 16, 12]} />
+          <meshStandardMaterial color="#f8f0e0" metalness={0.06} roughness={0.64} />
+        </mesh>
+        {/* 3 gold dust dots */}
+        {([0, 1, 2] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 6) * Math.PI * 2) * 1.52,
-              -0.08,
-              Math.sin((i / 6) * Math.PI * 2) * 1.52,
+              (seededUnit(i * 11) - 0.5) * 0.7,
+              -0.43,
+              (seededUnit(i * 13) - 0.5) * 0.7,
             ]}
           >
-            <cylinderGeometry args={[0.05, 0.065, 0.06, 10]} />
-            <meshStandardMaterial color="#0d1520" metalness={0.6} roughness={0.38} />
+            <sphereGeometry args={[0.018, 6, 5]} />
+            <meshStandardMaterial color="#d4a822" emissive="#c89010" emissiveIntensity={0.6} metalness={0.7} roughness={0.2} />
           </mesh>
         ))}
-      </Part>
-
-      {/* ── Part 5: Sensor Ring — safety proximity array ── */}
-      <Part
-        partIndex={5}
-        basePosition={[0, -0.88, 0]}
-        midPosition={[0, -0.55, 0]}
-        explodedPosition={[0, -0.35, 0]}
-        focusScale={1.2}
-        secondaryScale={0.62}
-        explodeDelay={0.068}
-        assembleDelay={0.05}
-        explodedRotation={[0.1, 0.3, 0]}
-        selfRotationAmount={0.46}
-        motionSeed={6}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
-      >
-        {/* Outer structural band — brushed aluminum */}
-        <mesh>
-          <torusGeometry args={[0.72, 0.05, 14, 72]} />
-          <meshStandardMaterial color="#D8E0EA" metalness={0.78} roughness={0.2} />
+        {/* Cyan accent ring under plate */}
+        <mesh position={[0, -0.49, 0]}>
+          <torusGeometry args={[0.56, 0.007, 8, 44]} />
+          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.38} metalness={0.5} roughness={0.12} />
         </mesh>
-        {/* Inner emissive fill — restrained cyan */}
-        <mesh>
-          <torusGeometry args={[0.72, 0.016, 10, 72]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.42} metalness={0.5} roughness={0.1} />
-        </mesh>
-        {/* 12 sensor node blocks — evenly spaced */}
-        {([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const).map((i) => (
-          <mesh
-            key={i}
-            position={[
-              Math.cos((i / 12) * Math.PI * 2) * 0.72,
-              0,
-              Math.sin((i / 12) * Math.PI * 2) * 0.72,
-            ]}
-          >
-            <boxGeometry args={[0.024, 0.024, 0.038]} />
-            <meshStandardMaterial color="#0ea5e9" emissive="#0ea5e9" emissiveIntensity={0.65} metalness={0.7} roughness={0.08} />
-          </mesh>
-        ))}
       </Part>
 
     </group>
@@ -1460,6 +1457,8 @@ export default function SpatialScene() {
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [inspectMode, setInspectMode] = useState(false);
+  const [introVisible, setIntroVisible] = useState(true);
+  const [introFading, setIntroFading] = useState(false);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const activePart = CAROUSEL_PARTS[activePartIndex];
   const hudOnRight = activePartIndex % 2 === 0;
@@ -1467,10 +1466,21 @@ export default function SpatialScene() {
     ? "right-4 bottom-36 md:right-10 md:bottom-32"
     : "left-4 bottom-36 md:left-10 md:bottom-32";
   const gestureHint = !exploded
-    ? "SPACE EXPLODE"
+    ? "SPACE — BROWSE MENU"
     : inspectMode
       ? "WASD ROTATE • ESC EXIT • R RESET"
-      : "← → CHANGE PART • ENTER INSPECT • ESC BACK";
+      : "← → BROWSE • ENTER VIEW ITEM • ESC BACK";
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setIntroFading(true), 1800);
+    const t2 = setTimeout(() => setExploded(true), 2200);
+    const t3 = setTimeout(() => setIntroVisible(false), 3200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, []);
 
   const resetInspectRotation = useCallback(() => {
     inspectRotationRef.current.x = 0;
@@ -1611,6 +1621,24 @@ export default function SpatialScene() {
 
   return (
     <div className="absolute inset-0">
+      {introVisible && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950 transition-opacity duration-1000 ${
+            introFading ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-cyan-200/50">
+            WELCOME TO
+          </p>
+          <h1 className="text-4xl font-light tracking-[0.28em] text-white md:text-5xl">
+            AURA ONE
+          </h1>
+          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-cyan-200/40">
+            SPATIAL DINING
+          </p>
+        </div>
+      )}
+
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
         <color attach="background" args={["#020617"]} />
 
@@ -1621,7 +1649,7 @@ export default function SpatialScene() {
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
-        <SurgicalRobotProduct
+        <SpatialMenuCarousel
           exploded={exploded}
           activePartIndex={activePartIndex}
           inspectMode={inspectMode}
@@ -1641,7 +1669,7 @@ export default function SpatialScene() {
         }`}
       >
         <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-cyan-200/60">
-          {inspectMode ? "INSPECT MODE" : "ACTIVE COMPONENT"}
+          {inspectMode ? "ITEM VIEW" : "FEATURED COMBO"}
         </p>
         <h2 className="text-lg font-light tracking-[0.16em]">
           {activePart.name}
@@ -1651,7 +1679,7 @@ export default function SpatialScene() {
         </p>
         {inspectMode ? (
           <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-cyan-200/50">
-            WASD ROTATE • ESC EXIT
+            WASD ROTATE • ESC BACK
           </p>
         ) : null}
       </div>
@@ -1669,19 +1697,19 @@ export default function SpatialScene() {
           onClick={() => applyGestureAction("PREV_PART")}
           className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
         >
-          PREV PART
+          PREV
         </button>
         <button
           onClick={() => applyGestureAction("NEXT_PART")}
           className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
         >
-          NEXT PART
+          NEXT
         </button>
         <button
           onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
           className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
         >
-          {inspectMode ? "EXIT INSPECT" : "INSPECT"}
+          {inspectMode ? "BACK" : "VIEW ITEM"}
         </button>
       </div>
 
@@ -1691,7 +1719,7 @@ export default function SpatialScene() {
           exploded ? "bottom-20" : "bottom-8"
         }`}
       >
-        {exploded ? "ASSEMBLE" : "EXPLODE"}
+        {exploded ? "CLOSE MENU" : "BROWSE MENU"}
       </button>
     </div>
   );
