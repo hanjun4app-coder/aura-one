@@ -1067,10 +1067,10 @@ function AmbientParticles() {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        color="#7dd3fc"
-        size={0.018}
+        color="#a08868"
+        size={0.013}
         transparent
-        opacity={0.55}
+        opacity={0.16}
         depthWrite={false}
       />
     </points>
@@ -1121,8 +1121,8 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
 
     mesh.instanceMatrix.needsUpdate = true;
     const material = mesh.material as THREE.MeshStandardMaterial;
-    material.opacity = THREE.MathUtils.lerp(0.78, 0.28, p);
-    material.emissiveIntensity = THREE.MathUtils.lerp(0.18, 0.06, p);
+    material.opacity = THREE.MathUtils.lerp(0.38, 0.10, p);
+    material.emissiveIntensity = THREE.MathUtils.lerp(0.06, 0.02, p);
   });
 
   return (
@@ -1133,12 +1133,12 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
     >
       <boxGeometry args={[1, 1, 0.18]} />
       <meshStandardMaterial
-        color="#e0faff"
-        emissive="#67e8f9"
-        emissiveIntensity={0.18}
+        color="#b07840"
+        emissive="#6a4818"
+        emissiveIntensity={0.06}
         metalness={0.28}
-        opacity={0.78}
-        roughness={0.38}
+        opacity={0.38}
+        roughness={0.58}
         transparent
       />
     </instancedMesh>
@@ -1158,13 +1158,11 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     );
 
     if (keyLightRef.current) {
-      // Soft warm key — food photography softbox from upper-left.
-      keyLightRef.current.intensity = blendRef.current * 1.6;
+      keyLightRef.current.intensity = blendRef.current * 0.9;
     }
 
     if (rimLightRef.current) {
-      // Warm amber rim — separates food from background without cyan cast.
-      rimLightRef.current.intensity = blendRef.current * 0.7;
+      rimLightRef.current.intensity = blendRef.current * 0.4;
     }
   });
 
@@ -1533,40 +1531,40 @@ function CameraGestureLayer({
   useEffect(() => stopCamera, [stopCamera]);
 
   return (
-    <div className="absolute right-4 top-4 w-40 border border-cyan-200/15 bg-slate-950/45 p-2 text-cyan-50 shadow-xl shadow-cyan-950/20 backdrop-blur-md md:right-6 md:top-6">
-      <div className="relative aspect-video overflow-hidden bg-slate-950/80">
+    <div className="absolute right-4 top-4 w-40 border border-stone-400/20 bg-white/45 p-2 text-stone-700 shadow-lg shadow-stone-300/20 backdrop-blur-md md:right-6 md:top-6">
+      <div className="relative aspect-video overflow-hidden bg-stone-200/50">
         <video
           ref={videoRef}
           autoPlay
           className={`h-full w-full scale-x-[-1] object-cover transition duration-500 ${
-            cameraEnabled ? "opacity-70" : "opacity-20"
+            cameraEnabled ? "opacity-80" : "opacity-30"
           }`}
           muted
           playsInline
         />
         {!cameraEnabled ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[0.56rem] tracking-[0.2em] text-cyan-100/42">
+          <div className="absolute inset-0 flex items-center justify-center text-[0.56rem] tracking-[0.2em] text-stone-500/60">
             CAMERA
           </div>
         ) : null}
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="text-[0.56rem] tracking-[0.18em] text-cyan-100/60">
+        <p className="text-[0.56rem] tracking-[0.18em] text-stone-500/70">
           {cameraStatus}
         </p>
         <button
           onClick={enableCamera}
-          className="border border-cyan-200/20 bg-cyan-200/10 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-200/18"
+          className="border border-stone-400/30 bg-stone-800/8 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-stone-700 transition hover:bg-stone-800/14"
         >
           {cameraEnabled ? "OFF" : "ENABLE"}
         </button>
       </div>
-      <p className="mt-2 text-[0.52rem] leading-4 text-cyan-100/42">
+      <p className="mt-2 text-[0.52rem] leading-4 text-stone-400/60">
         {cameraDebugStep}
       </p>
       {cameraErrorMessage ? (
-        <p className="mt-1 text-[0.5rem] leading-4 text-rose-200/75">
+        <p className="mt-1 text-[0.5rem] leading-4 text-rose-600/80">
           {cameraErrorMessage}
         </p>
       ) : null}
@@ -1770,28 +1768,28 @@ export default function SpatialScene() {
     <div className="absolute inset-0">
       {introVisible && (
         <div
-          className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950 transition-opacity duration-1000 ${
+          className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-stone-50 transition-opacity duration-1000 ${
             introFading ? "opacity-0" : "opacity-100"
           }`}
         >
-          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-cyan-200/50">
+          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-amber-700/55">
             WELCOME TO
           </p>
-          <h1 className="text-4xl font-light tracking-[0.28em] text-white md:text-5xl">
+          <h1 className="text-4xl font-light tracking-[0.28em] text-stone-700 md:text-5xl">
             AURA ONE
           </h1>
-          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-cyan-200/40">
+          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-amber-700/42">
             SPATIAL DINING
           </p>
         </div>
       )}
 
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
-        <color attach="background" args={["#020617"]} />
+        <color attach="background" args={["#f6f2ea"]} />
 
-        <ambientLight intensity={0.52} color="#f8f4ee" />
-        <directionalLight position={[4, 5, 3]} intensity={1.4} color="#fff8f0" />
-        <pointLight position={[-4, -2, 3]} intensity={0.5} color="#c8d8ea" />
+        <ambientLight intensity={0.90} color="#fff8f0" />
+        <directionalLight position={[4, 5, 3]} intensity={0.85} color="#fff8f0" />
+        <pointLight position={[-4, -2, 3]} intensity={0.18} color="#ffecd0" />
         <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
@@ -1810,23 +1808,23 @@ export default function SpatialScene() {
       <CameraGestureLayer onGesture={applyGestureAction} />
 
       <div
-        className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-cyan-200/20 bg-slate-950/48 p-4 text-left text-cyan-50 shadow-2xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:p-5 ${
+        className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-3 opacity-0"
         }`}
       >
-        <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-cyan-200/60">
+        <p className="mb-2 text-[0.65rem] tracking-[0.32em] text-amber-700/70">
           {inspectMode ? "ITEM VIEW" : "FEATURED COMBO"}
         </p>
-        <h2 className="text-lg font-light tracking-[0.16em]">
+        <h2 className="text-lg font-light tracking-[0.16em] text-stone-800">
           {activePart.name}
         </h2>
-        <p className="mt-3 text-sm leading-6 text-cyan-50/65">
+        <p className="mt-3 text-sm leading-6 text-stone-600/80">
           {activePart.description}
         </p>
         {inspectMode ? (
-          <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-cyan-200/50">
+          <p className="mt-4 text-[0.62rem] tracking-[0.22em] text-amber-700/50">
             WASD ROTATE • ESC BACK
           </p>
         ) : null}
@@ -1834,30 +1832,30 @@ export default function SpatialScene() {
 
       {/* Ingredient HUD — appears only when burger layers are exploded in inspect mode */}
       <div
-        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-cyan-200/18 bg-slate-950/52 p-4 text-cyan-50 shadow-xl shadow-cyan-950/20 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
+        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-amber-400/28 bg-white/42 p-4 text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "pointer-events-none opacity-0"
         }`}
       >
-        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-cyan-200/55">
+        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-amber-700/65">
           INGREDIENTS
         </p>
         <ul className="space-y-2.5">
           {BURGER_INGREDIENTS.map((ingredient) => (
-            <li key={ingredient.name} className="border-b border-cyan-200/8 pb-2 last:border-0 last:pb-0">
+            <li key={ingredient.name} className="border-b border-stone-300/20 pb-2 last:border-0 last:pb-0">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[0.75rem] font-light tracking-[0.1em] text-cyan-50">
+                <span className="text-[0.75rem] font-light tracking-[0.1em] text-stone-800">
                   {ingredient.name}
                 </span>
-                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-cyan-200/45">
+                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-amber-700/55">
                   {ingredient.cal}
                 </span>
               </div>
-              <p className="mt-0.5 text-[0.6rem] leading-4 text-cyan-50/50">
+              <p className="mt-0.5 text-[0.6rem] leading-4 text-stone-500/75">
                 {ingredient.flavor}
               </p>
-              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-cyan-200/35">
+              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-amber-700/45">
                 {ingredient.allergen !== "None" ? `Allergens: ${ingredient.allergen}` : ""}
               </p>
             </li>
@@ -1865,7 +1863,7 @@ export default function SpatialScene() {
         </ul>
       </div>
 
-      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[18rem] border border-cyan-200/15 bg-slate-950/35 px-3 py-2 text-right text-[0.6rem] tracking-[0.2em] text-cyan-100/52 backdrop-blur-md md:right-6">
+      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[18rem] border border-stone-300/20 bg-white/30 px-3 py-2 text-right text-[0.6rem] tracking-[0.2em] text-stone-500/60 backdrop-blur-md md:right-6">
         {gestureHint}
       </div>
 
@@ -1876,26 +1874,26 @@ export default function SpatialScene() {
       >
         <button
           onClick={() => applyGestureAction("PREV_PART")}
-          className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
+          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
         >
           PREV
         </button>
         <button
           onClick={() => applyGestureAction("NEXT_PART")}
-          className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-200/18"
+          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
         >
           NEXT
         </button>
         <button
           onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
-          className="rounded-full border border-cyan-200/35 bg-cyan-200/14 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-cyan-50 backdrop-blur-md transition hover:bg-cyan-200/24"
+          className="rounded-full border border-stone-400/30 bg-white/40 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/60"
         >
           {inspectMode ? "BACK" : "VIEW ITEM"}
         </button>
         {burgerInspectActive && (
           <button
             onClick={() => applyGestureAction("TOGGLE_BURGER_EXPLODE")}
-            className="rounded-full border border-amber-300/35 bg-amber-300/10 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-100 backdrop-blur-md transition hover:bg-amber-300/20"
+            className="rounded-full border border-amber-500/35 bg-amber-100/45 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/65"
           >
             {burgerExploded ? "ASSEMBLE" : "EXPLODE LAYERS"}
           </button>
@@ -1904,7 +1902,7 @@ export default function SpatialScene() {
 
       <button
         onClick={() => applyGestureAction("TOGGLE_EXPLODE")}
-        className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-cyan-300/40 bg-cyan-300/10 px-6 py-3 text-sm tracking-[0.25em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-300/20 ${
+        className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-amber-500/38 bg-amber-100/42 px-6 py-3 text-sm tracking-[0.25em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/62 ${
           exploded ? "bottom-20" : "bottom-8"
         }`}
       >
