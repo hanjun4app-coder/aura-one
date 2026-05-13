@@ -288,6 +288,7 @@ function Part({
   explodedRotation = [0, 0, 0],
   selfRotationAmount = 1,
   motionSeed = 0,
+  meshOpacity = 1,
   children,
   progressRef,
   activePartIndex,
@@ -308,6 +309,7 @@ function Part({
   explodedRotation?: [number, number, number];
   selfRotationAmount?: number;
   motionSeed?: number;
+  meshOpacity?: number;
   children: ReactNode;
   progressRef: MutableRefObject<number>;
   activePartIndex: number;
@@ -333,6 +335,8 @@ function Part({
   const inspectPositionRef = useRef(new THREE.Vector3());
   const positionInitializedRef = useRef(false);
   const inspectBlendRef = useRef(0);
+  const dimRef = useRef(0);
+  const inspectIdleYRef = useRef(0);
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
     const dockStart = midPosition ?? explodedPosition;
@@ -392,6 +396,7 @@ function Part({
     );
     const dockThreshold = 0.045;
     const slot = wrappedSlot(partIndex, activePartIndex, totalParts);
+    const isInspectActive = inspectMode && slot === 0;
     const angle = (slot / totalParts) * Math.PI * 2;
     const activePresence = carouselEnabled && slot === 0 ? separatedProgress : 0;
     const carouselPresence = carouselEnabled ? separatedProgress : 0;
@@ -403,7 +408,7 @@ function Part({
       slot === 0
         ? focusScale
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
-    const inspectScale = slot === 0 ? focusScale * 1.08 : 0.42;
+    const inspectScale = slot === 0 ? focusScale * 1.12 : 0.22;
     const scaleTarget = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(1, carouselScale, carouselPresence),
       inspectScale,
@@ -439,14 +444,20 @@ function Part({
       }
     }
 
-    const activeRotationBoost = activePresence ? (inspectMode ? 2.75 : 2.1) : 1;
+    const activeRotationBoost = activePresence && !isInspectActive ? 2.1 : 1;
 
-    selfRotationRef.current.x +=
-      delta * motion.rotationSpeed.x * separatedProgress * activeRotationBoost;
-    selfRotationRef.current.y +=
-      delta * motion.rotationSpeed.y * separatedProgress * activeRotationBoost;
-    selfRotationRef.current.z +=
-      delta * motion.rotationSpeed.z * separatedProgress * activeRotationBoost;
+    if (!isInspectActive) {
+      selfRotationRef.current.x +=
+        delta * motion.rotationSpeed.x * separatedProgress * activeRotationBoost;
+      selfRotationRef.current.y +=
+        delta * motion.rotationSpeed.y * separatedProgress * activeRotationBoost;
+      selfRotationRef.current.z +=
+        delta * motion.rotationSpeed.z * separatedProgress * activeRotationBoost;
+    }
+
+    if (isInspectActive && separatedProgress > 0.1) {
+      inspectIdleYRef.current += delta * 0.26;
+    }
     partScaleRef.current = THREE.MathUtils.lerp(
       partScaleRef.current,
       scaleTarget,
@@ -458,7 +469,8 @@ function Part({
       1 - Math.exp(-delta * 6)
     );
     if (activeLightRef.current) {
-      activeLightRef.current.intensity = highlightRef.current * 0.66;
+      activeLightRef.current.intensity =
+        highlightRef.current * (isInspectActive ? 3.2 : 0.66);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -484,10 +496,17 @@ function Part({
     const carouselY = 0.24 + Math.sin(angle * 2) * 0.14 - side * 0.1;
     const carouselZ = depth * 1.85 - side * 0.78 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
-    const inspectX = slot === 0 ? 0 : rearDirection * (4.15 + slotDistance * 0.52);
-    const inspectY = slot === 0 ? 0.22 : 0.08 - slotDistance * 0.05;
-    const inspectZ = slot === 0 ? 0.72 : -3.95 - slotDistance * 0.34;
+    const inspectX = slot === 0 ? 0 : rearDirection * (4.2 + slotDistance * 0.85);
+    const inspectY = slot === 0 ? 0.0 : -0.15 - slotDistance * 0.12;
+    const inspectZ = slot === 0 ? 0.9 : -4.5 - slotDistance * 1.8;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
+
+    const dimTarget = inspectMode && slot !== 0 ? 1 : 0;
+    dimRef.current = THREE.MathUtils.lerp(
+      dimRef.current,
+      dimTarget,
+      1 - Math.exp(-delta * 3.2)
+    );
 
     targetPositionRef.current.set(
       THREE.MathUtils.lerp(normalX, carouselX, carouselPresence),
@@ -519,15 +538,17 @@ function Part({
 
     groupRef.current.rotation.set(
       THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
-        selfRotationRef.current.x * separatedProgress +
+        (isInspectActive ? 0 : selfRotationRef.current.x * separatedProgress) +
         manualRotationRef.current.x +
         motion.dockRotation.x * dockPulse,
       THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
-        selfRotationRef.current.y * separatedProgress +
+        (isInspectActive
+          ? inspectIdleYRef.current
+          : selfRotationRef.current.y * separatedProgress) +
         manualRotationRef.current.y +
         motion.dockRotation.y * dockPulse,
       THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
-        selfRotationRef.current.z * separatedProgress +
+        (isInspectActive ? 0 : selfRotationRef.current.z * separatedProgress) +
         motion.dockRotation.z * dockPulse
     );
     groupRef.current.scale.setScalar(partScaleRef.current);
@@ -539,7 +560,11 @@ function Part({
       if (!material || !("emissiveIntensity" in material)) return;
 
       material.emissive.set("#67e8f9");
-      material.emissiveIntensity = highlightRef.current;
+      const emissiveBoost = isInspectActive ? 1.8 : 1;
+      material.emissiveIntensity =
+        highlightRef.current * emissiveBoost * (1 - dimRef.current * 0.85);
+      material.transparent = meshOpacity < 1 || dimRef.current > 0.005;
+      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.22, dimRef.current);
     });
 
     previousProgressRef.current = localProgress;
@@ -630,6 +655,7 @@ function SimplifiedCarProduct({
         explodedRotation={[0, 0.08, 0]}
         selfRotationAmount={0.55}
         motionSeed={2}
+        meshOpacity={0.82}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={CAROUSEL_PARTS.length}
@@ -899,6 +925,46 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
         transparent
       />
     </instancedMesh>
+  );
+}
+
+function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
+  const keyLightRef = useRef<THREE.DirectionalLight>(null);
+  const rimLightRef = useRef<THREE.PointLight>(null);
+  const blendRef = useRef(0);
+
+  useFrame((_, delta) => {
+    blendRef.current = THREE.MathUtils.lerp(
+      blendRef.current,
+      inspectMode ? 1 : 0,
+      1 - Math.exp(-delta * 2.8)
+    );
+
+    if (keyLightRef.current) {
+      keyLightRef.current.intensity = blendRef.current * 2.4;
+    }
+
+    if (rimLightRef.current) {
+      rimLightRef.current.intensity = blendRef.current * 1.6;
+    }
+  });
+
+  return (
+    <>
+      <directionalLight
+        ref={keyLightRef}
+        position={[-2.5, 4.5, 3.0]}
+        color="#ddeeff"
+        intensity={0}
+      />
+      <pointLight
+        ref={rimLightRef}
+        position={[4.0, 0.8, -0.8]}
+        color="#67e8f9"
+        distance={12}
+        intensity={0}
+      />
+    </>
   );
 }
 
@@ -1478,6 +1544,7 @@ export default function SpatialScene() {
         <ambientLight intensity={0.7} />
         <directionalLight position={[4, 4, 4]} intensity={1.8} />
         <pointLight position={[-4, -2, 3]} intensity={2} color="#38bdf8" />
+        <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
