@@ -21,19 +21,92 @@ function seededUnit(index: number) {
   return value - Math.floor(value);
 }
 
+function phasedPathProgress(progress: number, phase = 0) {
+  const clampedPhase = THREE.MathUtils.clamp(phase, 0, 0.42);
+  const delayed = THREE.MathUtils.clamp(
+    (progress - clampedPhase) / (1 - clampedPhase),
+    0,
+    1
+  );
+  const blended = THREE.MathUtils.lerp(progress, delayed, 0.42);
+
+  return THREE.MathUtils.clamp(blended, 0, 1);
+}
+
+function writeQuadraticBezier(
+  target: THREE.Vector3,
+  start: [number, number, number],
+  control: [number, number, number],
+  end: [number, number, number],
+  progress: number
+) {
+  const inverse = 1 - progress;
+  const startWeight = inverse * inverse;
+  const controlWeight = 2 * inverse * progress;
+  const endWeight = progress * progress;
+
+  target.set(
+    start[0] * startWeight + control[0] * controlWeight + end[0] * endWeight,
+    start[1] * startWeight + control[1] * controlWeight + end[1] * endWeight,
+    start[2] * startWeight + control[2] * controlWeight + end[2] * endWeight
+  );
+}
+
+function resolvePathPosition(
+  target: THREE.Vector3,
+  basePosition: [number, number, number],
+  explodedPosition: [number, number, number],
+  midPosition: [number, number, number] | undefined,
+  progress: number
+) {
+  if (!midPosition) {
+    writeQuadraticBezier(
+      target,
+      basePosition,
+      [
+        (basePosition[0] + explodedPosition[0]) * 0.5,
+        (basePosition[1] + explodedPosition[1]) * 0.5,
+        (basePosition[2] + explodedPosition[2]) * 0.5,
+      ],
+      explodedPosition,
+      progress
+    );
+
+    return target;
+  }
+
+  writeQuadraticBezier(
+    target,
+    basePosition,
+    midPosition,
+    explodedPosition,
+    progress
+  );
+
+  return target;
+}
+
 function Part({
   basePosition,
+  midPosition,
   explodedPosition,
+  explodeDelay = 0,
+  assembleDelay = 0,
   baseRotation = [0, 0, 0],
   explodedRotation = [0, 0, 0],
+  selfRotationAmount = 1,
   motionSeed = 0,
   children,
   progressRef,
 }: {
   basePosition: [number, number, number];
+  midPosition?: [number, number, number];
   explodedPosition: [number, number, number];
+  explodeDelay?: number;
+  assembleDelay?: number;
   baseRotation?: [number, number, number];
   explodedRotation?: [number, number, number];
+  selfRotationAmount?: number;
   motionSeed?: number;
   children: ReactNode;
   progressRef: MutableRefObject<number>;
@@ -41,21 +114,24 @@ function Part({
   const groupRef = useRef<THREE.Group>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
   const previousProgressRef = useRef(0);
+  const previousRawProgressRef = useRef(0);
   const dockedRef = useRef(true);
   const dockPhaseRef = useRef<number | null>(null);
+  const pathPositionRef = useRef(new THREE.Vector3());
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
+    const dockStart = midPosition ?? explodedPosition;
     const travel = new THREE.Vector3(
-      basePosition[0] - explodedPosition[0],
-      basePosition[1] - explodedPosition[1],
-      basePosition[2] - explodedPosition[2]
+      basePosition[0] - dockStart[0],
+      basePosition[1] - dockStart[1],
+      basePosition[2] - dockStart[2]
     );
     const travelDistance = travel.length();
 
     return {
       floatSpeed: 0.55 + (motionSeed % 5) * 0.08,
-      floatAmount: 0.035 + (motionSeed % 4) * 0.007,
-      driftAmount: 0.018 + (motionSeed % 3) * 0.006,
+      floatAmount: (0.024 + (motionSeed % 4) * 0.005) * selfRotationAmount,
+      driftAmount: (0.012 + (motionSeed % 3) * 0.004) * selfRotationAmount,
       dockAmplitude:
         travelDistance > 0.001
           ? Math.min(travelDistance * 0.045, 0.07) *
@@ -69,25 +145,39 @@ function Part({
         direction * (0.01 + (motionSeed % 5) * 0.003)
       ),
       rotationSpeed: new THREE.Vector3(
-        direction * (0.08 + (motionSeed % 3) * 0.018),
-        -direction * (0.11 + (motionSeed % 4) * 0.016),
-        direction * (0.06 + (motionSeed % 5) * 0.012)
+        direction * (0.045 + (motionSeed % 3) * 0.012) * selfRotationAmount,
+        -direction * (0.06 + (motionSeed % 4) * 0.012) * selfRotationAmount,
+        direction * (0.035 + (motionSeed % 5) * 0.008) * selfRotationAmount
       ),
     };
-  }, [basePosition, explodedPosition, motionSeed]);
+  }, [basePosition, explodedPosition, midPosition, motionSeed, selfRotationAmount]);
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
 
     const t = clock.getElapsedTime();
     const rawProgress = progressRef.current;
+    const previousRawProgress = previousRawProgressRef.current;
+    const assembling = rawProgress < previousRawProgress;
+    const localProgress = assembling
+      ? 1 - phasedPathProgress(1 - rawProgress, assembleDelay)
+      : phasedPathProgress(rawProgress, explodeDelay);
     const previousProgress = previousProgressRef.current;
-    const assembling = rawProgress < previousProgress;
-    const p = smoothStep(rawProgress);
+    const p = smoothStep(localProgress);
+    const separatedProgress = smoothStep(
+      THREE.MathUtils.clamp((localProgress - 0.22) / 0.78, 0, 1)
+    );
     const floatPhase = t * motion.floatSpeed + motionSeed;
+    const pathPosition = resolvePathPosition(
+      pathPositionRef.current,
+      basePosition,
+      explodedPosition,
+      midPosition,
+      p
+    );
     const dockThreshold = 0.045;
 
-    if (!assembling && rawProgress > dockThreshold * 2) {
+    if (!assembling && localProgress > dockThreshold * 2) {
       dockedRef.current = false;
       dockPhaseRef.current = null;
     }
@@ -96,7 +186,7 @@ function Part({
       assembling &&
       !dockedRef.current &&
       previousProgress > dockThreshold &&
-      rawProgress <= dockThreshold
+      localProgress <= dockThreshold
     ) {
       dockedRef.current = true;
       dockPhaseRef.current = 0;
@@ -115,35 +205,39 @@ function Part({
       }
     }
 
-    selfRotationRef.current.x += delta * motion.rotationSpeed.x * p;
-    selfRotationRef.current.y += delta * motion.rotationSpeed.y * p;
-    selfRotationRef.current.z += delta * motion.rotationSpeed.z * p;
+    selfRotationRef.current.x +=
+      delta * motion.rotationSpeed.x * separatedProgress;
+    selfRotationRef.current.y +=
+      delta * motion.rotationSpeed.y * separatedProgress;
+    selfRotationRef.current.z +=
+      delta * motion.rotationSpeed.z * separatedProgress;
 
     groupRef.current.position.set(
-      THREE.MathUtils.lerp(basePosition[0], explodedPosition[0], p) +
-        Math.cos(floatPhase * 0.7) * motion.driftAmount * p +
+      pathPosition.x +
+        Math.cos(floatPhase * 0.7) * motion.driftAmount * separatedProgress +
         motion.dockDirection.x * motion.dockAmplitude * dockPulse,
-      THREE.MathUtils.lerp(basePosition[1], explodedPosition[1], p) +
-        Math.sin(floatPhase) * motion.floatAmount * p +
+      pathPosition.y +
+        Math.sin(floatPhase) * motion.floatAmount * separatedProgress +
         motion.dockDirection.y * motion.dockAmplitude * dockPulse,
-      THREE.MathUtils.lerp(basePosition[2], explodedPosition[2], p) +
-        Math.sin(floatPhase * 0.8) * motion.driftAmount * p +
+      pathPosition.z +
+        Math.sin(floatPhase * 0.8) * motion.driftAmount * separatedProgress +
         motion.dockDirection.z * motion.dockAmplitude * dockPulse
     );
 
     groupRef.current.rotation.set(
-      THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], p) +
-        selfRotationRef.current.x * p +
+      THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
+        selfRotationRef.current.x * separatedProgress +
         motion.dockRotation.x * dockPulse,
-      THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], p) +
-        selfRotationRef.current.y * p +
+      THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
+        selfRotationRef.current.y * separatedProgress +
         motion.dockRotation.y * dockPulse,
-      THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], p) +
-        selfRotationRef.current.z * p +
+      THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
+        selfRotationRef.current.z * separatedProgress +
         motion.dockRotation.z * dockPulse
     );
 
-    previousProgressRef.current = rawProgress;
+    previousProgressRef.current = localProgress;
+    previousRawProgressRef.current = rawProgress;
   });
 
   return <group ref={groupRef}>{children}</group>;
@@ -175,6 +269,7 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       <Part
         basePosition={[0, 0, 0]}
         explodedPosition={[0, 0, 0]}
+        selfRotationAmount={0}
         motionSeed={1}
         progressRef={progressRef}
       >
@@ -190,8 +285,12 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
 
       <Part
         basePosition={[0.15, 0.55, 0]}
-        explodedPosition={[0.15, 1.55, 0]}
-        explodedRotation={[0, 0.15, 0]}
+        midPosition={[0.15, 1.32, 0.08]}
+        explodedPosition={[0.15, 1.86, 0.28]}
+        explodeDelay={0}
+        assembleDelay={0.07}
+        explodedRotation={[0, 0.08, 0]}
+        selfRotationAmount={0.55}
         motionSeed={2}
         progressRef={progressRef}
       >
@@ -209,8 +308,12 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
 
       <Part
         basePosition={[1.75, 0.05, 0]}
-        explodedPosition={[3.05, 0.18, 0]}
-        explodedRotation={[0, 0.25, 0]}
+        midPosition={[2.58, 0.42, 0.12]}
+        explodedPosition={[3.42, 0.3, 0.16]}
+        explodeDelay={0.035}
+        assembleDelay={0.04}
+        explodedRotation={[0, 0.14, 0]}
+        selfRotationAmount={0.62}
         motionSeed={3}
         progressRef={progressRef}
       >
@@ -226,8 +329,12 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
 
       <Part
         basePosition={[-1.75, 0.05, 0]}
-        explodedPosition={[-3.05, 0.18, 0]}
-        explodedRotation={[0, -0.25, 0]}
+        midPosition={[-2.58, 0.42, -0.12]}
+        explodedPosition={[-3.42, 0.3, -0.16]}
+        explodeDelay={0.035}
+        assembleDelay={0.04}
+        explodedRotation={[0, -0.14, 0]}
+        selfRotationAmount={0.62}
         motionSeed={4}
         progressRef={progressRef}
       >
@@ -243,8 +350,12 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
 
       <Part
         basePosition={[0, -0.38, 0]}
-        explodedPosition={[0, -1.25, 0]}
-        explodedRotation={[0.12, 0, 0]}
+        midPosition={[0, -0.86, 0]}
+        explodedPosition={[0, -1.56, 0]}
+        explodeDelay={0.075}
+        assembleDelay={0.02}
+        explodedRotation={[0.08, 0, 0]}
+        selfRotationAmount={0.45}
         motionSeed={5}
         progressRef={progressRef}
       >
@@ -261,31 +372,39 @@ function SimplifiedCarProduct({ exploded }: { exploded: boolean }) {
       {[
         {
           base: [1.05, -0.35, 0.78],
-          exploded: [1.95, -0.72, 1.35],
-          rot: [Math.PI / 2, 0.35, 0],
+          mid: [1.56, -0.58, 1.18],
+          exploded: [2.32, -0.92, 1.72],
+          rot: [Math.PI / 2, 0.18, 0],
         },
         {
           base: [-1.05, -0.35, 0.78],
-          exploded: [-1.95, -0.72, 1.35],
-          rot: [Math.PI / 2, -0.35, 0],
+          mid: [-1.56, -0.58, 1.18],
+          exploded: [-2.32, -0.92, 1.72],
+          rot: [Math.PI / 2, -0.18, 0],
         },
         {
           base: [1.05, -0.35, -0.78],
-          exploded: [1.95, -0.72, -1.35],
-          rot: [Math.PI / 2, -0.35, 0],
+          mid: [1.56, -0.58, -1.18],
+          exploded: [2.32, -0.92, -1.72],
+          rot: [Math.PI / 2, -0.18, 0],
         },
         {
           base: [-1.05, -0.35, -0.78],
-          exploded: [-1.95, -0.72, -1.35],
-          rot: [Math.PI / 2, 0.35, 0],
+          mid: [-1.56, -0.58, -1.18],
+          exploded: [-2.32, -0.92, -1.72],
+          rot: [Math.PI / 2, 0.18, 0],
         },
       ].map((wheel, index) => (
         <Part
           key={index}
           basePosition={wheel.base as [number, number, number]}
+          midPosition={wheel.mid as [number, number, number]}
           explodedPosition={wheel.exploded as [number, number, number]}
+          explodeDelay={0.095 + index * 0.012}
+          assembleDelay={index * 0.008}
           baseRotation={[Math.PI / 2, 0, 0]}
           explodedRotation={wheel.rot as [number, number, number]}
+          selfRotationAmount={0.48}
           motionSeed={index + 6}
           progressRef={progressRef}
         >
