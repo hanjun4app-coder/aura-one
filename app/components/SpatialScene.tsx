@@ -50,6 +50,8 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
+const ITEM_PRICES = [18.90, 15.50, 7.90, 6.50, 12.80];
+
 const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
@@ -1734,7 +1736,13 @@ export default function SpatialScene() {
   const [burgerExploded, setBurgerExploded] = useState(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [introFading, setIntroFading] = useState(false);
+  const [orderItems, setOrderItems] = useState<{ partIndex: number; qty: number }[]>([]);
+  const [flyParticle, setFlyParticle] = useState<{
+    x: number; y: number; opacity: number; scale: number;
+  } | null>(null);
+  const [trayGlow, setTrayGlow] = useState(false);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
+  const trayRef = useRef<HTMLDivElement>(null);
   const activePart = CAROUSEL_PARTS[activePartIndex];
   const hudOnRight = activePartIndex % 2 === 0;
   const hudPositionClass = hudOnRight
@@ -1776,6 +1784,43 @@ export default function SpatialScene() {
     resetInspectRotation();
     setActivePartIndex((value) => (value + 1) % CAROUSEL_PARTS.length);
   }, [resetInspectRotation]);
+
+  const addToOrder = useCallback(() => {
+    // Start position: active item lives roughly in the center of the viewport
+    const startX = window.innerWidth * 0.5;
+    const startY = window.innerHeight * 0.42;
+
+    // End position: centre of the tray panel
+    let endX = window.innerWidth - 112;
+    let endY = window.innerHeight * 0.5;
+    if (trayRef.current) {
+      const r = trayRef.current.getBoundingClientRect();
+      endX = r.left + r.width * 0.5;
+      endY = r.top + r.height * 0.5;
+    }
+
+    // Phase 1 — spawn particle at food item position
+    setFlyParticle({ x: startX, y: startY, opacity: 1, scale: 1 });
+
+    // Phase 2 — fly to tray (browser paints phase 1 first, then transitions)
+    setTimeout(() => {
+      setFlyParticle({ x: endX, y: endY, opacity: 0, scale: 0.32 });
+    }, 16);
+
+    // Phase 3 — update order state and trigger glow after fly lands
+    setTimeout(() => {
+      setFlyParticle(null);
+      setOrderItems((prev) => {
+        const idx = prev.findIndex((e) => e.partIndex === activePartIndex);
+        if (idx >= 0) {
+          return prev.map((e, i) => (i === idx ? { ...e, qty: e.qty + 1 } : e));
+        }
+        return [...prev, { partIndex: activePartIndex, qty: 1 }];
+      });
+      setTrayGlow(true);
+      setTimeout(() => setTrayGlow(false), 900);
+    }, 730);
+  }, [activePartIndex]);
 
   // Unified Gesture Action Layer — all input sources (keyboard, camera, UI buttons,
   // future MediaPipe gestures) route through this single function.
@@ -2024,7 +2069,7 @@ export default function SpatialScene() {
       </div>
 
       <div
-        className={`absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-3 transition duration-500 ${
+        className={`absolute bottom-8 left-1/2 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 transition duration-500 ${
           exploded ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       >
@@ -2054,6 +2099,12 @@ export default function SpatialScene() {
             {burgerExploded ? "ASSEMBLE" : "EXPLODE LAYERS"}
           </button>
         )}
+        <button
+          onClick={addToOrder}
+          className="rounded-full border border-amber-600/40 bg-amber-900/88 px-5 py-2 text-[0.65rem] tracking-[0.24em] text-amber-50 backdrop-blur-md transition hover:bg-amber-900/95"
+        >
+          ADD TO ORDER
+        </button>
       </div>
 
       <button
@@ -2064,6 +2115,78 @@ export default function SpatialScene() {
       >
         {exploded ? "CLOSE MENU" : "BROWSE MENU"}
       </button>
+
+      {/* ── Spatial Order Tray ── */}
+      <div
+        ref={trayRef}
+        className={`pointer-events-auto absolute right-4 top-1/2 z-10 w-52 -translate-y-1/2 border p-4 backdrop-blur-md transition-all duration-700 md:right-6 md:w-56 ${
+          orderItems.length > 0
+            ? "translate-x-0 opacity-100"
+            : "pointer-events-none translate-x-4 opacity-0"
+        } ${
+          trayGlow
+            ? "border-amber-400/48 bg-white/55 shadow-lg shadow-amber-300/32"
+            : "border-stone-300/28 bg-white/38 shadow-md shadow-stone-200/18"
+        }`}
+      >
+        <p className="mb-3 text-[0.56rem] tracking-[0.42em] text-amber-700/60">
+          ORDER TRAY
+        </p>
+
+        <ul className="max-h-[38vh] space-y-2 overflow-y-auto">
+          {orderItems.map(({ partIndex, qty }) => (
+            <li
+              key={partIndex}
+              className="flex items-start justify-between gap-2 border-b border-stone-200/45 pb-2 last:border-0 last:pb-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[0.70rem] font-light leading-snug tracking-[0.06em] text-stone-800">
+                  {CAROUSEL_PARTS[partIndex].name}
+                </p>
+                <p className="mt-0.5 text-[0.56rem] tracking-[0.12em] text-stone-400/80">
+                  ×{qty}
+                </p>
+              </div>
+              <p className="shrink-0 text-[0.66rem] tracking-[0.06em] text-stone-700">
+                ${(ITEM_PRICES[partIndex] * qty).toFixed(2)}
+              </p>
+            </li>
+          ))}
+        </ul>
+
+        <div className="my-3 h-px bg-stone-300/32" />
+
+        <div className="flex items-baseline justify-between">
+          <p className="text-[0.56rem] tracking-[0.30em] text-stone-500/60">TOTAL</p>
+          <p className="text-[0.88rem] font-light tracking-[0.06em] text-stone-800">
+            $
+            {orderItems
+              .reduce((s, { partIndex, qty }) => s + ITEM_PRICES[partIndex] * qty, 0)
+              .toFixed(2)}
+          </p>
+        </div>
+      </div>
+
+      {/* ── Fly-to-tray particle ── */}
+      {flyParticle && (
+        <div
+          className="pointer-events-none z-30"
+          style={{
+            position: "absolute",
+            left: flyParticle.x,
+            top: flyParticle.y,
+            width: 11,
+            height: 11,
+            borderRadius: "50%",
+            background: "rgba(180, 110, 30, 0.78)",
+            boxShadow: "0 0 16px rgba(200, 130, 40, 0.60)",
+            transform: `translate(-50%, -50%) scale(${flyParticle.scale})`,
+            opacity: flyParticle.opacity,
+            transition:
+              "left 680ms cubic-bezier(0.16, 1, 0.3, 1), top 680ms cubic-bezier(0.16, 1, 0.3, 1), opacity 620ms ease-out, transform 680ms ease-out",
+          }}
+        />
+      )}
     </div>
   );
 }
