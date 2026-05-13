@@ -12,6 +12,10 @@ import {
   useState,
 } from "react";
 import * as THREE from "three";
+import type {
+  HandLandmarker as HandLandmarkerInstance,
+  HandLandmarkerResult,
+} from "@mediapipe/tasks-vision";
 
 const CAROUSEL_PARTS = [
   {
@@ -53,10 +57,7 @@ const CAROUSEL_PARTS = [
 ] as const;
 
 const INSPECT_ROTATION_STEP = 0.32;
-const MEDIAPIPE_TASKS_URL =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22";
-const MEDIAPIPE_WASM_URL =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm";
+const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const LOGO_TEXT = "AURA ONE";
@@ -90,6 +91,10 @@ type SimulatedGestureAction =
 type CameraGestureStatus =
   | "CAMERA OFF"
   | "LOADING CAMERA"
+  | "TRYING GPU"
+  | "GPU FAILED"
+  | "FALLBACK CPU"
+  | "HAND TRACKING READY"
   | "CAMERA READY"
   | "HAND DETECTED"
   | "SWIPE LEFT"
@@ -104,49 +109,12 @@ type CameraDebugStep =
   | "Video playback started"
   | "Loading MediaPipe"
   | "MediaPipe loaded"
-  | "Initializing HandLandmarker"
+  | "Initializing HandLandmarker (GPU)"
+  | "GPU init failed — retrying CPU"
+  | "Initializing HandLandmarker (CPU)"
   | "HandLandmarker ready"
   | "Detection loop started";
 
-type HandLandmark = {
-  x: number;
-  y: number;
-  z?: number;
-};
-
-type HandLandmarkerResult = {
-  landmarks?: HandLandmark[][];
-};
-
-type HandLandmarkerRuntime = {
-  close?: () => void;
-  detectForVideo: (
-    video: HTMLVideoElement,
-    timestampMs: number
-  ) => HandLandmarkerResult;
-};
-
-type VisionTasksModule = {
-  FilesetResolver: {
-    forVisionTasks: (wasmPath: string) => Promise<unknown>;
-  };
-  HandLandmarker: {
-    createFromOptions: (
-      vision: unknown,
-      options: {
-        baseOptions: {
-          delegate: "GPU" | "CPU";
-          modelAssetPath: string;
-        };
-        minHandDetectionConfidence: number;
-        minHandPresenceConfidence: number;
-        minTrackingConfidence: number;
-        numHands: number;
-        runningMode: "VIDEO";
-      }
-    ) => Promise<HandLandmarkerRuntime>;
-  };
-};
 
 function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
@@ -156,14 +124,6 @@ function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898) * 43758.5453;
 
   return value - Math.floor(value);
-}
-
-async function loadVisionTasks() {
-  const importFromUrl = new Function("url", "return import(url)") as (
-    url: string
-  ) => Promise<VisionTasksModule>;
-
-  return importFromUrl(MEDIAPIPE_TASKS_URL);
 }
 
 function formatCameraError(error: unknown) {
@@ -934,8 +894,9 @@ function CameraGestureLayer({
   onGesture: (action: SimulatedGestureAction) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const handLandmarkerRef = useRef<HandLandmarkerRuntime | null>(null);
+  const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isInitializingRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const runDetectionLoopRef = useRef<() => void>(() => undefined);
   const samplesRef = useRef<Array<{ time: number; x: number }>>([]);
@@ -1000,7 +961,7 @@ function CameraGestureLayer({
 
   const processHandResult = useCallback(
     (result: HandLandmarkerResult, now: number) => {
-      const landmarks = result.landmarks?.[0];
+      const landmarks = result.landmarks[0];
 
       if (!landmarks?.length) {
         samplesRef.current = [];
@@ -1086,10 +1047,14 @@ function CameraGestureLayer({
       return;
     }
 
+    if (isInitializingRef.current) return;
+    isInitializingRef.current = true;
+
     if (!navigator.mediaDevices?.getUserMedia) {
       updateStatus("CAMERA ERROR");
       setCameraErrorMessage("getUserMedia failed: API unavailable");
       console.error("[AURA CAMERA] getUserMedia failed", "API unavailable");
+      isInitializingRef.current = false;
       return;
     }
 
@@ -1111,6 +1076,7 @@ function CameraGestureLayer({
       updateDebugStep("Camera stream received");
     } catch (error) {
       reportCameraError("getUserMedia failed", error);
+      isInitializingRef.current = false;
       return;
     }
 
@@ -1119,6 +1085,7 @@ function CameraGestureLayer({
     if (!video) {
       stream.getTracks().forEach((track) => track.stop());
       reportCameraError("video element failed", "Video element unavailable");
+      isInitializingRef.current = false;
       return;
     }
 
@@ -1134,50 +1101,86 @@ function CameraGestureLayer({
       console.error("[AURA CAMERA] video play failed", error);
       setCameraErrorMessage(`video.play failed: ${formatCameraError(error)}`);
       updateStatus("CAMERA ERROR");
+      isInitializingRef.current = false;
       return;
     }
 
-    let visionModule: VisionTasksModule;
+    let visionModule: typeof import("@mediapipe/tasks-vision");
 
     try {
       updateDebugStep("Loading MediaPipe");
-      visionModule = await loadVisionTasks();
+      visionModule = await import("@mediapipe/tasks-vision");
       updateDebugStep("MediaPipe loaded");
     } catch (error) {
       releaseCameraResources();
       reportCameraError("MediaPipe load failed", error);
+      isInitializingRef.current = false;
       return;
     }
 
+    const { FilesetResolver, HandLandmarker } = visionModule;
+
+    let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+
     try {
-      updateDebugStep("Initializing HandLandmarker");
-      const { FilesetResolver, HandLandmarker } = visionModule;
-      const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
-
-      handLandmarkerRef.current = await HandLandmarker.createFromOptions(
-        vision,
-        {
-          baseOptions: {
-            delegate: "GPU",
-            modelAssetPath: HAND_LANDMARKER_MODEL_URL,
-          },
-          minHandDetectionConfidence: 0.58,
-          minHandPresenceConfidence: 0.55,
-          minTrackingConfidence: 0.55,
-          numHands: 1,
-          runningMode: "VIDEO",
-        }
-      );
-
-      setCameraEnabled(true);
-      updateStatus("CAMERA READY");
-      updateDebugStep("HandLandmarker ready");
-      runDetectionLoop();
-      updateDebugStep("Detection loop started");
+      vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_PATH);
     } catch (error) {
       releaseCameraResources();
-      reportCameraError("HandLandmarker init failed", error);
+      reportCameraError("FilesetResolver failed", error);
+      isInitializingRef.current = false;
+      return;
     }
+
+    const handLandmarkerOptions = {
+      minHandDetectionConfidence: 0.58,
+      minHandPresenceConfidence: 0.55,
+      minTrackingConfidence: 0.55,
+      numHands: 1,
+      runningMode: "VIDEO" as const,
+    };
+
+    updateStatus("TRYING GPU");
+    updateDebugStep("Initializing HandLandmarker (GPU)");
+
+    try {
+      handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          delegate: "GPU",
+          modelAssetPath: HAND_LANDMARKER_MODEL_URL,
+        },
+        ...handLandmarkerOptions,
+      });
+    } catch (gpuError) {
+      console.warn("[AURA CAMERA] GPU init failed", gpuError);
+      console.info("[AURA CAMERA] Retrying CPU delegate");
+      updateStatus("GPU FAILED");
+      updateDebugStep("GPU init failed — retrying CPU");
+
+      try {
+        updateStatus("FALLBACK CPU");
+        updateDebugStep("Initializing HandLandmarker (CPU)");
+        handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            delegate: "CPU",
+            modelAssetPath: HAND_LANDMARKER_MODEL_URL,
+          },
+          ...handLandmarkerOptions,
+        });
+        console.info("[AURA CAMERA] CPU fallback success");
+      } catch (cpuError) {
+        releaseCameraResources();
+        reportCameraError("HandLandmarker init failed (GPU + CPU)", cpuError);
+        isInitializingRef.current = false;
+        return;
+      }
+    }
+
+    setCameraEnabled(true);
+    updateStatus("HAND TRACKING READY");
+    updateDebugStep("HandLandmarker ready");
+    runDetectionLoop();
+    updateDebugStep("Detection loop started");
+    isInitializingRef.current = false;
   }, [
     cameraEnabled,
     releaseCameraResources,
