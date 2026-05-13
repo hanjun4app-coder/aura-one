@@ -405,7 +405,7 @@ function Part({
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
     const inspectScale = slot === 0 ? focusScale * 1.12 : 0.22;
     const scaleTarget = THREE.MathUtils.lerp(
-      THREE.MathUtils.lerp(1, carouselScale, carouselPresence),
+      THREE.MathUtils.lerp(0, carouselScale, carouselPresence),
       inspectScale,
       inspectPresence
     );
@@ -557,8 +557,9 @@ function Part({
 
       // Only manage dim/opacity — never override each material's own emissive color.
       // Food surfaces keep their natural colors; only brand accent rings carry emissive.
-      material.transparent = meshOpacity < 1 || dimRef.current > 0.005;
-      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.22, dimRef.current);
+      const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
+      material.transparent = meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
+      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.22, dimRef.current) * emergeFade;
     });
 
     previousProgressRef.current = localProgress;
@@ -744,6 +745,155 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   );
 }
 
+function MenuBook({ open }: { open: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const coverRef = useRef<THREE.Group>(null);
+  const bookLightRef = useRef<THREE.PointLight>(null);
+  const progressRef = useRef(0);
+
+  useEffect(() => {
+    groupRef.current?.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+      if (mat && "opacity" in mat) mesh.userData.baseOp = mat.opacity;
+    });
+  }, []);
+
+  useFrame((_, delta) => {
+    progressRef.current = THREE.MathUtils.lerp(
+      progressRef.current,
+      open ? 1 : 0,
+      1 - Math.exp(-delta * 1.55)
+    );
+    const p = smoothStep(progressRef.current);
+    const bookVisible = 1 - smoothStep(Math.min(p * 2.2, 1));
+
+    if (groupRef.current) {
+      groupRef.current.scale.setScalar(THREE.MathUtils.lerp(1.0, 0.42, p));
+      groupRef.current.position.y = THREE.MathUtils.lerp(0, -0.55, p);
+      groupRef.current.rotation.x = THREE.MathUtils.lerp(0, 0.14, p);
+
+      groupRef.current.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+        if (!mat || !("opacity" in mat)) return;
+        mat.transparent = true;
+        mat.opacity = ((mesh.userData.baseOp as number) ?? 1) * bookVisible;
+      });
+    }
+
+    if (coverRef.current) {
+      coverRef.current.rotation.y = THREE.MathUtils.lerp(0, Math.PI * 0.52, p);
+    }
+
+    if (bookLightRef.current) {
+      bookLightRef.current.intensity = bookVisible * 0.55;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <pointLight
+        ref={bookLightRef}
+        color="#fff6e0"
+        distance={6}
+        intensity={0}
+        position={[0, 2.8, 2.2]}
+      />
+
+      {/* Soft shadow beneath book */}
+      <mesh position={[0, -0.94, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.88, 36]} />
+        <meshStandardMaterial
+          color="#c0a882"
+          transparent
+          opacity={0.20}
+          roughness={1}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Back cover */}
+      <mesh position={[0, 0, -0.078]}>
+        <boxGeometry args={[1.38, 1.86, 0.058]} />
+        <meshStandardMaterial color="#ede8df" metalness={0.08} roughness={0.72} transparent opacity={1} />
+      </mesh>
+
+      {/* Pages block */}
+      <mesh position={[0.01, 0, 0]}>
+        <boxGeometry args={[1.30, 1.78, 0.12]} />
+        <meshStandardMaterial color="#f8f5f0" metalness={0.04} roughness={0.84} transparent opacity={1} />
+      </mesh>
+
+      {/* Spine */}
+      <mesh position={[-0.695, 0, 0]}>
+        <boxGeometry args={[0.042, 1.86, 0.26]} />
+        <meshStandardMaterial color="#c4a070" metalness={0.22} roughness={0.54} transparent opacity={1} />
+      </mesh>
+
+      {/* Front cover — group pivoted at spine edge for page-opening motion */}
+      <group ref={coverRef} position={[-0.695, 0, 0.078]}>
+        <mesh position={[0.695, 0, 0]}>
+          <boxGeometry args={[1.38, 1.86, 0.058]} />
+          <meshStandardMaterial color="#e6ddd0" metalness={0.10} roughness={0.66} transparent opacity={1} />
+        </mesh>
+        {/* Top gold rule */}
+        <mesh position={[0.695, 0.70, 0.030]}>
+          <boxGeometry args={[0.94, 0.007, 0.006]} />
+          <meshStandardMaterial
+            color="#c8a050"
+            emissive="#9a7420"
+            emissiveIntensity={0.45}
+            metalness={0.65}
+            roughness={0.28}
+            transparent
+            opacity={1}
+          />
+        </mesh>
+        {/* Bottom gold rule */}
+        <mesh position={[0.695, -0.70, 0.030]}>
+          <boxGeometry args={[0.94, 0.007, 0.006]} />
+          <meshStandardMaterial
+            color="#c8a050"
+            emissive="#9a7420"
+            emissiveIntensity={0.45}
+            metalness={0.65}
+            roughness={0.28}
+            transparent
+            opacity={1}
+          />
+        </mesh>
+        {/* Menu title plate */}
+        <mesh position={[0.695, 0.12, 0.030]}>
+          <boxGeometry args={[0.76, 0.038, 0.006]} />
+          <meshStandardMaterial
+            color="#d4b068"
+            emissive="#a07828"
+            emissiveIntensity={0.28}
+            metalness={0.55}
+            roughness={0.32}
+            transparent
+            opacity={1}
+          />
+        </mesh>
+        {/* Subtitle plate */}
+        <mesh position={[0.695, -0.04, 0.030]}>
+          <boxGeometry args={[0.52, 0.018, 0.006]} />
+          <meshStandardMaterial
+            color="#c4a058"
+            emissive="#906820"
+            emissiveIntensity={0.22}
+            metalness={0.50}
+            roughness={0.36}
+            transparent
+            opacity={1}
+          />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 function SpatialMenuCarousel({
   exploded,
   activePartIndex,
@@ -765,7 +915,7 @@ function SpatialMenuCarousel({
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       exploded ? 1 : 0,
-      delta * 1.8
+      1 - Math.exp(-delta * 1.4)
     );
 
     if (!groupRef.current) return;
@@ -790,6 +940,7 @@ function SpatialMenuCarousel({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
+        midPosition={[0, 0.92, 1.05]}
         explodedPosition={[0, 0.18, 0]}
         focusScale={1.22}
         secondaryScale={0.66}
@@ -809,6 +960,7 @@ function SpatialMenuCarousel({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
+        midPosition={[-0.12, 0.86, 0.98]}
         explodedPosition={[0, 0.22, 0]}
         focusScale={1.18}
         secondaryScale={0.64}
@@ -864,6 +1016,7 @@ function SpatialMenuCarousel({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
+        midPosition={[0, 0.80, 1.08]}
         explodedPosition={[0, 0.15, 0]}
         focusScale={1.2}
         secondaryScale={0.64}
@@ -917,6 +1070,7 @@ function SpatialMenuCarousel({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
+        midPosition={[0.14, 0.88, 0.92]}
         explodedPosition={[0, 0.2, 0]}
         focusScale={1.18}
         secondaryScale={0.66}
@@ -977,6 +1131,7 @@ function SpatialMenuCarousel({
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
+        midPosition={[0, 0.84, 1.02]}
         explodedPosition={[0, 0.16, 0]}
         focusScale={1.22}
         secondaryScale={0.66}
@@ -1794,6 +1949,7 @@ export default function SpatialScene() {
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
+        <MenuBook open={exploded} />
         <SpatialMenuCarousel
           exploded={exploded}
           activePartIndex={activePartIndex}
