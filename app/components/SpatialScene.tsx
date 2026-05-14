@@ -66,6 +66,15 @@ const MIN_SWIPE_VELOCITY = 0.00042;       // palm-X per ms — rejects slow drif
 const OPPOSITE_DISTANCE_MULT = 1.55;      // extra distance required for opposite swipe within OPPOSITE_LOCK_MS
 const OPPOSITE_VELOCITY_MULT = 1.45;      // extra velocity required for opposite swipe within OPPOSITE_LOCK_MS
 
+// Inspect gesture — palm growing in frame (hand approaching camera).
+const INSPECT_COOLDOWN_MS = 2800;
+const INSPECT_GROW_THRESHOLD = 0.095;   // normalized landmark distance growth
+const INSPECT_SAMPLE_WINDOW_MS = 480;
+
+// Pinch gesture — thumb tip and index tip converging.
+const PINCH_COOLDOWN_MS = 3200;
+const PINCH_DIST_THRESHOLD = 0.068;     // normalized; below this = pinch detected
+
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -95,7 +104,8 @@ type GestureAction =
   | "ROTATE_INSPECT_RIGHT"
   | "ROTATE_INSPECT_UP"
   | "ROTATE_INSPECT_DOWN"
-  | "TOGGLE_BURGER_EXPLODE";
+  | "TOGGLE_BURGER_EXPLODE"
+  | "ADD_TO_ORDER";
 
 type CameraGestureStatus =
   | "CAMERA OFF"
@@ -110,6 +120,8 @@ type CameraGestureStatus =
   | "SWIPE RIGHT"
   | "COOLDOWN"
   | "OPPOSITE LOCK"
+  | "INSPECT GESTURE"
+  | "PINCH ADD"
   | "CAMERA ERROR";
 
 type CameraDebugStep =
@@ -1326,11 +1338,14 @@ function CameraGestureLayer({
   const frameRef = useRef<number | null>(null);
   const runDetectionLoopRef = useRef<() => void>(() => undefined);
   const samplesRef = useRef<Array<{ time: number; x: number }>>([]);
+  const palmSizeSamplesRef = useRef<Array<{ time: number; size: number }>>([]);
   const statusRef = useRef<CameraGestureStatus>("CAMERA OFF");
   const statusHoldUntilRef = useRef(0);
   const lastDetectionAtRef = useRef(0);
   const lastSwipeDirectionRef = useRef<"left" | "right" | null>(null);
   const lastSwipeTimeRef = useRef(0);
+  const lastInspectTimeRef = useRef(0);
+  const lastPinchTimeRef = useRef(0);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -1370,8 +1385,11 @@ function CameraGestureLayer({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     samplesRef.current = [];
+    palmSizeSamplesRef.current = [];
     lastSwipeDirectionRef.current = null;
     lastSwipeTimeRef.current = 0;
+    lastInspectTimeRef.current = 0;
+    lastPinchTimeRef.current = 0;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1412,6 +1430,55 @@ function CameraGestureLayer({
         ...samplesRef.current.filter((s) => now - s.time <= SWIPE_WINDOW_MS),
         { time: now, x: palmX },
       ];
+
+      // ── Inspect gesture: palm size growing = hand approaching camera ──────
+      const wrist = landmarks[0];
+      const middleTip = landmarks[12];
+      const thumbTip = landmarks[4];
+      const indexTip = landmarks[8];
+
+      if (wrist && middleTip && thumbTip && indexTip) {
+        const palmSize = Math.hypot(
+          middleTip.x - wrist.x,
+          middleTip.y - wrist.y
+        );
+        palmSizeSamplesRef.current = [
+          ...palmSizeSamplesRef.current.filter(
+            (s) => now - s.time <= INSPECT_SAMPLE_WINDOW_MS
+          ),
+          { time: now, size: palmSize },
+        ];
+
+        if (
+          now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS &&
+          palmSizeSamplesRef.current.length >= 4
+        ) {
+          const oldest = palmSizeSamplesRef.current[0]!;
+          const growth = palmSize - oldest.size;
+          const elapsed = now - oldest.time;
+          if (growth > INSPECT_GROW_THRESHOLD && elapsed > 180) {
+            lastInspectTimeRef.current = now;
+            statusHoldUntilRef.current = now + 1000;
+            updateStatus("INSPECT GESTURE");
+            onGesture("ENTER_INSPECT");
+          }
+        }
+
+        // ── Pinch gesture: thumb tip near index tip ──────────────────────────
+        const pinchDist = Math.hypot(
+          thumbTip.x - indexTip.x,
+          thumbTip.y - indexTip.y
+        );
+        if (
+          pinchDist < PINCH_DIST_THRESHOLD &&
+          now - lastPinchTimeRef.current > PINCH_COOLDOWN_MS
+        ) {
+          lastPinchTimeRef.current = now;
+          statusHoldUntilRef.current = now + 1000;
+          updateStatus("PINCH ADD");
+          onGesture("ADD_TO_ORDER");
+        }
+      }
 
       const lastDir = lastSwipeDirectionRef.current;
       const sinceLastSwipe = now - lastSwipeTimeRef.current;
@@ -1660,8 +1727,8 @@ function CameraGestureLayer({
   useEffect(() => stopCamera, [stopCamera]);
 
   return (
-    <div className="absolute right-4 top-4 w-40 border border-stone-400/20 bg-white/45 p-2 text-stone-700 shadow-lg shadow-stone-300/20 backdrop-blur-md md:right-6 md:top-6">
-      <div className="relative aspect-video overflow-hidden bg-stone-200/50">
+    <div className="absolute right-4 top-4 w-40 border border-stone-700/40 bg-stone-950/75 p-2 text-stone-300 shadow-lg shadow-black/35 backdrop-blur-md md:right-6 md:top-6">
+      <div className="relative aspect-video overflow-hidden bg-stone-900/60">
         <video
           ref={videoRef}
           autoPlay
@@ -1679,21 +1746,21 @@ function CameraGestureLayer({
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="text-[0.56rem] tracking-[0.18em] text-stone-500/70">
+        <p className="text-[0.56rem] tracking-[0.18em] text-amber-400/70">
           {cameraStatus}
         </p>
         <button
           onClick={enableCamera}
-          className="border border-stone-400/30 bg-stone-800/8 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-stone-700 transition hover:bg-stone-800/14"
+          className="border border-stone-600/45 bg-stone-800/55 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-stone-300 transition hover:bg-stone-700/65"
         >
           {cameraEnabled ? "OFF" : "ENABLE"}
         </button>
       </div>
-      <p className="mt-2 text-[0.52rem] leading-4 text-stone-400/60">
+      <p className="mt-2 text-[0.52rem] leading-4 text-stone-500/70">
         {cameraDebugStep}
       </p>
       {cameraErrorMessage ? (
-        <p className="mt-1 text-[0.5rem] leading-4 text-rose-600/80">
+        <p className="mt-1 text-[0.5rem] leading-4 text-rose-400/80">
           {cameraErrorMessage}
         </p>
       ) : null}
@@ -1865,6 +1932,11 @@ export default function SpatialScene() {
       return;
     }
 
+    if (action === "ADD_TO_ORDER") {
+      if (exploded) addToOrder();
+      return;
+    }
+
     if (action === "TOGGLE_BURGER_EXPLODE") {
       if (inspectMode && activePartIndex === 0) {
         setBurgerExploded((v) => !v);
@@ -1908,7 +1980,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_DOWN") {
       inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
     }
-  }, [activePartIndex, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, addToOrder, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1959,28 +2031,30 @@ export default function SpatialScene() {
     <div className="absolute inset-0">
       {introVisible && (
         <div
-          className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-stone-50 transition-opacity duration-1000 ${
+          className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#120e09] transition-opacity duration-1000 ${
             introFading ? "opacity-0" : "opacity-100"
           }`}
         >
-          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-amber-700/55">
+          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-amber-400/65">
             WELCOME TO
           </p>
-          <h1 className="text-4xl font-light tracking-[0.28em] text-stone-700 md:text-5xl">
+          <h1 className="text-4xl font-light tracking-[0.28em] text-stone-100 md:text-5xl">
             AURA ONE
           </h1>
-          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-amber-700/42">
+          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-amber-400/50">
             SPATIAL DINING
           </p>
         </div>
       )}
 
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
-        <color attach="background" args={["#f6f2ea"]} />
+        <color attach="background" args={["#120e09"]} />
 
-        <ambientLight intensity={0.90} color="#fff8f0" />
-        <directionalLight position={[4, 5, 3]} intensity={0.85} color="#fff8f0" />
-        <pointLight position={[-4, -2, 3]} intensity={0.18} color="#ffecd0" />
+        <ambientLight intensity={0.32} color="#fff4e8" />
+        <directionalLight position={[3, 6, 2.5]} intensity={1.05} color="#ffe8d0" castShadow={false} />
+        <pointLight position={[-3.5, 2, 3.5]} intensity={0.42} color="#ffd4a0" />
+        <pointLight position={[2.5, -1.5, 2]} intensity={0.14} color="#fff0e0" />
+        <pointLight position={[0, 3, -2.5]} intensity={0.18} color="#ffcc88" />
         <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
@@ -2000,28 +2074,28 @@ export default function SpatialScene() {
       <CameraGestureLayer onGesture={applyGestureAction} />
 
       <div
-        className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
+        className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-stone-700/40 bg-stone-950/75 p-4 text-left text-stone-100 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-500 md:p-5 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-3 opacity-0"
         }`}
       >
-        <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-700/62">
+        <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-400/70">
           {inspectMode ? "ITEM VIEW" : "FEATURED COMBO"}
         </p>
         <div className="flex items-start justify-between gap-3">
-          <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-800">
+          <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-100">
             {activePart.name}
           </h2>
-          <span className="mt-0.5 shrink-0 rounded border border-amber-400/38 bg-amber-50/55 px-2 py-0.5 text-[0.66rem] font-light tracking-[0.06em] text-amber-900">
+          <span className="mt-0.5 shrink-0 rounded border border-amber-500/40 bg-amber-900/45 px-2 py-0.5 text-[0.66rem] font-light tracking-[0.06em] text-amber-300">
             ${ITEM_PRICES[activePartIndex].toFixed(2)}
           </span>
         </div>
-        <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-500/72">
+        <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-400/80">
           {activePart.description}
         </p>
         {inspectMode ? (
-          <p className="mt-3 text-[0.58rem] tracking-[0.22em] text-amber-700/45">
+          <p className="mt-3 text-[0.58rem] tracking-[0.22em] text-amber-400/50">
             WASD ROTATE • ESC BACK
           </p>
         ) : null}
@@ -2029,30 +2103,30 @@ export default function SpatialScene() {
 
       {/* Ingredient HUD — appears only when burger layers are exploded in inspect mode */}
       <div
-        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-amber-400/28 bg-white/42 p-4 text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
+        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-stone-700/40 bg-stone-950/75 p-4 text-stone-100 shadow-lg shadow-black/40 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "pointer-events-none opacity-0"
         }`}
       >
-        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-amber-700/65">
+        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-amber-400/70">
           INGREDIENTS
         </p>
         <ul className="space-y-2.5">
           {BURGER_INGREDIENTS.map((ingredient) => (
-            <li key={ingredient.name} className="border-b border-stone-300/20 pb-2 last:border-0 last:pb-0">
+            <li key={ingredient.name} className="border-b border-stone-700/30 pb-2 last:border-0 last:pb-0">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[0.75rem] font-light tracking-[0.1em] text-stone-800">
+                <span className="text-[0.75rem] font-light tracking-[0.1em] text-stone-100">
                   {ingredient.name}
                 </span>
-                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-amber-700/55">
+                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-amber-400/60">
                   {ingredient.cal}
                 </span>
               </div>
-              <p className="mt-0.5 text-[0.6rem] leading-4 text-stone-500/75">
+              <p className="mt-0.5 text-[0.6rem] leading-4 text-stone-400/80">
                 {ingredient.flavor}
               </p>
-              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-amber-700/45">
+              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-amber-400/50">
                 {ingredient.allergen !== "None" ? `Allergens: ${ingredient.allergen}` : ""}
               </p>
             </li>
@@ -2060,8 +2134,11 @@ export default function SpatialScene() {
         </ul>
       </div>
 
-      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[18rem] border border-stone-300/20 bg-white/30 px-3 py-2 text-right text-[0.6rem] tracking-[0.2em] text-stone-500/60 backdrop-blur-md md:right-6">
-        {gestureHint}
+      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[20rem] border border-stone-700/35 bg-stone-950/65 px-3 py-2.5 text-right backdrop-blur-md md:right-6">
+        <p className="text-[0.58rem] tracking-[0.18em] text-stone-400/70">{gestureHint}</p>
+        <p className="mt-1.5 text-[0.54rem] tracking-[0.14em] text-amber-400/50">
+          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • PINCH ADD
+        </p>
       </div>
 
       <div
@@ -2071,33 +2148,33 @@ export default function SpatialScene() {
       >
         <button
           onClick={() => applyGestureAction("PREV_PART")}
-          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
+          className="rounded-full border border-stone-700/45 bg-stone-900/70 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-300 backdrop-blur-md transition hover:bg-stone-800/80"
         >
           PREV
         </button>
         <button
           onClick={() => applyGestureAction("NEXT_PART")}
-          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
+          className="rounded-full border border-stone-700/45 bg-stone-900/70 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-300 backdrop-blur-md transition hover:bg-stone-800/80"
         >
           NEXT
         </button>
         <button
           onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
-          className="rounded-full border border-stone-400/30 bg-white/40 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/60"
+          className="rounded-full border border-stone-600/50 bg-stone-900/75 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-200 backdrop-blur-md transition hover:bg-stone-800/85"
         >
           {inspectMode ? "BACK" : "VIEW ITEM"}
         </button>
         {burgerInspectActive && (
           <button
             onClick={() => applyGestureAction("TOGGLE_BURGER_EXPLODE")}
-            className="rounded-full border border-amber-500/35 bg-amber-100/45 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/65"
+            className="rounded-full border border-amber-600/40 bg-amber-900/55 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-200 backdrop-blur-md transition hover:bg-amber-900/70"
           >
             {burgerExploded ? "ASSEMBLE" : "EXPLODE LAYERS"}
           </button>
         )}
         <button
           onClick={addToOrder}
-          className="rounded-full border border-amber-600/40 bg-amber-900/88 px-5 py-2 text-[0.65rem] tracking-[0.24em] text-amber-50 backdrop-blur-md transition hover:bg-amber-900/95"
+          className="rounded-full border border-amber-500/50 bg-amber-700/90 px-5 py-2 text-[0.65rem] tracking-[0.24em] text-amber-50 backdrop-blur-md transition hover:bg-amber-600/95"
         >
           ADD TO ORDER
         </button>
@@ -2105,7 +2182,7 @@ export default function SpatialScene() {
 
       <button
         onClick={() => applyGestureAction("TOGGLE_EXPLODE")}
-        className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-amber-500/38 bg-amber-100/42 px-6 py-3 text-sm tracking-[0.25em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/62 ${
+        className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-amber-600/45 bg-amber-800/80 px-6 py-3 text-sm tracking-[0.25em] text-amber-100 backdrop-blur-md transition hover:bg-amber-700/90 ${
           exploded ? "bottom-20" : "bottom-8"
         }`}
       >
@@ -2121,11 +2198,11 @@ export default function SpatialScene() {
             : "pointer-events-none translate-x-4 opacity-0"
         } ${
           trayGlow
-            ? "border-amber-400/48 bg-white/55 shadow-lg shadow-amber-300/32"
-            : "border-stone-300/28 bg-white/38 shadow-md shadow-stone-200/18"
+            ? "border-amber-500/55 bg-stone-950/88 shadow-lg shadow-amber-500/22"
+            : "border-stone-700/42 bg-stone-950/78 shadow-md shadow-black/30"
         }`}
       >
-        <p className="mb-3 text-[0.56rem] tracking-[0.42em] text-amber-700/60">
+        <p className="mb-3 text-[0.56rem] tracking-[0.42em] text-amber-400/65">
           ORDER TRAY
         </p>
 
@@ -2133,35 +2210,35 @@ export default function SpatialScene() {
           {orderItems.map(({ partIndex, qty }) => (
             <li
               key={partIndex}
-              className="flex items-start justify-between gap-2 border-b border-stone-200/45 pb-2 last:border-0 last:pb-0"
+              className="flex items-start justify-between gap-2 border-b border-stone-700/40 pb-2 last:border-0 last:pb-0"
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[0.70rem] font-light leading-snug tracking-[0.06em] text-stone-800">
+                <p className="truncate text-[0.70rem] font-light leading-snug tracking-[0.06em] text-stone-100">
                   {CAROUSEL_PARTS[partIndex].name}
                 </p>
-                <p className="mt-0.5 text-[0.56rem] tracking-[0.12em] text-stone-400/80">
+                <p className="mt-0.5 text-[0.56rem] tracking-[0.12em] text-stone-500/80">
                   ×{qty}
                 </p>
               </div>
-              <p className="shrink-0 text-[0.66rem] tracking-[0.06em] text-stone-700">
+              <p className="shrink-0 text-[0.66rem] tracking-[0.06em] text-stone-300">
                 ${(ITEM_PRICES[partIndex] * qty).toFixed(2)}
               </p>
             </li>
           ))}
         </ul>
 
-        <div className="my-3 h-px bg-stone-300/32" />
+        <div className="my-3 h-px bg-stone-700/45" />
 
         <div className="flex items-baseline justify-between">
-          <p className="text-[0.56rem] tracking-[0.30em] text-stone-500/60">TOTAL</p>
-          <p className="text-[0.88rem] font-light tracking-[0.06em] text-stone-800">
+          <p className="text-[0.56rem] tracking-[0.30em] text-stone-500/65">TOTAL</p>
+          <p className="text-[0.88rem] font-light tracking-[0.06em] text-stone-100">
             ${orderTotal.toFixed(2)}
           </p>
         </div>
 
         <button
           onClick={() => setReviewMode(true)}
-          className="mt-4 w-full border border-amber-500/35 bg-amber-50/40 py-2 text-[0.60rem] tracking-[0.30em] text-amber-900 transition hover:bg-amber-100/58"
+          className="mt-4 w-full border border-amber-600/40 bg-amber-800/55 py-2 text-[0.60rem] tracking-[0.30em] text-amber-200 transition hover:bg-amber-700/65"
         >
           REVIEW ORDER
         </button>
@@ -2172,14 +2249,14 @@ export default function SpatialScene() {
         onClick={() => setReviewMode(false)}
         className={`absolute inset-0 z-[19] transition-all duration-700 ${
           reviewMode
-            ? "cursor-pointer bg-stone-100/62 opacity-100 backdrop-blur-[2px]"
+            ? "cursor-pointer bg-stone-950/68 opacity-100 backdrop-blur-[2px]"
             : "pointer-events-none opacity-0"
         }`}
       />
 
       {/* ── Spatial Review Panel ── */}
       <div
-        className={`absolute right-0 top-0 z-[20] flex h-full w-[min(92vw,28rem)] flex-col border-l border-stone-200/38 bg-stone-50/94 shadow-2xl shadow-stone-400/22 backdrop-blur-xl transition-all duration-700 ${
+        className={`absolute right-0 top-0 z-[20] flex h-full w-[min(92vw,28rem)] flex-col border-l border-stone-700/45 bg-[#17110b]/96 shadow-2xl shadow-black/50 backdrop-blur-xl transition-all duration-700 ${
           reviewMode
             ? "translate-x-0 opacity-100"
             : "pointer-events-none translate-x-full opacity-0"
@@ -2191,15 +2268,15 @@ export default function SpatialScene() {
           {/* Header */}
           <div className="mb-7 flex items-start justify-between">
             <div>
-              <p className="text-[0.54rem] tracking-[0.52em] text-amber-700/58">YOUR ORDER</p>
-              <p className="mt-1.5 text-[0.68rem] font-light tracking-[0.12em] text-stone-500/65">
+              <p className="text-[0.54rem] tracking-[0.52em] text-amber-400/65">YOUR ORDER</p>
+              <p className="mt-1.5 text-[0.68rem] font-light tracking-[0.12em] text-stone-500/70">
                 {totalItemCount} item{totalItemCount !== 1 ? "s" : ""}
               </p>
             </div>
             <button
               onClick={() => setReviewMode(false)}
               aria-label="Close review"
-              className="mt-0.5 text-[0.82rem] text-stone-400/50 transition hover:text-stone-600/80"
+              className="mt-0.5 text-[0.82rem] text-stone-500/55 transition hover:text-stone-300/80"
             >
               ✕
             </button>
@@ -2210,17 +2287,17 @@ export default function SpatialScene() {
             {orderItems.map(({ partIndex, qty }) => (
               <li
                 key={partIndex}
-                className="border-b border-stone-200/42 pb-5 last:border-0 last:pb-0"
+                className="border-b border-stone-700/38 pb-5 last:border-0 last:pb-0"
               >
                 <div className="flex items-start justify-between gap-4">
-                  <p className="text-[0.84rem] font-light leading-snug tracking-[0.06em] text-stone-800">
+                  <p className="text-[0.84rem] font-light leading-snug tracking-[0.06em] text-stone-100">
                     {CAROUSEL_PARTS[partIndex].name}
                   </p>
-                  <p className="shrink-0 text-[0.80rem] font-light tracking-[0.04em] text-stone-800">
+                  <p className="shrink-0 text-[0.80rem] font-light tracking-[0.04em] text-stone-200">
                     ${(ITEM_PRICES[partIndex] * qty).toFixed(2)}
                   </p>
                 </div>
-                <p className="mt-1.5 text-[0.60rem] tracking-[0.12em] text-stone-400/68">
+                <p className="mt-1.5 text-[0.60rem] tracking-[0.12em] text-stone-500/75">
                   ×{qty} · ${ITEM_PRICES[partIndex].toFixed(2)} each
                 </p>
               </li>
@@ -2228,25 +2305,25 @@ export default function SpatialScene() {
           </ul>
 
           {/* Totals */}
-          <div className="mt-6 border-t border-stone-200/40 pt-5">
+          <div className="mt-6 border-t border-stone-700/42 pt-5">
             <div className="space-y-3">
               <div className="flex items-baseline justify-between">
-                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/60">SUBTOTAL</p>
-                <p className="text-[0.78rem] font-light text-stone-600">
+                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/65">SUBTOTAL</p>
+                <p className="text-[0.78rem] font-light text-stone-300">
                   ${orderSubtotal.toFixed(2)}
                 </p>
               </div>
               <div className="flex items-baseline justify-between">
-                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/60">EST. TAX 10%</p>
-                <p className="text-[0.78rem] font-light text-stone-600">
+                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/65">EST. TAX 10%</p>
+                <p className="text-[0.78rem] font-light text-stone-300">
                   ${orderTax.toFixed(2)}
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 flex items-baseline justify-between border-t border-stone-300/28 pt-4">
-              <p className="text-[0.62rem] tracking-[0.30em] text-stone-600/65">TOTAL</p>
-              <p className="text-xl font-light tracking-[0.06em] text-stone-800">
+            <div className="mt-4 flex items-baseline justify-between border-t border-stone-700/35 pt-4">
+              <p className="text-[0.62rem] tracking-[0.30em] text-stone-500/70">TOTAL</p>
+              <p className="text-xl font-light tracking-[0.06em] text-stone-100">
                 ${orderTotal.toFixed(2)}
               </p>
             </div>
@@ -2255,7 +2332,7 @@ export default function SpatialScene() {
           {/* Return CTA */}
           <button
             onClick={() => setReviewMode(false)}
-            className="mt-6 w-full border border-stone-400/25 bg-white/45 py-3 text-[0.65rem] tracking-[0.28em] text-stone-700 transition hover:bg-white/65"
+            className="mt-6 w-full border border-stone-700/40 bg-stone-800/60 py-3 text-[0.65rem] tracking-[0.28em] text-stone-300 transition hover:bg-stone-700/70"
           >
             CONTINUE BROWSING
           </button>
