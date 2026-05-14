@@ -2011,6 +2011,15 @@ export default function SpatialScene() {
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const trayRef = useRef<HTMLDivElement>(null);
 
+  // Auto-demo mode — all stable refs, no extra re-renders
+  const lastInteractionRef = useRef(Date.now());
+  const demoActiveRef = useRef(false);
+  const demoPhaseRef = useRef<"wait_inspect" | "inspecting" | "wait_next" | null>(null);
+  const demoPhaseDueRef = useRef(0);
+  // mirrors so the interval closure always sees current React state
+  const explodedRef = useRef(false);
+  const inspectModeRef = useRef(false);
+
   const orderSubtotal = orderItems.reduce(
     (s, { partIndex, qty }) => s + ITEM_PRICES[partIndex] * qty,
     0
@@ -2036,6 +2045,44 @@ export default function SpatialScene() {
     inspectRotationRef.current.x = 0;
     inspectRotationRef.current.y = 0;
   }, []);
+
+  // Keep mirrors in sync
+  useEffect(() => { explodedRef.current = exploded; }, [exploded]);
+  useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
+
+  // Auto-demo loop — ticks every 120ms, driven entirely by refs
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now();
+      const isCarousel = explodedRef.current && !inspectModeRef.current;
+
+      if (!demoActiveRef.current) {
+        if (isCarousel && now - lastInteractionRef.current > 7000) {
+          demoActiveRef.current = true;
+          demoPhaseRef.current = "wait_inspect";
+          setActivePartIndex((v) => (v + 1) % CAROUSEL_PARTS.length);
+          demoPhaseDueRef.current = now + 2200;
+        }
+        return;
+      }
+
+      if (demoPhaseRef.current === "wait_inspect" && now >= demoPhaseDueRef.current && isCarousel) {
+        demoPhaseRef.current = "inspecting";
+        setInspectMode(true);
+        demoPhaseDueRef.current = now + 3800;
+      } else if (demoPhaseRef.current === "inspecting" && now >= demoPhaseDueRef.current && inspectModeRef.current) {
+        demoPhaseRef.current = "wait_next";
+        setInspectMode(false);
+        demoPhaseDueRef.current = now + 2000;
+      } else if (demoPhaseRef.current === "wait_next" && now >= demoPhaseDueRef.current && isCarousel) {
+        demoPhaseRef.current = "wait_inspect";
+        setActivePartIndex((v) => (v + 1) % CAROUSEL_PARTS.length);
+        demoPhaseDueRef.current = now + 2200;
+      }
+    }, 120);
+
+    return () => clearInterval(id);
+  }, []); // stable — only refs and stable setters
 
   const showPreviousPart = useCallback(() => {
     resetInspectRotation();
@@ -2103,6 +2150,13 @@ export default function SpatialScene() {
   // Unified Gesture Action Layer — all input sources (keyboard, camera, UI buttons,
   // future MediaPipe gestures) route through this single function.
   const applyGestureAction = useCallback((action: GestureAction) => {
+    // Any user action kills demo mode and resets idle timer
+    lastInteractionRef.current = Date.now();
+    if (demoActiveRef.current) {
+      demoActiveRef.current = false;
+      demoPhaseRef.current = null;
+    }
+
     if (action === "EXPLODE") {
       if (!exploded) setExploded(true);
       return;
@@ -2221,6 +2275,11 @@ export default function SpatialScene() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Any key press interrupts demo and resets idle timer
+      lastInteractionRef.current = Date.now();
+      demoActiveRef.current = false;
+      demoPhaseRef.current = null;
+
       // In review mode ESC exits review; all other keys are suppressed.
       if (reviewMode) {
         if (event.key === "Escape") {
