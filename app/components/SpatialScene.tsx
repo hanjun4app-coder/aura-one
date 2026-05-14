@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, useGLTF } from "@react-three/drei";
+import { useGLTF } from "@react-three/drei";
 import {
   type MutableRefObject,
   type ReactNode,
@@ -1122,7 +1122,8 @@ function SpatialMenuCarousel({
     const t = clock.getElapsedTime();
 
     groupRef.current.rotation.y += delta * 0.08 * (1 - p);
-    groupRef.current.position.y = Math.sin(t * 0.38) * 0.025 * (1 - p);
+    // Sit the carousel below camera eye-line so items feel like they're on a stage.
+    groupRef.current.position.y = -0.9 + Math.sin(t * 0.38) * 0.025 * (1 - p);
   });
 
   return (
@@ -2002,14 +2003,6 @@ export default function SpatialScene() {
   const hudPositionClass = hudOnRight
     ? "right-4 bottom-36 md:right-10 md:bottom-32"
     : "left-4 bottom-36 md:left-10 md:bottom-32";
-  const burgerInspectActive = inspectMode && activePartIndex === 0;
-  const gestureHint = !exploded
-    ? "SPACE — BROWSE MENU"
-    : inspectMode
-      ? burgerInspectActive
-        ? "WASD ROTATE • ESC BACK • E LAYERS"
-        : "WASD ROTATE • ESC BACK • R RESET"
-      : "← → BROWSE • ENTER VIEW ITEM • ESC BACK";
 
   useEffect(() => {
     const t1 = setTimeout(() => setIntroFading(true), 1800);
@@ -2269,7 +2262,7 @@ export default function SpatialScene() {
         </div>
       )}
 
-      <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
+      <Canvas camera={{ position: [0, 2.4, 7.2], fov: 40 }}>
         <color attach="background" args={["#f6f2ea"]} />
 
         <ambientLight intensity={0.92} color="#fff8f0" />
@@ -2288,8 +2281,6 @@ export default function SpatialScene() {
           inspectRotationRef={inspectRotationRef}
           burgerExploded={burgerExploded}
         />
-
-        <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
 
       {/* ── Inspect mode vignette ── */}
@@ -2358,8 +2349,8 @@ export default function SpatialScene() {
             <p className="mt-2 border-t border-stone-200/30 pt-2 text-[0.58rem] italic leading-4 text-amber-800/50">
               {FOOD_INSPECT_DATA[activePartIndex].chefNote}
             </p>
-            <p className="mt-3 text-[0.52rem] tracking-[0.22em] text-amber-700/40">
-              WASD ROTATE • ESC BACK
+            <p className="mt-3 text-[0.50rem] tracking-[0.22em] text-stone-400/38">
+              ← → ROTATE · ESC EXIT
             </p>
           </>
         ) : (
@@ -2402,48 +2393,13 @@ export default function SpatialScene() {
         </ul>
       </div>
 
-      <div className="pointer-events-none absolute bottom-4 right-4 max-w-[20rem] border border-stone-300/20 bg-white/30 px-3 py-2.5 text-right backdrop-blur-md md:right-6">
-        <p className="text-[0.58rem] tracking-[0.18em] text-stone-500/65">{gestureHint}</p>
-        <p className="mt-1.5 text-[0.54rem] tracking-[0.14em] text-amber-700/48">
-          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • FIST TWICE TO ADD
+      {/* ── Minimal bottom branding ── */}
+      <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 text-center">
+        <p className="text-[0.44rem] tracking-[0.32em] text-stone-400/30 whitespace-nowrap">
+          SWIPE · OPEN HAND · DOUBLE FIST
         </p>
+        <p className="text-[0.54rem] tracking-[0.52em] text-stone-500/42">AURA ONE</p>
       </div>
-
-      <div
-        className={`absolute bottom-8 left-1/2 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 transition duration-500 ${
-          exploded ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
-      >
-        <button
-          onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
-          className="rounded-full border border-stone-400/30 bg-white/40 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/60"
-        >
-          {inspectMode ? "BACK" : "VIEW ITEM"}
-        </button>
-        {burgerInspectActive && (
-          <button
-            onClick={() => applyGestureAction("TOGGLE_BURGER_EXPLODE")}
-            className="rounded-full border border-amber-500/35 bg-amber-100/45 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/65"
-          >
-            {burgerExploded ? "ASSEMBLE" : "EXPLODE LAYERS"}
-          </button>
-        )}
-        <button
-          onClick={addToOrder}
-          className="rounded-full border border-amber-600/40 bg-amber-900/88 px-5 py-2 text-[0.65rem] tracking-[0.24em] text-amber-50 backdrop-blur-md transition hover:bg-amber-900/95"
-        >
-          ADD TO ORDER
-        </button>
-      </div>
-
-      <button
-        onClick={() => applyGestureAction("TOGGLE_EXPLODE")}
-        className={`absolute left-1/2 -translate-x-1/2 rounded-full border border-amber-500/38 bg-amber-100/42 px-6 py-3 text-sm tracking-[0.25em] text-amber-900 backdrop-blur-md transition hover:bg-amber-100/62 ${
-          exploded ? "bottom-20" : "bottom-8"
-        }`}
-      >
-        {exploded ? "CLOSE MENU" : "BROWSE MENU"}
-      </button>
 
       {/* ── Spatial Order Tray ── */}
       <div
