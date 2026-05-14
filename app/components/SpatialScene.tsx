@@ -1123,7 +1123,7 @@ function SpatialMenuCarousel({
 
     groupRef.current.rotation.y += delta * 0.08 * (1 - p);
     // Sit the carousel below camera eye-line so items feel like they're on a stage.
-    groupRef.current.position.y = -0.52 + Math.sin(t * 0.38) * 0.025 * (1 - p);
+    groupRef.current.position.y = 0.0 + Math.sin(t * 0.38) * 0.025 * (1 - p);
   });
 
   return (
@@ -2288,7 +2288,7 @@ export default function SpatialScene() {
       <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} />
 
       <div
-        className={`pointer-events-none absolute bottom-[6.5rem] left-1/2 -translate-x-1/2 w-[min(22rem,calc(100vw-2.5rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
+        className={`pointer-events-none absolute bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-3 opacity-0"
