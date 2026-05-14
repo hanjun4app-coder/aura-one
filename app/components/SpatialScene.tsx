@@ -125,11 +125,15 @@ const INSPECT_SAMPLE_WINDOW_MS = 600;   // wider window for a more relaxed trigg
 // within DOUBLE_FIST_WINDOW_MS confirm add-to-order. Thumb excluded from fist score
 // because its resting position varies across fist styles.
 // Pulse = rising edge only: holding a fist counts as one pulse, never more.
-const FIST_OPENNESS_THRESHOLD = 1.05;    // normalised avg tip distance — below = fist
-const DOUBLE_FIST_WINDOW_MS = 1500;      // second fist must arrive within this window
+// Hysteresis prevents threshold-boundary flickering: enter requires tighter close,
+// exit requires a clearly open hand. Separate enter/exit thresholds are tracked via
+// isFistLatchRef so the rising-edge detector sees clean, stable transitions.
+const FIST_ENTER_THRESHOLD = 1.1;        // normalised avg tip distance — must dip below to enter fist
+const FIST_EXIT_THRESHOLD = 1.32;        // must rise above to leave fist (hysteresis band)
+const DOUBLE_FIST_WINDOW_MS = 1800;      // second fist must arrive within this window
 const FIST_ADD_COOLDOWN_MS = 3000;       // post-fire lockout before gesture can re-arm
 const FIST_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if a swipe fired recently
-const MIN_OPEN_FRAMES = 4;               // min consecutive non-fist frames between pulses
+const MIN_OPEN_FRAMES = 3;               // min consecutive non-fist frames between pulses
 
 // Exit-inspect gesture — open hand shrinking = hand retreating from camera ("push away").
 // Uses same palm-width metric as enter so they are symmetrically detectable.
@@ -167,8 +171,6 @@ type GestureAction =
   | "RESET"
   | "ROTATE_INSPECT_LEFT"
   | "ROTATE_INSPECT_RIGHT"
-  | "ROTATE_INSPECT_UP"
-  | "ROTATE_INSPECT_DOWN"
   | "TOGGLE_BURGER_EXPLODE"
   | "ADD_TO_ORDER"
   | "REMOVE_LAST"
@@ -615,7 +617,7 @@ function Part({
     );
     groupRef.current.position.copy(renderPositionRef.current);
     manualRotationTargetRef.current.set(
-      inspectMode && activePresence ? inspectRotationRef.current.x : 0,
+      0,
       inspectMode && activePresence ? inspectRotationRef.current.y : 0
     );
     manualRotationRef.current.lerp(
@@ -625,8 +627,6 @@ function Part({
 
     groupRef.current.rotation.set(
       THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
-        (isInspectActive ? 0 : selfRotationRef.current.x * separatedProgress) +
-        manualRotationRef.current.x +
         motion.dockRotation.x * dockPulse,
       THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
         (isInspectActive
@@ -635,7 +635,6 @@ function Part({
         manualRotationRef.current.y +
         motion.dockRotation.y * dockPulse,
       THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
-        (isInspectActive ? 0 : selfRotationRef.current.z * separatedProgress) +
         motion.dockRotation.z * dockPulse
     );
     groupRef.current.scale.setScalar(partScaleRef.current);
@@ -1431,6 +1430,7 @@ function CameraGestureLayer({
   const fistPulseCountRef = useRef(0);       // 0=idle, 1=armed (first pulse seen)
   const firstFistTimeRef = useRef(0);        // timestamp of first pulse
   const prevIsFistRef = useRef(false);       // previous frame's fist state (for rising-edge)
+  const isFistLatchRef = useRef(false);      // hysteresis latch: true while hand is in fist state
   const openFramesSinceLastFistRef = useRef(255); // non-fist frames since last fist frame
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
@@ -1550,6 +1550,9 @@ function CameraGestureLayer({
         // ── Fist score (computed every frame) ────────────────────────────────
         // Average normalised distance of 4 fingertips to palm center.
         // Thumb excluded: its resting position varies too much across fist styles.
+        // Hysteresis: enter fist when score < FIST_ENTER_THRESHOLD;
+        //             exit fist when score > FIST_EXIT_THRESHOLD.
+        // This prevents rapid on/off flickering at the threshold boundary.
         let isFist = false;
         if (lm5 && lm9 && lm13 && lm17 && lm16 && lm20) {
           const pcx = (wrist.x + lm5.x + lm9.x + lm13.x + lm17.x) / 5;
@@ -1560,7 +1563,13 @@ function CameraGestureLayer({
             const d12 = Math.hypot(middleTip.x - pcx, middleTip.y - pcy) / palmWidth;
             const d16 = Math.hypot(lm16.x      - pcx, lm16.y      - pcy) / palmWidth;
             const d20 = Math.hypot(lm20.x      - pcx, lm20.y      - pcy) / palmWidth;
-            isFist = (d8 + d12 + d16 + d20) / 4 < FIST_OPENNESS_THRESHOLD;
+            const fistScore = (d8 + d12 + d16 + d20) / 4;
+            if (isFistLatchRef.current) {
+              isFist = fistScore < FIST_EXIT_THRESHOLD;
+            } else {
+              isFist = fistScore < FIST_ENTER_THRESHOLD;
+            }
+            isFistLatchRef.current = isFist;
           }
         }
 
@@ -1661,6 +1670,7 @@ function CameraGestureLayer({
             fistPulseCountRef.current = 1;
             firstFistTimeRef.current = now;
             statusHoldUntilRef.current = now + DOUBLE_FIST_WINDOW_MS;
+            palmSizeSamplesRef.current = []; // prevent inspect gesture cross-firing
             updateStatus("FIST AGAIN TO ADD");
           } else if (
             openFramesSinceLastFistRef.current >= MIN_OPEN_FRAMES &&
@@ -2197,13 +2207,6 @@ export default function SpatialScene() {
       inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
     }
 
-    if (action === "ROTATE_INSPECT_UP") {
-      inspectRotationRef.current.x += INSPECT_ROTATION_STEP;
-    }
-
-    if (action === "ROTATE_INSPECT_DOWN") {
-      inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
-    }
   }, [activePartIndex, addToOrder, clearOrder, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
@@ -2220,8 +2223,6 @@ export default function SpatialScene() {
       const actionMap: Record<string, GestureAction | undefined> = {
         ArrowLeft: inspectMode ? "ROTATE_INSPECT_LEFT" : "PREV_PART",
         ArrowRight: inspectMode ? "ROTATE_INSPECT_RIGHT" : "NEXT_PART",
-        ArrowUp: inspectMode ? "ROTATE_INSPECT_UP" : undefined,
-        ArrowDown: inspectMode ? "ROTATE_INSPECT_DOWN" : undefined,
         Enter: "ENTER_INSPECT",
         Escape: "EXIT_INSPECT",
         Backspace: event.shiftKey ? "CLEAR_ORDER" : "REMOVE_LAST",
@@ -2229,10 +2230,6 @@ export default function SpatialScene() {
         A: "ROTATE_INSPECT_LEFT",
         d: "ROTATE_INSPECT_RIGHT",
         D: "ROTATE_INSPECT_RIGHT",
-        w: "ROTATE_INSPECT_UP",
-        W: "ROTATE_INSPECT_UP",
-        s: "ROTATE_INSPECT_DOWN",
-        S: "ROTATE_INSPECT_DOWN",
         r: "RESET",
         R: "RESET",
         e: "TOGGLE_BURGER_EXPLODE",
