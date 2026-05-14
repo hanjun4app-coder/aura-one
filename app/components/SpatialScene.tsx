@@ -121,14 +121,17 @@ const INSPECT_GROW_THRESHOLD = 0.048;   // palm-width growth to confirm approach
 const INSPECT_GUIDANCE_THRESHOLD = 0.018; // lower threshold for "OPEN HAND INSPECT" hint
 const INSPECT_SAMPLE_WINDOW_MS = 600;   // wider window for a more relaxed trigger
 
-// Pinch-hold gesture — thumb tip and index tip converging, held for duration.
-// Safety rules: tighter pinch threshold, longer hold, stricter stability, release required between fires.
-const PINCH_DIST_THRESHOLD = 0.060;      // tighter contact requirement (was 0.068)
-const PINCH_HOLD_MS = 1100;              // 1.1 s sustained hold required (was 750)
-const PINCH_COOLDOWN_MS = 4000;          // 4 s post-fire lockout (was 3000)
-const PINCH_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if swipe fired recently (was 800)
-const PINCH_MAX_MOTION = 0.022;          // strict lateral stability gate (was 0.038)
-const PINCH_WARN_MOTION = 0.012;         // threshold for KEEP STILL warning
+// Fist-hold gesture — fingertips curling toward palm center, held for duration.
+// Fist score = average(tipDist[index,middle,ring,pinky] to palmCenter) / palmWidth.
+// Below FIST_OPENNESS_THRESHOLD → classified as fist. Thumb is intentionally excluded
+// because thumb position varies widely across natural fist styles.
+// Gate: only active in !isHandOpen branch so inspect gestures cannot interfere.
+const FIST_OPENNESS_THRESHOLD = 1.05;    // normalised avg tip distance — below = fist
+const FIST_HOLD_MS = 1100;               // 1.1 s sustained fist required
+const FIST_COOLDOWN_MS = 4000;           // 4 s post-fire lockout
+const FIST_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if swipe fired recently
+const FIST_MAX_MOTION = 0.022;           // max lateral drift during hold before cancel
+const FIST_WARN_MOTION = 0.012;          // threshold for KEEP FIST CLOSED warning
 
 // Exit-inspect gesture — open hand shrinking = hand retreating from camera ("push away").
 // Uses same palm-width metric as enter so they are symmetrically detectable.
@@ -188,10 +191,8 @@ type CameraGestureStatus =
   | "OPPOSITE LOCK"
   | "OPEN HAND INSPECT"
   | "INSPECT GESTURE"
-  | "PINCH HOLD"
-  | "PINCH HOLD TO ADD"
-  | "KEEP STILL"
-  | "PINCH ADD"
+  | "FIST HOLD TO ADD"
+  | "KEEP FIST CLOSED"
   | "ADDED TO ORDER"
   | "MOVE HAND BACK"
   | "EXIT INSPECT"
@@ -1428,11 +1429,11 @@ function CameraGestureLayer({
   const lastSwipeTimeRef = useRef(0);
   const lastInspectTimeRef = useRef(0);
   const lastExitInspectTimeRef = useRef(0);
-  const lastPinchTimeRef = useRef(0);
-  const pinchActiveRef = useRef(false);
-  const pinchWasReleasedRef = useRef(true); // must release between fires
-  const pinchStartTimeRef = useRef(0);
-  const pinchStartPalmXRef = useRef(0);
+  const lastFistTimeRef = useRef(0);
+  const fistActiveRef = useRef(false);
+  const fistWasReleasedRef = useRef(true); // must open hand between fires
+  const fistStartTimeRef = useRef(0);
+  const fistStartPalmXRef = useRef(0);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -1477,11 +1478,11 @@ function CameraGestureLayer({
     lastSwipeTimeRef.current = 0;
     lastInspectTimeRef.current = 0;
     lastExitInspectTimeRef.current = 0;
-    lastPinchTimeRef.current = 0;
-    pinchActiveRef.current = false;
-    pinchWasReleasedRef.current = true;
-    pinchStartTimeRef.current = 0;
-    pinchStartPalmXRef.current = 0;
+    lastFistTimeRef.current = 0;
+    fistActiveRef.current = false;
+    fistWasReleasedRef.current = true;
+    fistStartTimeRef.current = 0;
+    fistStartPalmXRef.current = 0;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1602,58 +1603,79 @@ function CameraGestureLayer({
             }
           }
         } else {
-          // Hand is closed — wipe palm history so inspect cannot chain into a pinch release.
+          // Hand is closed — wipe palm history so inspect cannot chain into a fist release.
           palmSizeSamplesRef.current = [];
 
-          // ── Pinch-hold gesture: must sustain pinch for PINCH_HOLD_MS ──────
-          // Gates: not inside post-fire cooldown, not inside post-swipe window,
-          //        hand must stay laterally stable (no swipe-like motion).
-          const sinceLastFired = now - lastPinchTimeRef.current;
-          const sinceLastSwipe = now - lastSwipeTimeRef.current;
-          const postSwipeSuppressed = sinceLastSwipe < PINCH_AFTER_SWIPE_IGNORE_MS;
-          const postFireLocked = sinceLastFired < PINCH_COOLDOWN_MS;
+          // ── Fist-hold gesture ─────────────────────────────────────────────
+          // Measure how curled the four main fingers are: average normalised
+          // distance from each fingertip to the palm center, divided by palm
+          // width so the score is invariant to hand-camera distance.
+          // Thumb excluded — its position varies too much across fist styles.
+          const lm9  = landmarks[9];   // middle MCP
+          const lm13 = landmarks[13];  // ring MCP
+          const lm8  = landmarks[8];   // index tip
+          const lm16 = landmarks[16];  // ring tip
+          const lm20 = landmarks[20];  // pinky tip
 
-          const pinchContact = pinchDist < PINCH_DIST_THRESHOLD;
-
-          // Mark released whenever finger contact breaks — required before a new hold can start.
-          if (!pinchContact) {
-            pinchWasReleasedRef.current = true;
-            if (pinchActiveRef.current) {
-              pinchActiveRef.current = false;
-              pinchStartTimeRef.current = 0;
+          let isFist = false;
+          if (lm5 && lm9 && lm13 && lm17 && lm8 && middleTip && lm16 && lm20) {
+            const pcx = (wrist.x + lm5.x + lm9.x + lm13.x + lm17.x) / 5;
+            const pcy = (wrist.y + lm5.y + lm9.y + lm13.y + lm17.y) / 5;
+            const palmWidth = Math.hypot(lm5.x - lm17.x, lm5.y - lm17.y);
+            if (palmWidth > 0.001) {
+              const d8  = Math.hypot(lm8.x  - pcx, lm8.y  - pcy) / palmWidth;
+              const d12 = Math.hypot(middleTip.x - pcx, middleTip.y - pcy) / palmWidth;
+              const d16 = Math.hypot(lm16.x - pcx, lm16.y - pcy) / palmWidth;
+              const d20 = Math.hypot(lm20.x - pcx, lm20.y - pcy) / palmWidth;
+              const avgTipDist = (d8 + d12 + d16 + d20) / 4;
+              isFist = avgTipDist < FIST_OPENNESS_THRESHOLD;
             }
           }
 
-          if (pinchContact && !postSwipeSuppressed && !postFireLocked) {
-            // Only start a new hold if the finger was genuinely released since last fire.
-            if (!pinchActiveRef.current && pinchWasReleasedRef.current) {
-              pinchActiveRef.current = true;
-              pinchWasReleasedRef.current = false; // consumed — must re-release to start again
-              pinchStartTimeRef.current = now;
-              pinchStartPalmXRef.current = palmX;
+          // Gates: post-fire cooldown, post-swipe suppression, lateral stability.
+          const sinceLastFired = now - lastFistTimeRef.current;
+          const sinceLastSwipe = now - lastSwipeTimeRef.current;
+          const postSwipeSuppressed = sinceLastSwipe < FIST_AFTER_SWIPE_IGNORE_MS;
+          const postFireLocked = sinceLastFired < FIST_COOLDOWN_MS;
+
+          // Opening hand resets the release gate so a new hold can begin.
+          if (!isFist) {
+            fistWasReleasedRef.current = true;
+            if (fistActiveRef.current) {
+              fistActiveRef.current = false;
+              fistStartTimeRef.current = 0;
+            }
+          }
+
+          if (isFist && !postSwipeSuppressed && !postFireLocked) {
+            // Only start a new hold if the fist was genuinely released since last fire.
+            if (!fistActiveRef.current && fistWasReleasedRef.current) {
+              fistActiveRef.current = true;
+              fistWasReleasedRef.current = false; // consumed — must open before retrying
+              fistStartTimeRef.current = now;
+              fistStartPalmXRef.current = palmX;
             }
 
-            if (pinchActiveRef.current) {
-              const holdMs = now - pinchStartTimeRef.current;
-              const palmDrift = Math.abs(palmX - pinchStartPalmXRef.current);
+            if (fistActiveRef.current) {
+              const holdMs = now - fistStartTimeRef.current;
+              const palmDrift = Math.abs(palmX - fistStartPalmXRef.current);
 
-              if (palmDrift > PINCH_MAX_MOTION) {
-                // Hand drifted laterally — cancel hold, require release before retry
-                pinchActiveRef.current = false;
-                pinchWasReleasedRef.current = false;
-                pinchStartTimeRef.current = 0;
-              } else if (holdMs >= PINCH_HOLD_MS) {
-                // FIRED — require full release before next hold can start
-                pinchActiveRef.current = false;
-                pinchWasReleasedRef.current = false;
-                lastPinchTimeRef.current = now;
+              if (palmDrift > FIST_MAX_MOTION) {
+                // Hand drifted — cancel, require open before retry
+                fistActiveRef.current = false;
+                fistWasReleasedRef.current = false;
+                fistStartTimeRef.current = 0;
+              } else if (holdMs >= FIST_HOLD_MS) {
+                // FIRED
+                fistActiveRef.current = false;
+                fistWasReleasedRef.current = false;
+                lastFistTimeRef.current = now;
                 statusHoldUntilRef.current = now + 1500;
                 updateStatus("ADDED TO ORDER");
                 onGesture("ADD_TO_ORDER");
               } else {
-                // Still counting — hold status live so READY cannot overwrite
                 statusHoldUntilRef.current = now + 200;
-                updateStatus(palmDrift > PINCH_WARN_MOTION ? "KEEP STILL" : "PINCH HOLD TO ADD");
+                updateStatus(palmDrift > FIST_WARN_MOTION ? "KEEP FIST CLOSED" : "FIST HOLD TO ADD");
               }
             }
           }
@@ -2393,7 +2415,7 @@ export default function SpatialScene() {
       <div className="pointer-events-none absolute bottom-4 right-4 max-w-[20rem] border border-stone-300/20 bg-white/30 px-3 py-2.5 text-right backdrop-blur-md md:right-6">
         <p className="text-[0.58rem] tracking-[0.18em] text-stone-500/65">{gestureHint}</p>
         <p className="mt-1.5 text-[0.54rem] tracking-[0.14em] text-amber-700/48">
-          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • PINCH HOLD ADD
+          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • FIST HOLD ADD
         </p>
       </div>
 
