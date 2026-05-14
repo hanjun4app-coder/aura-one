@@ -783,13 +783,16 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// Assembled Y positions match the stacked burger look; exploded positions give 0.65 spacing.
-const BURGER_ASSEMBLED_Y = [-0.40, -0.23, -0.13, -0.03, 0.04, 0.09, 0.22] as const;
-const BURGER_EXPLODED_Y  = [-1.20, -0.68, -0.32,  0.02, 0.36, 0.70, 1.20] as const;
+// Assembled Y — compressed natural stack. Exploded Y — tighter elegant spacing (~0.24 apart).
+const BURGER_ASSEMBLED_Y = [-0.36, -0.20, -0.11, -0.01, 0.06, 0.12, 0.25] as const;
+const BURGER_EXPLODED_Y  = [-0.74, -0.44, -0.20,  0.04, 0.28, 0.52, 0.74] as const;
+// Per-layer Y-axis rotation speed (rad/s). Alternating direction adds visual depth.
+const BURGER_LAYER_ROT_SPEED = [0.10, -0.14, 0.08, -0.11, 0.15, -0.09, 0.12] as const;
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
   const wrapperRef = useRef<THREE.Group>(null);
+  const shadowRef = useRef<THREE.Mesh>(null);
   const g0 = useRef<THREE.Group>(null);
   const g1 = useRef<THREE.Group>(null);
   const g2 = useRef<THREE.Group>(null);
@@ -797,76 +800,108 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g4 = useRef<THREE.Group>(null);
   const g5 = useRef<THREE.Group>(null);
   const g6 = useRef<THREE.Group>(null);
+  // Accumulated Y-rotation per layer — persists between frames
+  const layerRot = useRef([0, 0, 0, 0, 0, 0, 0]);
+
+  // Staggered per-layer progress: lower layers move first on explode.
+  // Reverse stagger occurs naturally on collapse — top layers converge first.
+  const staggerP = (raw: number, i: number) => {
+    const staggerOffset = i * 0.055;
+    const usableRange = 1 - 6 * 0.055;
+    return smoothStep(Math.max(0, Math.min(1, (raw - staggerOffset) / usableRange)));
+  };
 
   useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 2.0)
+      1 - Math.exp(-delta * 2.2)
     );
+
     if (wrapperRef.current) {
-      wrapperRef.current.visible = active || progressRef.current > 0.02;
+      wrapperRef.current.visible = active || progressRef.current > 0.01;
     }
-    const p = smoothStep(progressRef.current);
+
+    const raw = progressRef.current;
     const t = clock.getElapsedTime();
+    const refs = [g0, g1, g2, g3, g4, g5, g6];
 
-    const yFor = (assembled: number, exploded: number, i: number) =>
-      THREE.MathUtils.lerp(assembled, exploded, p) +
-      Math.sin(t * 0.38 + i * 0.72) * 0.010 * p;
+    refs.forEach((ref, i) => {
+      if (!ref.current) return;
+      const p = staggerP(raw, i);
+      // Position: lerp assembled → exploded with subtle hover once separated
+      ref.current.position.y =
+        THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
+        Math.sin(t * 0.44 + i * 0.95) * 0.016 * p;
+      // Per-layer Y rotation — only accumulates while layer is open
+      layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
+      ref.current.rotation.y = layerRot.current[i];
+    });
 
-    if (g0.current) g0.current.position.y = yFor(BURGER_ASSEMBLED_Y[0], BURGER_EXPLODED_Y[0], 0);
-    if (g1.current) g1.current.position.y = yFor(BURGER_ASSEMBLED_Y[1], BURGER_EXPLODED_Y[1], 1);
-    if (g2.current) g2.current.position.y = yFor(BURGER_ASSEMBLED_Y[2], BURGER_EXPLODED_Y[2], 2);
-    if (g3.current) g3.current.position.y = yFor(BURGER_ASSEMBLED_Y[3], BURGER_EXPLODED_Y[3], 3);
-    if (g4.current) g4.current.position.y = yFor(BURGER_ASSEMBLED_Y[4], BURGER_EXPLODED_Y[4], 4);
-    if (g5.current) g5.current.position.y = yFor(BURGER_ASSEMBLED_Y[5], BURGER_EXPLODED_Y[5], 5);
-    if (g6.current) g6.current.position.y = yFor(BURGER_ASSEMBLED_Y[6], BURGER_EXPLODED_Y[6], 6);
+    // Contact shadow fades in as stack opens
+    if (shadowRef.current) {
+      (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
+        smoothStep(raw) * 0.28;
+    }
   });
 
   return (
     <group ref={wrapperRef}>
+      {/* Soft contact shadow beneath the stack */}
+      <mesh ref={shadowRef} position={[0, -0.80, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.58, 48]} />
+        <meshStandardMaterial
+          color="#1c0c04"
+          transparent
+          opacity={0}
+          roughness={1}
+          depthWrite={false}
+        />
+      </mesh>
+
       {/* Layer 0 — Bottom Bun */}
       <group ref={g0}>
         <mesh>
-          <cylinderGeometry args={[0.42, 0.44, 0.18, 28]} />
-          <meshStandardMaterial color="#c87941" metalness={0.06} roughness={0.80} />
+          <cylinderGeometry args={[0.42, 0.44, 0.17, 32]} />
+          <meshStandardMaterial color="#bf7336" metalness={0.05} roughness={0.82} />
         </mesh>
-        <mesh position={[0, -0.10, 0]}>
-          <cylinderGeometry args={[0.44, 0.44, 0.04, 28]} />
-          <meshStandardMaterial color="#a86030" metalness={0.05} roughness={0.86} />
-        </mesh>
-        <mesh position={[0, -0.10, 0]}>
-          <torusGeometry args={[0.46, 0.008, 8, 40]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.5} metalness={0.5} roughness={0.1} />
+        {/* Toasted underside */}
+        <mesh position={[0, -0.086, 0]}>
+          <cylinderGeometry args={[0.44, 0.44, 0.03, 32]} />
+          <meshStandardMaterial color="#9a5228" metalness={0.04} roughness={0.90} />
         </mesh>
       </group>
 
       {/* Layer 1 — Truffle Sauce */}
       <group ref={g1}>
+        {/* Sauce disc */}
         <mesh>
-          <cylinderGeometry args={[0.38, 0.39, 0.07, 24]} />
-          <meshStandardMaterial color="#d4b050" metalness={0.05} roughness={0.74} />
+          <cylinderGeometry args={[0.36, 0.38, 0.055, 28]} />
+          <meshStandardMaterial color="#c8a040" metalness={0.08} roughness={0.60} />
         </mesh>
-        <mesh position={[0, -0.03, 0]}>
-          <cylinderGeometry args={[0.41, 0.41, 0.02, 24]} />
-          <meshStandardMaterial color="#e0c060" metalness={0.04} roughness={0.78} />
+        {/* Sauce gloss pool — slightly wider, thinner */}
+        <mesh position={[0, 0.022, 0]}>
+          <cylinderGeometry args={[0.39, 0.39, 0.014, 28]} />
+          <meshStandardMaterial color="#ddb84a" metalness={0.12} roughness={0.45} />
         </mesh>
       </group>
 
       {/* Layer 2 — Wagyu Patty */}
       <group ref={g2}>
         <mesh>
-          <cylinderGeometry args={[0.40, 0.42, 0.20, 24]} />
-          <meshStandardMaterial color="#2e1208" metalness={0.10} roughness={0.88} />
+          <cylinderGeometry args={[0.40, 0.42, 0.19, 28]} />
+          <meshStandardMaterial color="#2a1006" metalness={0.10} roughness={0.88} />
         </mesh>
-        <mesh position={[0, 0.09, 0]}>
-          <cylinderGeometry args={[0.40, 0.40, 0.025, 24]} />
-          <meshStandardMaterial color="#180804" metalness={0.08} roughness={0.92} />
+        {/* Char crust top */}
+        <mesh position={[0, 0.088, 0]}>
+          <cylinderGeometry args={[0.40, 0.40, 0.022, 28]} />
+          <meshStandardMaterial color="#140602" metalness={0.08} roughness={0.94} />
         </mesh>
+        {/* Grill marks */}
         {([0, 1, 2] as const).map((i) => (
-          <mesh key={i} position={[(i - 1) * 0.14, 0.10, 0]} rotation={[0, 0, 0.08]}>
-            <boxGeometry args={[0.038, 0.012, 0.72]} />
-            <meshStandardMaterial color="#0c0604" metalness={0.1} roughness={0.94} />
+          <mesh key={i} position={[(i - 1) * 0.13, 0.097, 0]} rotation={[0, 0.18, 0]}>
+            <boxGeometry args={[0.032, 0.010, 0.70]} />
+            <meshStandardMaterial color="#0a0402" metalness={0.08} roughness={0.96} />
           </mesh>
         ))}
       </group>
@@ -874,77 +909,85 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       {/* Layer 3 — Aged Cheddar */}
       <group ref={g3}>
         <mesh>
-          <boxGeometry args={[0.76, 0.055, 0.76]} />
-          <meshStandardMaterial color="#f4b428" metalness={0.06} roughness={0.64} />
+          <boxGeometry args={[0.74, 0.050, 0.74]} />
+          <meshStandardMaterial color="#f0ae22" metalness={0.06} roughness={0.60} />
         </mesh>
-        <mesh position={[0.37, -0.024, 0]}>
-          <boxGeometry args={[0.04, 0.055, 0.72]} />
-          <meshStandardMaterial color="#e8a820" metalness={0.05} roughness={0.70} />
+        {/* Melted drape edges */}
+        <mesh position={[0.36, -0.022, 0]}>
+          <boxGeometry args={[0.036, 0.050, 0.70]} />
+          <meshStandardMaterial color="#e2a018" metalness={0.05} roughness={0.66} />
         </mesh>
-        <mesh position={[-0.37, -0.024, 0]}>
-          <boxGeometry args={[0.04, 0.055, 0.72]} />
-          <meshStandardMaterial color="#e8a820" metalness={0.05} roughness={0.70} />
+        <mesh position={[-0.36, -0.022, 0]}>
+          <boxGeometry args={[0.036, 0.050, 0.70]} />
+          <meshStandardMaterial color="#e2a018" metalness={0.05} roughness={0.66} />
         </mesh>
       </group>
 
       {/* Layer 4 — Tomato */}
       <group ref={g4}>
         <mesh>
-          <cylinderGeometry args={[0.37, 0.38, 0.08, 24]} />
-          <meshStandardMaterial color="#c83428" metalness={0.08} roughness={0.70} />
+          <cylinderGeometry args={[0.36, 0.38, 0.075, 28]} />
+          <meshStandardMaterial color="#c43024" metalness={0.08} roughness={0.68} />
         </mesh>
+        {/* Juice seeds */}
         {([0, 1, 2, 3, 4, 5] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 6) * Math.PI * 2) * 0.18,
-              0.038,
-              Math.sin((i / 6) * Math.PI * 2) * 0.18,
+              Math.cos((i / 6) * Math.PI * 2) * 0.17,
+              0.036,
+              Math.sin((i / 6) * Math.PI * 2) * 0.17,
             ]}
           >
-            <sphereGeometry args={[0.030, 6, 5]} />
-            <meshStandardMaterial color="#f8d0c0" metalness={0.04} roughness={0.82} />
+            <sphereGeometry args={[0.026, 6, 5]} />
+            <meshStandardMaterial color="#f4c8b0" metalness={0.04} roughness={0.80} />
           </mesh>
         ))}
       </group>
 
       {/* Layer 5 — Crisp Lettuce */}
       <group ref={g5}>
+        {/* Outer leaf ring */}
         <mesh>
-          <cylinderGeometry args={[0.46, 0.46, 0.046, 24]} />
-          <meshStandardMaterial color="#4a8c3a" metalness={0.04} roughness={0.88} />
+          <cylinderGeometry args={[0.48, 0.48, 0.040, 28]} />
+          <meshStandardMaterial color="#3e8032" metalness={0.03} roughness={0.90} />
         </mesh>
-        <mesh position={[0, 0.018, 0]}>
-          <cylinderGeometry args={[0.36, 0.36, 0.02, 24]} />
-          <meshStandardMaterial color="#6ab050" metalness={0.04} roughness={0.86} />
+        {/* Inner lighter center */}
+        <mesh position={[0, 0.016, 0]}>
+          <cylinderGeometry args={[0.32, 0.32, 0.018, 28]} />
+          <meshStandardMaterial color="#62a84a" metalness={0.03} roughness={0.88} />
         </mesh>
+        {/* Ruffled edge torus */}
         <mesh>
-          <torusGeometry args={[0.44, 0.022, 8, 32]} />
-          <meshStandardMaterial color="#3a7230" metalness={0.04} roughness={0.90} />
+          <torusGeometry args={[0.42, 0.020, 8, 36]} />
+          <meshStandardMaterial color="#2e6628" metalness={0.03} roughness={0.92} />
         </mesh>
       </group>
 
       {/* Layer 6 — Top Bun */}
       <group ref={g6}>
-        <mesh position={[0, -0.07, 0]}>
-          <cylinderGeometry args={[0.40, 0.43, 0.20, 28]} />
-          <meshStandardMaterial color="#d4874a" metalness={0.06} roughness={0.78} />
+        {/* Bun cylinder base */}
+        <mesh position={[0, -0.06, 0]}>
+          <cylinderGeometry args={[0.40, 0.43, 0.18, 32]} />
+          <meshStandardMaterial color="#cc8040" metalness={0.05} roughness={0.78} />
         </mesh>
-        <mesh position={[0, 0.07, 0]}>
-          <sphereGeometry args={[0.38, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
-          <meshStandardMaterial color="#c87941" metalness={0.05} roughness={0.80} />
+        {/* Dome */}
+        <mesh position={[0, 0.068, 0]}>
+          <sphereGeometry args={[0.37, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.50]} />
+          <meshStandardMaterial color="#c07838" metalness={0.05} roughness={0.80} />
         </mesh>
+        {/* Sesame seeds */}
         {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
-              0.15,
-              Math.sin((i / 8) * Math.PI * 2) * (0.16 + seededUnit(i * 7) * 0.1),
+              Math.cos((i / 8) * Math.PI * 2) * (0.15 + seededUnit(i * 7) * 0.10),
+              0.148,
+              Math.sin((i / 8) * Math.PI * 2) * (0.15 + seededUnit(i * 7) * 0.10),
             ]}
           >
-            <sphereGeometry args={[0.022, 6, 5]} />
-            <meshStandardMaterial color="#f0e8c8" metalness={0.06} roughness={0.70} />
+            <sphereGeometry args={[0.020, 6, 5]} />
+            <meshStandardMaterial color="#ece4c0" metalness={0.06} roughness={0.68} />
           </mesh>
         ))}
       </group>
@@ -1420,6 +1463,54 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
         color="#ffcc88"
         position={[0, -1.6, 1.8]}
         distance={6}
+        intensity={0}
+      />
+    </>
+  );
+}
+
+// Dedicated warm lighting for the burger exploded ingredient showcase.
+// Fades in independently of InspectSceneLighting to add extra depth when layers open.
+function BurgerExplodedLighting({ active }: { active: boolean }) {
+  const topKeyRef = useRef<THREE.DirectionalLight>(null);
+  const warmFillRef = useRef<THREE.PointLight>(null);
+  const underlightRef = useRef<THREE.PointLight>(null);
+  const blendRef = useRef(0);
+
+  useFrame((_, delta) => {
+    blendRef.current = THREE.MathUtils.lerp(
+      blendRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 1.8)
+    );
+    if (topKeyRef.current)   topKeyRef.current.intensity   = blendRef.current * 1.4;
+    if (warmFillRef.current) warmFillRef.current.intensity = blendRef.current * 0.90;
+    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.55;
+  });
+
+  return (
+    <>
+      {/* Warm overhead key — rakes across the stack from upper-left */}
+      <directionalLight
+        ref={topKeyRef}
+        position={[-0.6, 4.8, 2.4]}
+        color="#ffe0b0"
+        intensity={0}
+      />
+      {/* Soft warm fill from the right */}
+      <pointLight
+        ref={warmFillRef}
+        position={[2.8, 1.2, 1.4]}
+        color="#ffc880"
+        distance={10}
+        intensity={0}
+      />
+      {/* Warm underlight — lifts shadow beneath each floating layer */}
+      <pointLight
+        ref={underlightRef}
+        position={[0, -1.2, 1.2]}
+        color="#ff9a50"
+        distance={4.5}
         intensity={0}
       />
     </>
@@ -2012,7 +2103,7 @@ export default function SpatialScene() {
   const trayRef = useRef<HTMLDivElement>(null);
 
   // Auto-demo mode — all stable refs, no extra re-renders
-  const lastInteractionRef = useRef(Date.now());
+  const lastInteractionRef = useRef(0);
   const demoActiveRef = useRef(false);
   const demoPhaseRef = useRef<"wait_inspect" | "inspecting" | "wait_next" | null>(null);
   const demoPhaseDueRef = useRef(0);
@@ -2031,6 +2122,8 @@ export default function SpatialScene() {
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
   useEffect(() => {
+    // Seed idle timer from mount so demo doesn't fire from epoch
+    lastInteractionRef.current = Date.now();
     const t1 = setTimeout(() => setIntroFading(true), 1800);
     const t2 = setTimeout(() => setExploded(true), 2200);
     const t3 = setTimeout(() => setIntroVisible(false), 3200);
@@ -2346,6 +2439,7 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
         <pointLight position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
         <InspectSceneLighting inspectMode={inspectMode} />
+        <BurgerExplodedLighting active={burgerExploded && inspectMode && activePartIndex === 0} />
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
@@ -2469,39 +2563,48 @@ export default function SpatialScene() {
         )}
       </div>
 
-      {/* ── Ingredient HUD — premium glass, burger exploded only ── */}
+      {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-white/18 bg-white/26 p-5 text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 md:left-6 md:p-6 ${
+        className={`pointer-events-none absolute left-4 top-1/2 w-[min(17rem,calc(100vw-2rem))] -translate-y-1/2 overflow-hidden border border-amber-200/22 bg-white/28 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl transition-all duration-700 md:left-6 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
-            : "pointer-events-none opacity-0"
+            : "opacity-0"
         }`}
       >
-        <p className="mb-4 text-[0.44rem] tracking-[0.44em] text-stone-400/48">
-          INGREDIENTS
-        </p>
-        <ul className="space-y-3">
-          {BURGER_INGREDIENTS.map((ingredient) => (
-            <li key={ingredient.name} className="border-b border-stone-100/55 pb-3 last:border-0 last:pb-0">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[0.72rem] font-light tracking-[0.08em] text-stone-800">
-                  {ingredient.name}
-                </span>
-                <span className="shrink-0 text-[0.52rem] tracking-[0.10em] text-amber-700/48">
-                  {ingredient.cal}
-                </span>
-              </div>
-              <p className="mt-0.5 text-[0.56rem] leading-[1.6] text-stone-500/70">
-                {ingredient.flavor}
-              </p>
-              {ingredient.allergen !== "None" && (
-                <p className="mt-0.5 text-[0.50rem] tracking-[0.08em] text-amber-700/38">
-                  {ingredient.allergen}
+        {/* Warm amber top accent bar */}
+        <div className="h-[2px] w-full bg-gradient-to-r from-amber-500/0 via-amber-500/40 to-amber-500/0" />
+        <div className="p-5 md:p-6">
+          <p className="mb-1 text-[0.40rem] tracking-[0.50em] text-amber-700/50">
+            TASTING NOTES
+          </p>
+          <p className="mb-4 text-[0.64rem] font-light tracking-[0.12em] text-stone-700/80">
+            Signature Burger
+          </p>
+          <ul className="space-y-3">
+            {BURGER_INGREDIENTS.map((ingredient) => (
+              <li key={ingredient.name} className="border-b border-stone-200/35 pb-3 last:border-0 last:pb-0">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[0.68rem] font-light tracking-[0.06em] text-stone-800/90">
+                    {ingredient.name}
+                  </span>
+                  <span className="shrink-0 text-[0.48rem] tracking-[0.10em] text-amber-700/44">
+                    {ingredient.cal}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[0.54rem] leading-[1.55] text-stone-500/68">
+                  {ingredient.flavor}
                 </p>
-              )}
-            </li>
-          ))}
-        </ul>
+                {ingredient.allergen !== "None" && (
+                  <p className="mt-0.5 text-[0.46rem] tracking-[0.06em] text-amber-800/32">
+                    {ingredient.allergen}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+        {/* Warm bottom fade */}
+        <div className="h-[1px] w-full bg-gradient-to-r from-stone-300/0 via-stone-300/28 to-stone-300/0" />
       </div>
 
       {/* ── Minimal bottom branding ── */}
