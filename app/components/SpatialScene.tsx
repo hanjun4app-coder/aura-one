@@ -160,10 +160,7 @@ type LogoParticle = {
   seed: number;
 };
 
-type LandingPhase = "intro" | "landing" | "hero" | "menu";
-type HeroDemoPhase = "idle" | "slide" | "return" | "inspect" | "exit" | "done";
-
-const WAVE_COOLDOWN_MS = 900; // minimum ms between two counted waves
+type LandingPhase = "intro" | "menu";
 
 type GestureAction =
   | "EXPLODE"
@@ -976,161 +973,6 @@ function BurgerExplodedView({ active }: { active: boolean }) {
             <meshStandardMaterial color="#ece4c0" metalness={0.06} roughness={0.68} />
           </mesh>
         ))}
-      </group>
-    </group>
-  );
-}
-
-// Hero burger for the cinematic landing sequence.
-// Uses a deep-cloned GLB scene with independent materials so it can coexist
-// with the carousel's BurgerModel (which renders the original shared scene).
-// Shared clone helper used by both hero components
-function cloneGLBScene(rawScene: THREE.Group) {
-  const clone = rawScene.clone(true);
-  clone.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh)) return;
-    const mats = Array.isArray(obj.material)
-      ? (obj.material as THREE.MeshStandardMaterial[])
-      : [obj.material as THREE.MeshStandardMaterial];
-    const cloned = mats.map((m) => {
-      const cm = m.clone();
-      cm.transparent = true;
-      cm.roughness = Math.max(cm.roughness, 0.55);
-      return cm;
-    });
-    obj.material = Array.isArray(obj.material) ? cloned : cloned[0];
-  });
-  return clone;
-}
-
-function collectMaterials(scene: THREE.Object3D) {
-  const out: THREE.MeshStandardMaterial[] = [];
-  scene.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh)) return;
-    const ms = Array.isArray(obj.material)
-      ? (obj.material as THREE.MeshStandardMaterial[])
-      : [obj.material as THREE.MeshStandardMaterial];
-    ms.forEach((m) => { if (m.isMeshStandardMaterial) out.push(m); });
-  });
-  return out;
-}
-
-function HeroBurger({ phase, demoPhase }: { phase: LandingPhase; demoPhase: HeroDemoPhase }) {
-  const { scene: rawScene } = useGLTF("/models/burger.glb");
-
-  const { clonedScene, center, normalizedScale } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(rawScene);
-    const sz  = box.getSize(new THREE.Vector3());
-    const c   = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(sz.x, sz.y, sz.z);
-    return { clonedScene: cloneGLBScene(rawScene), center: c, normalizedScale: maxDim > 0 ? 0.92 / maxDim : 1 };
-  }, [rawScene]);
-
-  const heroMats = useMemo(() => collectMaterials(clonedScene), [clonedScene]);
-
-  const wrapperRef = useRef<THREE.Group>(null);
-  const posXRef    = useRef(0);
-  const scaleRef   = useRef(0);
-  const rotYRef    = useRef(0);
-  const opacityRef = useRef(0);
-
-  useFrame((_, delta) => {
-    const isHero = phase === "hero";
-
-    // Resolve animation targets from demo phase
-    const targetX       = (!isHero || demoPhase === "slide") ? -4.2 : 0;
-    const targetOpacity = (!isHero || demoPhase === "slide") ? 0 : 1;
-    const targetScale   = !isHero ? 0
-      : (demoPhase === "inspect" || demoPhase === "exit") ? 2.18
-      : 1.68;
-
-    // Slide position — fast, confident
-    posXRef.current = THREE.MathUtils.lerp(posXRef.current, targetX,
-      1 - Math.exp(-delta * 1.9));
-    // Opacity — fade in/out
-    opacityRef.current = THREE.MathUtils.lerp(opacityRef.current, targetOpacity,
-      1 - Math.exp(-delta * (isHero ? 1.7 : 4.5)));
-    // Scale — cinematic slow zoom during inspect, normal otherwise
-    const scaleSpeed = (isHero && demoPhase === "inspect") ? 0.72
-      : (isHero && demoPhase === "exit") ? 1.2
-      : isHero ? 1.4 : 3.8;
-    scaleRef.current = THREE.MathUtils.lerp(scaleRef.current, targetScale,
-      1 - Math.exp(-delta * scaleSpeed));
-
-    if (scaleRef.current > 0.02) rotYRef.current += delta * 0.20;
-
-    if (wrapperRef.current) {
-      wrapperRef.current.position.set(posXRef.current, -0.08, 0.45);
-      wrapperRef.current.scale.setScalar(scaleRef.current);
-      wrapperRef.current.rotation.set(0, rotYRef.current, 0);
-      wrapperRef.current.visible = scaleRef.current > 0.004;
-    }
-    heroMats.forEach((m) => { m.opacity = opacityRef.current; });
-  });
-
-  return (
-    <group ref={wrapperRef}>
-      <group scale={normalizedScale}>
-        <group position={[-center.x, -center.y, -center.z]}>
-          <primitive object={clonedScene} />
-        </group>
-      </group>
-    </group>
-  );
-}
-
-// Secondary hero item — cloned sushi GLB, used during the demo slide sequence.
-function HeroSlideItem({ phase, demoPhase }: { phase: LandingPhase; demoPhase: HeroDemoPhase }) {
-  const { scene: rawScene } = useGLTF("/models/california-roll.glb");
-
-  const { clonedScene, center, normalizedScale } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(rawScene);
-    const sz  = box.getSize(new THREE.Vector3());
-    const c   = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(sz.x, sz.y, sz.z);
-    return { clonedScene: cloneGLBScene(rawScene), center: c, normalizedScale: maxDim > 0 ? 0.92 / maxDim : 1 };
-  }, [rawScene]);
-
-  const slideMats = useMemo(() => collectMaterials(clonedScene), [clonedScene]);
-
-  const wrapperRef = useRef<THREE.Group>(null);
-  const posXRef    = useRef(4.2);  // starts off-screen right
-  const scaleRef   = useRef(0);
-  const rotYRef    = useRef(0);
-  const opacityRef = useRef(0);
-
-  useFrame((_, delta) => {
-    const isVisible = phase === "hero" && (demoPhase === "slide" || demoPhase === "return");
-
-    // Slide in from right during 'slide', exit to right during 'return'
-    const targetX       = (isVisible && demoPhase === "slide") ? 0 : 4.2;
-    const targetOpacity = (isVisible && demoPhase === "slide") ? 1 : 0;
-    const targetScale   = isVisible ? 1.68 : 0;
-
-    posXRef.current = THREE.MathUtils.lerp(posXRef.current, targetX,
-      1 - Math.exp(-delta * 1.9));
-    opacityRef.current = THREE.MathUtils.lerp(opacityRef.current, targetOpacity,
-      1 - Math.exp(-delta * 2.0));
-    scaleRef.current = THREE.MathUtils.lerp(scaleRef.current, targetScale,
-      1 - Math.exp(-delta * (isVisible ? 1.4 : 4.0)));
-
-    if (scaleRef.current > 0.02) rotYRef.current += delta * 0.20;
-
-    if (wrapperRef.current) {
-      wrapperRef.current.position.set(posXRef.current, -0.08, 0.45);
-      wrapperRef.current.scale.setScalar(scaleRef.current);
-      wrapperRef.current.rotation.set(0, rotYRef.current, 0);
-      wrapperRef.current.visible = scaleRef.current > 0.004;
-    }
-    slideMats.forEach((m) => { m.opacity = opacityRef.current; });
-  });
-
-  return (
-    <group ref={wrapperRef}>
-      <group scale={normalizedScale} rotation={[0.18, 0, 0]}>
-        <group position={[-center.x, -center.y, -center.z]}>
-          <primitive object={clonedScene} />
-        </group>
       </group>
     </group>
   );
@@ -2259,11 +2101,7 @@ export default function SpatialScene() {
   const [trayGlow, setTrayGlow] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
-  const [waveCount, setWaveCount] = useState(0);
-  const [heroDemoPhase, setHeroDemoPhase] = useState<HeroDemoPhase>("idle");
   const landingPhaseRef = useRef<LandingPhase>("intro");
-  const heroDemoPhaseRef = useRef<HeroDemoPhase>("idle");
-  const lastWaveTimeRef = useRef(0);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const trayRef = useRef<HTMLDivElement>(null);
 
@@ -2287,22 +2125,16 @@ export default function SpatialScene() {
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
   useEffect(() => {
-    // Seed idle timer from mount so demo doesn't fire from epoch
     lastInteractionRef.current = Date.now();
-    // Title fades — menu book is already visible in background
+    // Intro title fades at 1.8s
     const t1 = setTimeout(() => setIntroFading(true), 1800);
-    // Title unmounts — "landing" phase: menu book is prominent, no food yet
-    const t2 = setTimeout(() => {
-      setIntroVisible(false);
-      setLandingPhase("landing");
-    }, 2800);
-    // Hero phase: large burger appears, menu book retreats, wave gate activates
-    const t3 = setTimeout(() => setLandingPhase("hero"), 4400);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
+    // Title unmounts at 2.8s; menu auto-opens at 3s
+    const t2 = setTimeout(() => setIntroVisible(false), 2800);
+    const t3 = setTimeout(() => {
+      setLandingPhase("menu");
+      setExploded(true);
+    }, 3000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
   const resetInspectRotation = useCallback(() => {
@@ -2314,21 +2146,6 @@ export default function SpatialScene() {
   useEffect(() => { explodedRef.current = exploded; }, [exploded]);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
-  useEffect(() => { heroDemoPhaseRef.current = heroDemoPhase; }, [heroDemoPhase]);
-
-  // Hero demo showcase sequence — fires once when landingPhase becomes "hero"
-  useEffect(() => {
-    if (landingPhase !== "hero") return;
-    const t0 = setTimeout(() => setHeroDemoPhase("slide"),   800);
-    const t1 = setTimeout(() => setHeroDemoPhase("return"),  2800);
-    const t2 = setTimeout(() => setHeroDemoPhase("inspect"), 3600);
-    const t3 = setTimeout(() => setHeroDemoPhase("exit"),    6600);
-    const t4 = setTimeout(() => setHeroDemoPhase("done"),    7400);
-    return () => {
-      clearTimeout(t0); clearTimeout(t1); clearTimeout(t2);
-      clearTimeout(t3); clearTimeout(t4);
-    };
-  }, [landingPhase]);
 
   // Auto-demo loop — ticks every 120ms, driven entirely by refs
   useEffect(() => {
@@ -2437,32 +2254,10 @@ export default function SpatialScene() {
       demoPhaseRef.current = null;
     }
 
-    // Landing gate — before menu is unlocked, only wave gestures are processed.
-    // TOGGLE_EXPLODE (Space) acts as an instant skip for demo operators.
+    // Landing gate — any gesture during the intro immediately opens the menu.
     if (landingPhaseRef.current !== "menu") {
-      if (landingPhaseRef.current === "hero") {
-        if (action === "NEXT_PART" || action === "PREV_PART") {
-          const now = Date.now();
-          // Wave gate only opens after the demo showcase finishes
-          if (heroDemoPhaseRef.current !== "done") return;
-          if (now - lastWaveTimeRef.current > WAVE_COOLDOWN_MS) {
-            lastWaveTimeRef.current = now;
-            setWaveCount((prev) => {
-              if (prev >= 1) {
-                // Second wave — unlock the menu
-                setLandingPhase("menu");
-                setExploded(true);
-                return 2;
-              }
-              return 1;
-            });
-          }
-        } else if (action === "TOGGLE_EXPLODE") {
-          // Operator skip (Space bar)
-          setLandingPhase("menu");
-          setExploded(true);
-        }
-      }
+      setLandingPhase("menu");
+      setExploded(true);
       return;
     }
 
@@ -2657,17 +2452,12 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
         <pointLight position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
         <InspectSceneLighting inspectMode={inspectMode} />
-        <BurgerExplodedLighting active={
-          landingPhase === "hero" ||
-          (burgerExploded && inspectMode && activePartIndex === 0)
-        } />
+        <BurgerExplodedLighting active={burgerExploded && inspectMode && activePartIndex === 0} />
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
-        <HeroBurger phase={landingPhase} demoPhase={heroDemoPhase} />
-        <HeroSlideItem phase={landingPhase} demoPhase={heroDemoPhase} />
-        {/* MenuBook opens (collapses) when hero or menu phase starts */}
-        <MenuBook open={landingPhase === "hero" || landingPhase === "menu"} />
+        {/* MenuBook collapses when menu opens, stays prominent during intro */}
+        <MenuBook open={landingPhase === "menu"} />
         <SpatialMenuCarousel
           exploded={exploded}
           activePartIndex={activePartIndex}
@@ -2687,12 +2477,6 @@ export default function SpatialScene() {
         className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
         style={{ background: "linear-gradient(to top, rgba(14,9,3,0.26) 0%, transparent 42%)" }}
       />
-      {/* Hero demo inspect vignette — lighter than real inspect mode */}
-      <div
-        className={`pointer-events-none absolute inset-0 transition-opacity duration-[1200ms] ${(heroDemoPhase === "inspect" || heroDemoPhase === "exit") ? "opacity-100" : "opacity-0"}`}
-        style={{ background: "radial-gradient(ellipse 110% 90% at 50% 52%, transparent 35%, rgba(18,11,4,0.24) 100%)" }}
-      />
-
       <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} />
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
@@ -2835,22 +2619,7 @@ export default function SpatialScene() {
 
       {/* ── Bottom branding + contextual hint ── */}
       <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-center">
-        {/* Wave gate progress — visible only after hero demo sequence completes */}
-        <div className={`flex flex-col items-center gap-2 transition-all duration-700 ${landingPhase === "hero" && heroDemoPhase === "done" ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <p className="whitespace-nowrap text-[0.46rem] tracking-[0.32em] text-stone-400/42">
-            {waveCount === 0
-              ? "Wave twice to begin"
-              : waveCount === 1
-              ? "1 / 2  —  wave again"
-              : ""}
-          </p>
-          {/* Progress dots */}
-          <div className="flex gap-2">
-            <span className={`h-[3px] w-4 rounded-full transition-colors duration-500 ${waveCount >= 1 ? "bg-amber-500/55" : "bg-stone-300/45"}`} />
-            <span className={`h-[3px] w-4 rounded-full transition-colors duration-500 ${waveCount >= 2 ? "bg-amber-500/55" : "bg-stone-300/45"}`} />
-          </div>
-        </div>
-        {/* Carousel gesture hint — visible only in menu phase */}
+        {/* Gesture hint — visible in menu phase */}
         <p className={`whitespace-nowrap text-[0.44rem] tracking-[0.28em] text-stone-400/28 transition-opacity duration-700 ${landingPhase === "menu" && exploded ? "opacity-100" : "opacity-0"}`}>
           {inspectMode
             ? "Open hand to add  ·  Swipe to return"
