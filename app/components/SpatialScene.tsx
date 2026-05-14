@@ -1521,6 +1521,19 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
   );
 }
 
+// Retry up to 10 animation frames waiting for the video element to mount.
+// Required because getUserMedia is async and may resolve before React has
+// committed the <video> element to the DOM.
+async function waitForVideoElement(
+  ref: { current: HTMLVideoElement | null }
+): Promise<HTMLVideoElement | null> {
+  for (let i = 0; i < 10; i++) {
+    if (ref.current) return ref.current;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+  return null;
+}
+
 function CameraGestureLayer({
   onGesture,
   inspectMode,
@@ -1921,11 +1934,13 @@ function CameraGestureLayer({
       return;
     }
 
-    const video = videoRef.current;
+    // Wait for the <video> element to mount (it may not exist yet if React
+    // hasn't re-rendered since the user clicked the button).
+    const video = await waitForVideoElement(videoRef);
 
     if (!video) {
       stream.getTracks().forEach((track) => track.stop());
-      reportCameraError("video element failed", "Video element unavailable");
+      reportCameraError("video element failed", "Video element unavailable after retries");
       isInitializingRef.current = false;
       return;
     }
@@ -2054,8 +2069,47 @@ function CameraGestureLayer({
 
   return (
     <div className="absolute right-4 top-4 md:right-6 md:top-6">
-      {!cameraEnabled ? (
-        /* Camera off — subtle enable prompt */
+      {/* Card + video always mounted so videoRef.current is never null when
+          enableCamera's async getUserMedia resolves. Hidden via sr-only when off. */}
+      <div className={cameraEnabled
+        ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
+        : "sr-only"
+      }>
+        <div className="relative aspect-video overflow-hidden bg-stone-100/60">
+          <video
+            ref={videoRef}
+            autoPlay
+            className="h-full w-full scale-x-[-1] object-cover"
+            muted
+            playsInline
+          />
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
+              <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
+              isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
+            }`} />
+            <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
+              {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
+            </p>
+          </div>
+          <button
+            onClick={stopCamera}
+            className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
+          >
+            OFF
+          </button>
+        </div>
+      </div>
+
+      {/* Enable button shown only when camera is off */}
+      {!cameraEnabled && (
         <button
           onClick={enableCamera}
           className="flex items-center gap-2 border border-stone-300/32 bg-white/48 px-3.5 py-2 text-[0.50rem] tracking-[0.26em] text-stone-500/70 shadow-sm shadow-stone-200/18 backdrop-blur-md transition hover:bg-white/68 hover:text-stone-700/85"
@@ -2063,41 +2117,6 @@ function CameraGestureLayer({
           <span className="h-1.5 w-1.5 rounded-full bg-stone-400/45" />
           ENABLE CAMERA
         </button>
-      ) : (
-        /* Camera enabled — compact preview + minimal status */
-        <div className="w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md">
-          <div className="relative aspect-video overflow-hidden bg-stone-100/60">
-            <video
-              ref={videoRef}
-              autoPlay
-              className="h-full w-full scale-x-[-1] object-cover"
-              muted
-              playsInline
-            />
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
-                <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between px-2.5 py-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
-                isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
-              }`} />
-              <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
-                {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
-              </p>
-            </div>
-            <button
-              onClick={stopCamera}
-              className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
-            >
-              OFF
-            </button>
-          </div>
-        </div>
       )}
     </div>
   );
