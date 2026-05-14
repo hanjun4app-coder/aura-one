@@ -700,7 +700,11 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
         m.transparent = true;
-        m.roughness = Math.max(m.roughness, 0.55);
+        // Lower floor lets GLB's natural sheen and sauce gloss show through.
+        // Only prevent fully mirror-like surfaces which look wrong on food.
+        m.roughness = Math.max(m.roughness, 0.32);
+        // Subtle environment response — warm cream background reads as ambient glow.
+        m.envMapIntensity = 0.75;
       });
     });
   }, [scene]);
@@ -814,7 +818,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 2.2)
+      1 - Math.exp(-delta * 2.0)
     );
 
     if (wrapperRef.current) {
@@ -828,19 +832,19 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     refs.forEach((ref, i) => {
       if (!ref.current) return;
       const p = staggerP(raw, i);
-      // Position: lerp assembled → exploded with subtle hover once separated
+      // Position: lerp assembled → exploded with alive hover once separated
       ref.current.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
-        Math.sin(t * 0.44 + i * 0.95) * 0.016 * p;
+        Math.sin(t * 0.42 + i * 0.95) * 0.022 * p;
       // Per-layer Y rotation — only accumulates while layer is open
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
       ref.current.rotation.y = layerRot.current[i];
     });
 
-    // Contact shadow fades in as stack opens
+    // Contact shadow deepens as stack opens
     if (shadowRef.current) {
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        smoothStep(raw) * 0.28;
+        smoothStep(raw) * 0.38;
     }
   });
 
@@ -862,12 +866,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       <group ref={g0}>
         <mesh>
           <cylinderGeometry args={[0.42, 0.44, 0.17, 32]} />
-          <meshStandardMaterial color="#bf7336" metalness={0.05} roughness={0.82} />
+          <meshStandardMaterial color="#c07840" metalness={0.05} roughness={0.76} />
         </mesh>
         {/* Toasted underside */}
         <mesh position={[0, -0.086, 0]}>
           <cylinderGeometry args={[0.44, 0.44, 0.03, 32]} />
-          <meshStandardMaterial color="#9a5228" metalness={0.04} roughness={0.90} />
+          <meshStandardMaterial color="#9e5630" metalness={0.04} roughness={0.88} />
         </mesh>
       </group>
 
@@ -876,12 +880,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         {/* Sauce disc */}
         <mesh>
           <cylinderGeometry args={[0.36, 0.38, 0.055, 28]} />
-          <meshStandardMaterial color="#c8a040" metalness={0.08} roughness={0.60} />
+          <meshStandardMaterial color="#caa438" metalness={0.10} roughness={0.55} />
         </mesh>
         {/* Sauce gloss pool — slightly wider, thinner */}
         <mesh position={[0, 0.022, 0]}>
           <cylinderGeometry args={[0.39, 0.39, 0.014, 28]} />
-          <meshStandardMaterial color="#ddb84a" metalness={0.12} roughness={0.45} />
+          <meshStandardMaterial color="#e0bc4a" metalness={0.16} roughness={0.38} />
         </mesh>
       </group>
 
@@ -889,12 +893,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       <group ref={g2}>
         <mesh>
           <cylinderGeometry args={[0.40, 0.42, 0.19, 28]} />
-          <meshStandardMaterial color="#2a1006" metalness={0.10} roughness={0.88} />
+          <meshStandardMaterial color="#1e0a04" metalness={0.12} roughness={0.90} />
         </mesh>
         {/* Char crust top */}
         <mesh position={[0, 0.088, 0]}>
           <cylinderGeometry args={[0.40, 0.40, 0.022, 28]} />
-          <meshStandardMaterial color="#140602" metalness={0.08} roughness={0.94} />
+          <meshStandardMaterial color="#120502" metalness={0.08} roughness={0.95} />
         </mesh>
         {/* Grill marks */}
         {([0, 1, 2] as const).map((i) => (
@@ -909,16 +913,16 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       <group ref={g3}>
         <mesh>
           <boxGeometry args={[0.74, 0.050, 0.74]} />
-          <meshStandardMaterial color="#f0ae22" metalness={0.06} roughness={0.60} />
+          <meshStandardMaterial color="#f2b024" metalness={0.08} roughness={0.52} />
         </mesh>
         {/* Melted drape edges */}
         <mesh position={[0.36, -0.022, 0]}>
           <boxGeometry args={[0.036, 0.050, 0.70]} />
-          <meshStandardMaterial color="#e2a018" metalness={0.05} roughness={0.66} />
+          <meshStandardMaterial color="#e4a41a" metalness={0.06} roughness={0.60} />
         </mesh>
         <mesh position={[-0.36, -0.022, 0]}>
           <boxGeometry args={[0.036, 0.050, 0.70]} />
-          <meshStandardMaterial color="#e2a018" metalness={0.05} roughness={0.66} />
+          <meshStandardMaterial color="#e4a41a" metalness={0.06} roughness={0.60} />
         </mesh>
       </group>
 
@@ -926,7 +930,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       <group ref={g4}>
         <mesh>
           <cylinderGeometry args={[0.36, 0.38, 0.075, 28]} />
-          <meshStandardMaterial color="#c43024" metalness={0.08} roughness={0.68} />
+          <meshStandardMaterial color="#c43028" metalness={0.08} roughness={0.62} />
         </mesh>
         {/* Juice seeds */}
         {([0, 1, 2, 3, 4, 5] as const).map((i) => (
@@ -939,7 +943,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
             ]}
           >
             <sphereGeometry args={[0.026, 6, 5]} />
-            <meshStandardMaterial color="#f4c8b0" metalness={0.04} roughness={0.80} />
+            <meshStandardMaterial color="#f6ceb4" metalness={0.04} roughness={0.75} />
           </mesh>
         ))}
       </group>
@@ -949,17 +953,17 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         {/* Outer leaf ring */}
         <mesh>
           <cylinderGeometry args={[0.48, 0.48, 0.040, 28]} />
-          <meshStandardMaterial color="#3e8032" metalness={0.03} roughness={0.90} />
+          <meshStandardMaterial color="#407834" metalness={0.03} roughness={0.88} />
         </mesh>
         {/* Inner lighter center */}
         <mesh position={[0, 0.016, 0]}>
           <cylinderGeometry args={[0.32, 0.32, 0.018, 28]} />
-          <meshStandardMaterial color="#62a84a" metalness={0.03} roughness={0.88} />
+          <meshStandardMaterial color="#64ac4c" metalness={0.03} roughness={0.86} />
         </mesh>
         {/* Ruffled edge torus */}
         <mesh>
           <torusGeometry args={[0.42, 0.020, 8, 36]} />
-          <meshStandardMaterial color="#2e6628" metalness={0.03} roughness={0.92} />
+          <meshStandardMaterial color="#306830" metalness={0.03} roughness={0.90} />
         </mesh>
       </group>
 
@@ -968,12 +972,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         {/* Bun cylinder base */}
         <mesh position={[0, -0.06, 0]}>
           <cylinderGeometry args={[0.40, 0.43, 0.18, 32]} />
-          <meshStandardMaterial color="#cc8040" metalness={0.05} roughness={0.78} />
+          <meshStandardMaterial color="#cc8844" metalness={0.05} roughness={0.72} />
         </mesh>
         {/* Dome */}
         <mesh position={[0, 0.068, 0]}>
           <sphereGeometry args={[0.37, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.50]} />
-          <meshStandardMaterial color="#c07838" metalness={0.05} roughness={0.80} />
+          <meshStandardMaterial color="#c47c3c" metalness={0.06} roughness={0.70} />
         </mesh>
         {/* Sesame seeds */}
         {([0, 1, 2, 3, 4, 5, 6, 7] as const).map((i) => (
@@ -986,7 +990,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
             ]}
           >
             <sphereGeometry args={[0.020, 6, 5]} />
-            <meshStandardMaterial color="#ece4c0" metalness={0.06} roughness={0.68} />
+            <meshStandardMaterial color="#eee4bc" metalness={0.08} roughness={0.62} />
           </mesh>
         ))}
       </group>
@@ -1194,8 +1198,8 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.18, 0]}
         focusScale={1.22}
         secondaryScale={0.66}
-        inspectZFocus={1.1}
-        inspectScaleMultiplier={1.38}
+        inspectZFocus={1.7}
+        inspectScaleMultiplier={1.54}
         selfRotationAmount={0.12}
         motionSeed={1}
       >
@@ -1436,14 +1440,13 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 1.9;
+      keyLightRef.current.intensity = blendRef.current * 1.5;
     }
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 1.15;
+      rimLightRef.current.intensity = blendRef.current * 0.78;
     }
     if (floorPoolRef.current) {
-      // Warm upwelling stage light — creates the "light pool beneath product" feeling.
-      floorPoolRef.current.intensity = blendRef.current * 0.38;
+      floorPoolRef.current.intensity = blendRef.current * 0.50;
     }
   });
 
@@ -1451,22 +1454,60 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     <>
       <directionalLight
         ref={keyLightRef}
-        position={[-1.2, 5.5, 3.2]}
-        color="#fff8e8"
+        position={[-1.4, 5.2, 3.4]}
+        color="#fff6e4"
         intensity={0}
       />
       <pointLight
         ref={rimLightRef}
-        position={[3.5, 1.8, -1.2]}
-        color="#ffd89a"
+        position={[3.2, 2.0, -1.4]}
+        color="#ffd070"
         distance={16}
         intensity={0}
       />
       <pointLight
         ref={floorPoolRef}
         color="#ffcc88"
-        position={[0, -1.6, 1.8]}
-        distance={6}
+        position={[0, -1.4, 2.0]}
+        distance={7}
+        intensity={0}
+      />
+    </>
+  );
+}
+
+// Warm cinematic hero lighting for the assembled burger in inspect mode.
+// Distinct from InspectSceneLighting (which serves all items generically).
+function BurgerInspectLighting({ active }: { active: boolean }) {
+  const heroFillRef  = useRef<THREE.PointLight>(null);
+  const backRimRef   = useRef<THREE.DirectionalLight>(null);
+  const blendRef     = useRef(0);
+
+  useFrame((_, delta) => {
+    blendRef.current = THREE.MathUtils.lerp(
+      blendRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 2.2)
+    );
+    // Low front-warm fill catches the bun underside and sesame seeds.
+    if (heroFillRef.current)  heroFillRef.current.intensity  = blendRef.current * 0.80;
+    // Back rim separates the burger silhouette from the darkened background.
+    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.52;
+  });
+
+  return (
+    <>
+      <pointLight
+        ref={heroFillRef}
+        position={[-1.0, 0.6, 4.0]}
+        color="#ffcc80"
+        distance={9}
+        intensity={0}
+      />
+      <directionalLight
+        ref={backRimRef}
+        position={[1.4, 2.8, -3.2]}
+        color="#ffe4c0"
         intensity={0}
       />
     </>
@@ -1476,10 +1517,11 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
 // Dedicated warm lighting for the burger exploded ingredient showcase.
 // Fades in independently of InspectSceneLighting to add extra depth when layers open.
 function BurgerExplodedLighting({ active }: { active: boolean }) {
-  const topKeyRef = useRef<THREE.DirectionalLight>(null);
-  const warmFillRef = useRef<THREE.PointLight>(null);
+  const topKeyRef    = useRef<THREE.DirectionalLight>(null);
+  const warmFillRef  = useRef<THREE.PointLight>(null);
   const underlightRef = useRef<THREE.PointLight>(null);
-  const blendRef = useRef(0);
+  const backRimRef   = useRef<THREE.DirectionalLight>(null);
+  const blendRef     = useRef(0);
 
   useFrame((_, delta) => {
     blendRef.current = THREE.MathUtils.lerp(
@@ -1487,9 +1529,10 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
       active ? 1 : 0,
       1 - Math.exp(-delta * 1.8)
     );
-    if (topKeyRef.current)   topKeyRef.current.intensity   = blendRef.current * 1.4;
-    if (warmFillRef.current) warmFillRef.current.intensity = blendRef.current * 0.90;
-    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.55;
+    if (topKeyRef.current)    topKeyRef.current.intensity    = blendRef.current * 1.3;
+    if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.65;
+    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.38;
+    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.45;
   });
 
   return (
@@ -1497,24 +1540,31 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
       {/* Warm overhead key — rakes across the stack from upper-left */}
       <directionalLight
         ref={topKeyRef}
-        position={[-0.6, 4.8, 2.4]}
-        color="#ffe0b0"
+        position={[-0.8, 5.2, 2.8]}
+        color="#ffd89a"
         intensity={0}
       />
       {/* Soft warm fill from the right */}
       <pointLight
         ref={warmFillRef}
-        position={[2.8, 1.2, 1.4]}
-        color="#ffc880"
-        distance={10}
+        position={[2.2, 1.6, 2.0]}
+        color="#ffb860"
+        distance={11}
         intensity={0}
       />
       {/* Warm underlight — lifts shadow beneath each floating layer */}
       <pointLight
         ref={underlightRef}
-        position={[0, -1.2, 1.2]}
-        color="#ff9a50"
-        distance={4.5}
+        position={[0, -1.4, 1.6]}
+        color="#ffaa60"
+        distance={5}
+        intensity={0}
+      />
+      {/* Back separation rim — gives depth between layers */}
+      <directionalLight
+        ref={backRimRef}
+        position={[1.2, 2.5, -3.0]}
+        color="#ffe8c8"
         intensity={0}
       />
     </>
@@ -2464,6 +2514,7 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
         <pointLight position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
         <InspectSceneLighting inspectMode={inspectMode} />
+        <BurgerInspectLighting active={inspectMode && activePartIndex === 0 && !burgerExploded} />
         <BurgerExplodedLighting active={burgerExploded && inspectMode && activePartIndex === 0} />
 
         <AmbientParticles />
