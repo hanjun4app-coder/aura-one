@@ -405,6 +405,7 @@ function Part({
   const inspectBlendRef = useRef(0);
   const dimRef = useRef(0);
   const inspectIdleYRef = useRef(0);
+  const prevIsInspectActiveRef = useRef(false);
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
     const dockStart = midPosition ?? explodedPosition;
@@ -513,6 +514,21 @@ function Part({
     }
 
     const activeRotationBoost = activePresence && !isInspectActive ? 2.1 : 1;
+
+    // Detect inspect entry/exit for this slot and keep rotation continuous.
+    const enteredInspect = isInspectActive && !prevIsInspectActiveRef.current;
+    const exitedInspect  = !isInspectActive && prevIsInspectActiveRef.current && slot === 0;
+    if (enteredInspect) {
+      // Seed inspect idle from the live self-rotation so there is no jump on entry.
+      inspectIdleYRef.current = selfRotationRef.current.y * Math.max(separatedProgress, 0.01);
+    }
+    if (exitedInspect) {
+      // Re-seed self-rotation from inspect idle so exit is equally seamless.
+      selfRotationRef.current.y = separatedProgress > 0.01
+        ? inspectIdleYRef.current / separatedProgress
+        : inspectIdleYRef.current;
+    }
+    prevIsInspectActiveRef.current = isInspectActive;
 
     if (!isInspectActive) {
       // Decay any legacy X/Z to zero — only Y (horizontal) rotation accumulates.
@@ -2246,23 +2262,26 @@ export default function SpatialScene() {
 
   // Unified Gesture Action Layer — all input sources (keyboard, camera, UI buttons,
   // future MediaPipe gestures) route through this single function.
+  // All state reads use refs so the closure is never stale.
   const applyGestureAction = useCallback((action: GestureAction) => {
-    // Any user action kills demo mode and resets idle timer
     lastInteractionRef.current = Date.now();
     if (demoActiveRef.current) {
       demoActiveRef.current = false;
       demoPhaseRef.current = null;
     }
 
-    // Landing gate — any gesture during the intro immediately opens the menu.
+    // Landing gate — any gesture during intro immediately opens the menu.
+    // Refs are updated synchronously so the action also processes in this call.
     if (landingPhaseRef.current !== "menu") {
+      landingPhaseRef.current = "menu";
+      explodedRef.current = true;
       setLandingPhase("menu");
       setExploded(true);
-      return;
+      // fall through — process the action with freshly updated refs
     }
 
     if (action === "EXPLODE") {
-      if (!exploded) setExploded(true);
+      if (!explodedRef.current) setExploded(true);
       return;
     }
 
@@ -2281,7 +2300,6 @@ export default function SpatialScene() {
           setBurgerExploded(false);
           setInspectMode(false);
         }
-
         return !value;
       });
       return;
@@ -2290,37 +2308,28 @@ export default function SpatialScene() {
     if (action === "RESET") {
       resetInspectRotation();
       setBurgerExploded(false);
-
-      if (!inspectMode) {
-        setExploded(false);
-      }
-
+      if (!inspectModeRef.current) setExploded(false);
       return;
     }
 
     if (action === "EXIT_INSPECT") {
       resetInspectRotation();
-
-      if (inspectMode) {
+      if (inspectModeRef.current) {
         setBurgerExploded(false);
         setInspectMode(false);
-      } else if (exploded) {
+      } else if (explodedRef.current) {
         setExploded(false);
       }
-
       return;
     }
 
     if (action === "ENTER_INSPECT") {
-      if (exploded) {
-        setInspectMode(true);
-      }
-
+      if (explodedRef.current) setInspectMode(true);
       return;
     }
 
     if (action === "ADD_TO_ORDER") {
-      if (exploded) addToOrder();
+      if (explodedRef.current) addToOrder();
       return;
     }
 
@@ -2340,42 +2349,26 @@ export default function SpatialScene() {
     }
 
     if (action === "TOGGLE_BURGER_EXPLODE") {
-      if (inspectMode && activePartIndex === 0) {
-        setBurgerExploded((v) => !v);
-      }
-
+      if (inspectModeRef.current && activePartIndex === 0) setBurgerExploded((v) => !v);
       return;
     }
 
     if (action === "PREV_PART") {
-      if (exploded) {
-        setBurgerExploded(false);
-        showPreviousPart();
-      }
-
+      if (explodedRef.current) { setBurgerExploded(false); showPreviousPart(); }
       return;
     }
 
     if (action === "NEXT_PART") {
-      if (exploded) {
-        setBurgerExploded(false);
-        showNextPart();
-      }
-
+      if (explodedRef.current) { setBurgerExploded(false); showNextPart(); }
       return;
     }
 
-    if (!inspectMode) return;
+    if (!inspectModeRef.current) return;
 
-    if (action === "ROTATE_INSPECT_LEFT") {
-      inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
-    }
+    if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
+    if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-    if (action === "ROTATE_INSPECT_RIGHT") {
-      inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
-    }
-
-  }, [activePartIndex, addToOrder, clearOrder, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, addToOrder, clearOrder, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
