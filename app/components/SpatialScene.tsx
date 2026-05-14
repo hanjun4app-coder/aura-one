@@ -144,6 +144,13 @@ const EXIT_INSPECT_GUIDANCE_THRESHOLD = 0.016; // lower threshold for "MOVE HAND
 const EXIT_INSPECT_SAMPLE_WINDOW_MS = 650;      // rolling window (slightly wider than enter)
 const EXIT_INSPECT_COOLDOWN_MS = 2500;          // post-exit lockout prevents double-fire
 
+// Burger layer reveal — stable open-palm hold while in inspect mode.
+// Stable = palm-width delta < PALM_HOLD_STABLE_THRESHOLD over the sample window.
+// This zone is safely below the exit-inspect shrink threshold so there is no conflict.
+const PALM_HOLD_DURATION_MS = 900;
+const PALM_HOLD_STABLE_THRESHOLD = 0.012;
+const BURGER_EXPLODE_COOLDOWN_MS = 2000;
+
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
   A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -198,6 +205,8 @@ type CameraGestureStatus =
   | "ADDED TO ORDER"
   | "MOVE HAND BACK"
   | "EXIT INSPECT"
+  | "REVEALING LAYERS"
+  | "ASSEMBLING BURGER"
   | "CAMERA ERROR";
 
 
@@ -788,7 +797,7 @@ useGLTF.preload("/models/ice-cream.glb");
 
 // Assembled Y — compressed natural stack. Exploded Y — tighter elegant spacing (~0.24 apart).
 const BURGER_ASSEMBLED_Y = [-0.36, -0.20, -0.11, -0.01, 0.06, 0.12, 0.25] as const;
-const BURGER_EXPLODED_Y  = [-0.74, -0.44, -0.20,  0.04, 0.28, 0.52, 0.74] as const;
+const BURGER_EXPLODED_Y  = [-0.88, -0.52, -0.22,  0.06, 0.34, 0.62, 0.90] as const;
 // Per-layer Y-axis rotation speed (rad/s). Alternating direction adds visual depth.
 const BURGER_LAYER_ROT_SPEED = [0.10, -0.14, 0.08, -0.11, 0.15, -0.09, 0.12] as const;
 
@@ -1587,9 +1596,11 @@ async function waitForVideoElement(
 function CameraGestureLayer({
   onGesture,
   inspectMode,
+  burgerExploded,
 }: {
   onGesture: (action: GestureAction) => void;
   inspectMode: boolean;
+  burgerExploded: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
@@ -1612,6 +1623,9 @@ function CameraGestureLayer({
   const prevIsFistRef = useRef(false);       // previous frame's fist state (for rising-edge)
   const isFistLatchRef = useRef(false);      // hysteresis latch: true while hand is in fist state
   const openFramesSinceLastFistRef = useRef(255); // non-fist frames since last fist frame
+  const palmHoldStartRef = useRef<number | null>(null);
+  const lastBurgerExplodeTimeRef = useRef(0);
+  const burgerExplodedRef = useRef(burgerExploded);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStatus, setCameraStatus] =
     useState<CameraGestureStatus>("CAMERA OFF");
@@ -1635,6 +1649,8 @@ function CameraGestureLayer({
     [updateStatus]
   );
 
+  useEffect(() => { burgerExplodedRef.current = burgerExploded; }, [burgerExploded]);
+
   const releaseCameraResources = useCallback(() => {
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current);
@@ -1654,6 +1670,8 @@ function CameraGestureLayer({
     firstFistTimeRef.current = 0;
     prevIsFistRef.current = false;
     openFramesSinceLastFistRef.current = 255;
+    palmHoldStartRef.current = null;
+    lastBurgerExplodeTimeRef.current = 0;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1675,6 +1693,7 @@ function CameraGestureLayer({
 
       if (!landmarks?.length) {
         samplesRef.current = [];
+        palmHoldStartRef.current = null;
 
         if (now > statusHoldUntilRef.current) {
           updateStatus("CAMERA READY");
@@ -1803,14 +1822,37 @@ function CameraGestureLayer({
                   lastInspectTimeRef.current = now;
                   statusHoldUntilRef.current = now + 1200;
                   palmSizeSamplesRef.current = [];
+                  palmHoldStartRef.current = null;
                   updateStatus("EXIT INSPECT");
                   onGesture("EXIT_INSPECT");
+                }
+              }
+
+              // ── Burger layer reveal: stable palm hold ──────────────────────────
+              // |delta| < PALM_HOLD_STABLE_THRESHOLD → not approaching or retreating.
+              // Zone is safely below EXIT_INSPECT_SHRINK_THRESHOLD — no conflict.
+              if (now - lastBurgerExplodeTimeRef.current > BURGER_EXPLODE_COOLDOWN_MS) {
+                const absDelta = Math.abs(delta);
+                const isStable = absDelta < PALM_HOLD_STABLE_THRESHOLD && elapsed > 400;
+                if (isStable) {
+                  if (palmHoldStartRef.current === null) {
+                    palmHoldStartRef.current = now;
+                  } else if (now - palmHoldStartRef.current >= PALM_HOLD_DURATION_MS) {
+                    palmHoldStartRef.current = null;
+                    lastBurgerExplodeTimeRef.current = now;
+                    statusHoldUntilRef.current = now + 1400;
+                    updateStatus(burgerExplodedRef.current ? "ASSEMBLING BURGER" : "REVEALING LAYERS");
+                    onGesture("TOGGLE_BURGER_EXPLODE");
+                  }
+                } else {
+                  palmHoldStartRef.current = null;
                 }
               }
             }
           }
         } else {
           palmSizeSamplesRef.current = [];
+          palmHoldStartRef.current = null;
         }
 
         // ── Double-fist pulse: add to order ──────────────────────────────────
@@ -2112,6 +2154,8 @@ function CameraGestureLayer({
     cameraStatus === "ORDER CANCELLED" ||
     cameraStatus === "MOVE HAND BACK" ||
     cameraStatus === "EXIT INSPECT" ||
+    cameraStatus === "REVEALING LAYERS" ||
+    cameraStatus === "ASSEMBLING BURGER" ||
     cameraStatus === "COOLDOWN" ||
     cameraStatus === "OPPOSITE LOCK";
   const isError = cameraStatus === "CAMERA ERROR";
@@ -2540,7 +2584,7 @@ export default function SpatialScene() {
         className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
         style={{ background: "linear-gradient(to top, rgba(14,9,3,0.26) 0%, transparent 42%)" }}
       />
-      <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} />
+      <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} burgerExploded={burgerExploded} />
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
@@ -2684,9 +2728,13 @@ export default function SpatialScene() {
       <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-center">
         {/* Gesture hint — visible in menu phase */}
         <p className={`whitespace-nowrap text-[0.44rem] tracking-[0.28em] text-stone-400/28 transition-opacity duration-700 ${landingPhase === "menu" && exploded ? "opacity-100" : "opacity-0"}`}>
-          {inspectMode
-            ? "Open hand to add  ·  Swipe to return"
-            : "Swipe to explore  ·  Open hand to inspect"}
+          {inspectMode && activePartIndex === 0
+            ? burgerExploded
+              ? "Hold open hand · E to assemble"
+              : "Hold open hand · E to reveal layers"
+            : inspectMode
+              ? "Open hand to add  ·  Swipe to return"
+              : "Swipe to explore  ·  Open hand to inspect"}
         </p>
         <p className="text-[0.54rem] tracking-[0.52em] text-stone-500/38">AURA ONE</p>
       </div>
