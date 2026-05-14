@@ -110,7 +110,9 @@ type GestureAction =
   | "ROTATE_INSPECT_UP"
   | "ROTATE_INSPECT_DOWN"
   | "TOGGLE_BURGER_EXPLODE"
-  | "ADD_TO_ORDER";
+  | "ADD_TO_ORDER"
+  | "REMOVE_LAST"
+  | "CLEAR_ORDER";
 
 type CameraGestureStatus =
   | "CAMERA OFF"
@@ -298,6 +300,7 @@ function Part({
   explodedPosition,
   focusScale = 1.45,
   secondaryScale = 0.74,
+  inspectZFocus = 0.9,
   explodeDelay = 0,
   assembleDelay = 0,
   baseRotation = [0, 0, 0],
@@ -319,6 +322,7 @@ function Part({
   explodedPosition: [number, number, number];
   focusScale?: number;
   secondaryScale?: number;
+  inspectZFocus?: number;
   explodeDelay?: number;
   assembleDelay?: number;
   baseRotation?: [number, number, number];
@@ -518,7 +522,7 @@ function Part({
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     const inspectX = slot === 0 ? 0 : rearDirection * (4.2 + slotDistance * 0.85);
     const inspectY = slot === 0 ? 0.0 : -0.15 - slotDistance * 0.12;
-    const inspectZ = slot === 0 ? 0.9 : -4.5 - slotDistance * 1.8;
+    const inspectZ = slot === 0 ? inspectZFocus : -4.5 - slotDistance * 1.8;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     const dimTarget = inspectMode && slot !== 0 ? 1 : 0;
@@ -583,7 +587,7 @@ function Part({
       // Food surfaces keep their natural colors; only brand accent rings carry emissive.
       const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
       material.transparent = meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
-      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.22, dimRef.current) * emergeFade;
+      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) * emergeFade;
     });
 
     previousProgressRef.current = localProgress;
@@ -1076,6 +1080,7 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.18, 0]}
         focusScale={1.22}
         secondaryScale={0.66}
+        inspectZFocus={0.9}
         selfRotationAmount={0.12}
         motionSeed={1}
       >
@@ -1095,8 +1100,9 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[-0.12, 0.86, 0.98]}
         explodedPosition={[0, 0.22, 0]}
-        focusScale={1.18}
+        focusScale={1.32}
         secondaryScale={0.64}
+        inspectZFocus={1.5}
         explodeDelay={0.022}
         assembleDelay={0.042}
         selfRotationAmount={0.14}
@@ -1123,6 +1129,7 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.15, 0]}
         focusScale={1.2}
         secondaryScale={0.64}
+        inspectZFocus={1.1}
         explodeDelay={0.04}
         assembleDelay={0.06}
         selfRotationAmount={0.16}
@@ -1146,8 +1153,9 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[0.14, 0.88, 0.92]}
         explodedPosition={[0, 0.2, 0]}
-        focusScale={1.18}
+        focusScale={1.38}
         secondaryScale={0.66}
+        inspectZFocus={1.6}
         explodeDelay={0.055}
         assembleDelay={0.04}
         selfRotationAmount={0.18}
@@ -1171,8 +1179,9 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.84, 1.02]}
         explodedPosition={[0, 0.16, 0]}
-        focusScale={1.22}
+        focusScale={1.28}
         secondaryScale={0.66}
+        inspectZFocus={1.25}
         explodeDelay={0.07}
         assembleDelay={0.025}
         selfRotationAmount={0.2}
@@ -1302,15 +1311,15 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
       inspectMode ? 1 : 0,
-      1 - Math.exp(-delta * 2.8)
+      1 - Math.exp(-delta * 4.5)
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 0.9;
+      keyLightRef.current.intensity = blendRef.current * 1.2;
     }
 
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 0.4;
+      rimLightRef.current.intensity = blendRef.current * 0.65;
     }
   });
 
@@ -1941,6 +1950,20 @@ export default function SpatialScene() {
     }, 730);
   }, [activePartIndex]);
 
+  const removeFromOrder = useCallback((partIndex: number) => {
+    setOrderItems((prev) => {
+      const idx = prev.findIndex((e) => e.partIndex === partIndex);
+      if (idx < 0) return prev;
+      if (prev[idx].qty <= 1) return prev.filter((_, i) => i !== idx);
+      return prev.map((e, i) => (i === idx ? { ...e, qty: e.qty - 1 } : e));
+    });
+  }, []);
+
+  const clearOrder = useCallback(() => {
+    setOrderItems([]);
+    setReviewMode(false);
+  }, []);
+
   // Unified Gesture Action Layer — all input sources (keyboard, camera, UI buttons,
   // future MediaPipe gestures) route through this single function.
   const applyGestureAction = useCallback((action: GestureAction) => {
@@ -2007,6 +2030,21 @@ export default function SpatialScene() {
       return;
     }
 
+    if (action === "REMOVE_LAST") {
+      setOrderItems((prev) => {
+        if (prev.length === 0) return prev;
+        const last = prev[prev.length - 1];
+        if (last.qty <= 1) return prev.slice(0, -1);
+        return prev.map((e, i) => i === prev.length - 1 ? { ...e, qty: e.qty - 1 } : e);
+      });
+      return;
+    }
+
+    if (action === "CLEAR_ORDER") {
+      clearOrder();
+      return;
+    }
+
     if (action === "TOGGLE_BURGER_EXPLODE") {
       if (inspectMode && activePartIndex === 0) {
         setBurgerExploded((v) => !v);
@@ -2050,7 +2088,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_DOWN") {
       inspectRotationRef.current.x -= INSPECT_ROTATION_STEP;
     }
-  }, [activePartIndex, addToOrder, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, addToOrder, clearOrder, exploded, inspectMode, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2070,6 +2108,7 @@ export default function SpatialScene() {
         ArrowDown: inspectMode ? "ROTATE_INSPECT_DOWN" : undefined,
         Enter: "ENTER_INSPECT",
         Escape: "EXIT_INSPECT",
+        Backspace: event.shiftKey ? "CLEAR_ORDER" : "REMOVE_LAST",
         a: "ROTATE_INSPECT_LEFT",
         A: "ROTATE_INSPECT_LEFT",
         d: "ROTATE_INSPECT_RIGHT",
@@ -2140,6 +2179,12 @@ export default function SpatialScene() {
         <OrbitControls enableZoom={false} enablePan={false} />
       </Canvas>
 
+      {/* ── Inspect mode vignette ── */}
+      <div
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${inspectMode ? "opacity-100" : "opacity-0"}`}
+        style={{ background: "radial-gradient(ellipse at 50% 52%, transparent 34%, rgba(28,20,10,0.30) 100%)" }}
+      />
+
       <CameraGestureLayer onGesture={applyGestureAction} />
 
       <div
@@ -2150,7 +2195,7 @@ export default function SpatialScene() {
         }`}
       >
         <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-700/62">
-          {inspectMode ? "ITEM VIEW" : "FEATURED COMBO"}
+          {inspectMode ? "INSPECT MODE" : "FEATURED COMBO"}
         </p>
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-800">
@@ -2216,18 +2261,6 @@ export default function SpatialScene() {
         }`}
       >
         <button
-          onClick={() => applyGestureAction("PREV_PART")}
-          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
-        >
-          PREV
-        </button>
-        <button
-          onClick={() => applyGestureAction("NEXT_PART")}
-          className="rounded-full border border-stone-400/25 bg-white/35 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/55"
-        >
-          NEXT
-        </button>
-        <button
           onClick={() => applyGestureAction(inspectMode ? "EXIT_INSPECT" : "ENTER_INSPECT")}
           className="rounded-full border border-stone-400/30 bg-white/40 px-4 py-2 text-[0.65rem] tracking-[0.24em] text-stone-700 backdrop-blur-md transition hover:bg-white/60"
         >
@@ -2271,16 +2304,31 @@ export default function SpatialScene() {
             : "border-stone-300/28 bg-white/38 shadow-md shadow-stone-200/18"
         }`}
       >
-        <p className="mb-3 text-[0.56rem] tracking-[0.42em] text-amber-700/60">
-          ORDER TRAY
-        </p>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[0.56rem] tracking-[0.42em] text-amber-700/60">
+            ORDER TRAY
+          </p>
+          <button
+            onClick={clearOrder}
+            className="text-[0.48rem] tracking-[0.22em] text-stone-400/55 transition hover:text-rose-500/70"
+          >
+            CLEAR ALL
+          </button>
+        </div>
 
         <ul className="max-h-[38vh] space-y-2 overflow-y-auto">
           {orderItems.map(({ partIndex, qty }) => (
             <li
               key={partIndex}
-              className="flex items-start justify-between gap-2 border-b border-stone-200/45 pb-2 last:border-0 last:pb-0"
+              className="flex items-center gap-2 border-b border-stone-200/45 pb-2 last:border-0 last:pb-0"
             >
+              <button
+                onClick={() => removeFromOrder(partIndex)}
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-stone-300/45 bg-stone-100/55 text-[0.60rem] leading-none text-stone-400/70 transition hover:border-rose-300/55 hover:bg-rose-50/55 hover:text-rose-500/80"
+                aria-label={`Remove one ${CAROUSEL_PARTS[partIndex].name}`}
+              >
+                −
+              </button>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[0.70rem] font-light leading-snug tracking-[0.06em] text-stone-800">
                   {CAROUSEL_PARTS[partIndex].name}
