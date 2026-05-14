@@ -1744,8 +1744,18 @@ export default function SpatialScene() {
     x: number; y: number; opacity: number; scale: number;
   } | null>(null);
   const [trayGlow, setTrayGlow] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const trayRef = useRef<HTMLDivElement>(null);
+
+  const orderSubtotal = orderItems.reduce(
+    (s, { partIndex, qty }) => s + ITEM_PRICES[partIndex] * qty,
+    0
+  );
+  const orderTax = orderSubtotal * 0.10;
+  const orderTotal = orderSubtotal + orderTax;
+  const totalItemCount = orderItems.reduce((s, { qty }) => s + qty, 0);
+
   const activePart = CAROUSEL_PARTS[activePartIndex];
   const hudOnRight = activePartIndex % 2 === 0;
   const hudPositionClass = hudOnRight
@@ -1933,6 +1943,15 @@ export default function SpatialScene() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // In review mode ESC exits review; all other keys are suppressed.
+      if (reviewMode) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setReviewMode(false);
+        }
+        return;
+      }
+
       const actionMap: Record<string, GestureAction | undefined> = {
         ArrowLeft: inspectMode ? "ROTATE_INSPECT_LEFT" : "PREV_PART",
         ArrowRight: inspectMode ? "ROTATE_INSPECT_RIGHT" : "NEXT_PART",
@@ -1965,7 +1984,7 @@ export default function SpatialScene() {
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [applyGestureAction, inspectMode]);
+  }, [applyGestureAction, inspectMode, reviewMode]);
 
   return (
     <div className="absolute inset-0">
@@ -2167,11 +2186,111 @@ export default function SpatialScene() {
         <div className="flex items-baseline justify-between">
           <p className="text-[0.56rem] tracking-[0.30em] text-stone-500/60">TOTAL</p>
           <p className="text-[0.88rem] font-light tracking-[0.06em] text-stone-800">
-            $
-            {orderItems
-              .reduce((s, { partIndex, qty }) => s + ITEM_PRICES[partIndex] * qty, 0)
-              .toFixed(2)}
+            ${orderTotal.toFixed(2)}
           </p>
+        </div>
+
+        <button
+          onClick={() => setReviewMode(true)}
+          className="mt-4 w-full border border-amber-500/35 bg-amber-50/40 py-2 text-[0.60rem] tracking-[0.30em] text-amber-900 transition hover:bg-amber-100/58"
+        >
+          REVIEW ORDER
+        </button>
+      </div>
+
+      {/* ── Review dim backdrop — clicking it dismisses review ── */}
+      <div
+        onClick={() => setReviewMode(false)}
+        className={`absolute inset-0 z-[19] transition-all duration-700 ${
+          reviewMode
+            ? "cursor-pointer bg-stone-100/62 opacity-100 backdrop-blur-[2px]"
+            : "pointer-events-none opacity-0"
+        }`}
+      />
+
+      {/* ── Spatial Review Panel ── */}
+      <div
+        className={`absolute right-0 top-0 z-[20] flex h-full w-[min(92vw,28rem)] flex-col border-l border-stone-200/38 bg-stone-50/94 shadow-2xl shadow-stone-400/22 backdrop-blur-xl transition-all duration-700 ${
+          reviewMode
+            ? "translate-x-0 opacity-100"
+            : "pointer-events-none translate-x-full opacity-0"
+        }`}
+        style={{ transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)" }}
+      >
+        <div className="flex flex-1 flex-col overflow-hidden p-6 md:p-8">
+
+          {/* Header */}
+          <div className="mb-7 flex items-start justify-between">
+            <div>
+              <p className="text-[0.54rem] tracking-[0.52em] text-amber-700/58">YOUR ORDER</p>
+              <p className="mt-1.5 text-[0.68rem] font-light tracking-[0.12em] text-stone-500/65">
+                {totalItemCount} item{totalItemCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <button
+              onClick={() => setReviewMode(false)}
+              aria-label="Close review"
+              className="mt-0.5 text-[0.82rem] text-stone-400/50 transition hover:text-stone-600/80"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Items list */}
+          <ul className="flex-1 space-y-5 overflow-y-auto pr-1">
+            {orderItems.map(({ partIndex, qty }) => (
+              <li
+                key={partIndex}
+                className="border-b border-stone-200/42 pb-5 last:border-0 last:pb-0"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <p className="text-[0.84rem] font-light leading-snug tracking-[0.06em] text-stone-800">
+                    {CAROUSEL_PARTS[partIndex].name}
+                  </p>
+                  <p className="shrink-0 text-[0.80rem] font-light tracking-[0.04em] text-stone-800">
+                    ${(ITEM_PRICES[partIndex] * qty).toFixed(2)}
+                  </p>
+                </div>
+                <p className="mt-1.5 text-[0.60rem] tracking-[0.12em] text-stone-400/68">
+                  ×{qty} · ${ITEM_PRICES[partIndex].toFixed(2)} each
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          {/* Totals */}
+          <div className="mt-6 border-t border-stone-200/40 pt-5">
+            <div className="space-y-3">
+              <div className="flex items-baseline justify-between">
+                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/60">SUBTOTAL</p>
+                <p className="text-[0.78rem] font-light text-stone-600">
+                  ${orderSubtotal.toFixed(2)}
+                </p>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <p className="text-[0.60rem] tracking-[0.24em] text-stone-500/60">EST. TAX 10%</p>
+                <p className="text-[0.78rem] font-light text-stone-600">
+                  ${orderTax.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-baseline justify-between border-t border-stone-300/28 pt-4">
+              <p className="text-[0.62rem] tracking-[0.30em] text-stone-600/65">TOTAL</p>
+              <p className="text-xl font-light tracking-[0.06em] text-stone-800">
+                ${orderTotal.toFixed(2)}
+              </p>
+            </div>
+          </div>
+
+          {/* Return CTA */}
+          <button
+            onClick={() => setReviewMode(false)}
+            className="mt-6 w-full border border-stone-400/25 bg-white/45 py-3 text-[0.65rem] tracking-[0.28em] text-stone-700 transition hover:bg-white/65"
+          >
+            CONTINUE BROWSING
+          </button>
+
         </div>
       </div>
 
