@@ -544,27 +544,30 @@ function Part({
     }
 
     if (isInspectActive && separatedProgress > 0.1) {
-      inspectIdleYRef.current += delta * 0.26;
+      // Slow deliberate yaw — cinematic idle rotation.
+      inspectIdleYRef.current += delta * 0.15;
     }
+    // Cinematic easing: all inspect transitions use slower damping so movement
+    // feels heavy and intentional rather than snappy.
     partScaleRef.current = THREE.MathUtils.lerp(
       partScaleRef.current,
       scaleTarget,
-      1 - Math.exp(-delta * 7)
+      1 - Math.exp(-delta * 4.2)
     );
     highlightRef.current = THREE.MathUtils.lerp(
       highlightRef.current,
       highlightTarget,
-      1 - Math.exp(-delta * 6)
+      1 - Math.exp(-delta * 3.8)
     );
     if (activeLightRef.current) {
-      // Warm overhead spotlight — selection presence without color distortion.
+      // Warm premium overhead spotlight — significantly stronger in inspect.
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 1.1 : 0.22);
+        highlightRef.current * (isInspectActive ? 2.6 : 0.28);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
       inspectPresence,
-      1 - Math.exp(-delta * 4.8)
+      1 - Math.exp(-delta * 2.4)
     );
 
     const normalX =
@@ -585,16 +588,21 @@ function Part({
     const carouselY = 0.1 - depth * 0.52;
     const carouselZ = depth * 2.1 - side * 0.65 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
-    const inspectX = slot === 0 ? 0 : rearDirection * (4.2 + slotDistance * 0.85);
-    const inspectY = slot === 0 ? 0.0 : -0.15 - slotDistance * 0.12;
-    const inspectZ = slot === 0 ? inspectZFocus : -4.5 - slotDistance * 1.8;
+    // Inactive items pushed wider and deeper for strong spatial separation.
+    const inspectX = slot === 0 ? 0 : rearDirection * (5.0 + slotDistance * 1.0);
+    // Active item gets a very slow gentle float — alive but restrained.
+    const inspectY = slot === 0
+      ? Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
+      : -0.18 - slotDistance * 0.14;
+    const inspectZ = slot === 0 ? inspectZFocus : -5.8 - slotDistance * 2.2;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     const dimTarget = inspectMode && slot !== 0 ? 1 : 0;
+    // Slower dim — background recedes gracefully, not abruptly.
     dimRef.current = THREE.MathUtils.lerp(
       dimRef.current,
       dimTarget,
-      1 - Math.exp(-delta * 3.2)
+      1 - Math.exp(-delta * 1.9)
     );
 
     targetPositionRef.current.set(
@@ -611,9 +619,10 @@ function Part({
       positionInitializedRef.current = true;
     }
 
+    // Heavier, controlled glide — gives the product weight during inspect entry/exit.
     renderPositionRef.current.lerp(
       targetPositionRef.current,
-      1 - Math.exp(-delta * 5.5)
+      1 - Math.exp(-delta * 2.9)
     );
     groupRef.current.position.copy(renderPositionRef.current);
     manualRotationTargetRef.current.set(
@@ -622,7 +631,7 @@ function Part({
     );
     manualRotationRef.current.lerp(
       manualRotationTargetRef.current,
-      1 - Math.exp(-delta * 6)
+      1 - Math.exp(-delta * 4.5)
     );
 
     groupRef.current.rotation.set(
@@ -661,10 +670,10 @@ function Part({
       {children}
       <pointLight
         ref={activeLightRef}
-        color="#fff4e0"
-        distance={3.2}
+        color="#fff8ec"
+        distance={5.2}
         intensity={0}
-        position={[0, 1.1, 0.6]}
+        position={[0, 1.9, 0.9]}
       />
     </group>
   );
@@ -1368,21 +1377,26 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
 function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
   const keyLightRef = useRef<THREE.DirectionalLight>(null);
   const rimLightRef = useRef<THREE.PointLight>(null);
+  const floorPoolRef = useRef<THREE.PointLight>(null);
   const blendRef = useRef(0);
 
   useFrame((_, delta) => {
+    // Slow cinematic fade — lighting builds and withdraws gradually.
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
       inspectMode ? 1 : 0,
-      1 - Math.exp(-delta * 4.5)
+      1 - Math.exp(-delta * 2.4)
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 1.2;
+      keyLightRef.current.intensity = blendRef.current * 1.9;
     }
-
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 0.65;
+      rimLightRef.current.intensity = blendRef.current * 1.15;
+    }
+    if (floorPoolRef.current) {
+      // Warm upwelling stage light — creates the "light pool beneath product" feeling.
+      floorPoolRef.current.intensity = blendRef.current * 0.38;
     }
   });
 
@@ -1390,15 +1404,22 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     <>
       <directionalLight
         ref={keyLightRef}
-        position={[-1.8, 5.5, 3.5]}
+        position={[-1.2, 5.5, 3.2]}
         color="#fff8e8"
         intensity={0}
       />
       <pointLight
         ref={rimLightRef}
         position={[3.5, 1.8, -1.2]}
-        color="#ffe0a0"
-        distance={14}
+        color="#ffd89a"
+        distance={16}
+        intensity={0}
+      />
+      <pointLight
+        ref={floorPoolRef}
+        color="#ffcc88"
+        position={[0, -1.6, 1.8]}
+        distance={6}
         intensity={0}
       />
     </>
@@ -2279,111 +2300,146 @@ export default function SpatialScene() {
         />
       </Canvas>
 
-      {/* ── Inspect mode vignette ── */}
+      {/* ── Inspect mode vignette — cinematic depth haze ── */}
       <div
-        className={`pointer-events-none absolute inset-0 transition-opacity duration-700 ${inspectMode ? "opacity-100" : "opacity-0"}`}
-        style={{ background: "radial-gradient(ellipse at 50% 52%, transparent 34%, rgba(28,20,10,0.30) 100%)" }}
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
+        style={{ background: "radial-gradient(ellipse 110% 90% at 50% 52%, transparent 28%, rgba(18,11,4,0.44) 100%)" }}
+      />
+      {/* Subtle bottom depth gradient — spatial stage floor */}
+      <div
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
+        style={{ background: "linear-gradient(to top, rgba(14,9,3,0.26) 0%, transparent 42%)" }}
       />
 
       <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} />
 
+      {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
+        className={`pointer-events-none absolute bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-white/18 bg-white/26 p-5 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 md:p-6 ${
           exploded
             ? "translate-y-0 opacity-100"
-            : "translate-y-3 opacity-0"
+            : "translate-y-4 opacity-0"
         }`}
       >
-        <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-700/62">
-          {inspectMode ? "INSPECT MODE" : "FEATURED COMBO"}
-        </p>
+        {/* Context label — only shown in inspect */}
+        {inspectMode && (
+          <p className="mb-3 text-[0.46rem] tracking-[0.46em] text-stone-400/42">
+            INSPECT
+          </p>
+        )}
 
-        {/* Special tag — carousel and inspect mode */}
+        {/* Special tag — refined, minimal */}
         {FOOD_INSPECT_DATA[activePartIndex].special && (
-          <div className="mb-2 inline-flex items-center gap-1.5 border border-amber-400/48 bg-amber-50/62 px-2 py-0.5">
-            <span className="h-1 w-1 rounded-full bg-amber-500/60" />
-            <span className="text-[0.50rem] tracking-[0.32em] text-amber-800/78">
+          <div className="mb-3 inline-flex items-center gap-2">
+            <span className="h-[2px] w-2.5 bg-amber-500/50" />
+            <span className="text-[0.44rem] tracking-[0.34em] text-amber-700/60">
               {FOOD_INSPECT_DATA[activePartIndex].special}
             </span>
           </div>
         )}
 
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-800">
+        {/* Name + price row */}
+        <div className="flex items-start justify-between gap-4">
+          <h2
+            className={`font-light leading-snug tracking-[0.10em] text-stone-800 transition-all duration-500 ${
+              inspectMode ? "text-lg" : "text-base"
+            }`}
+          >
             {activePart.name}
           </h2>
-          <span className="mt-0.5 shrink-0 rounded border border-amber-400/38 bg-amber-50/55 px-2 py-0.5 text-[0.66rem] font-light tracking-[0.06em] text-amber-900">
+          <span className="mt-0.5 shrink-0 text-[0.72rem] font-light tracking-[0.04em] text-amber-800/70">
             ${ITEM_PRICES[activePartIndex].toFixed(2)}
           </span>
         </div>
 
         {inspectMode ? (
           <>
-            {/* Rich inspect-mode data */}
-            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-stone-200/38 pt-3">
+            {/* Nutritional grid — clean two-column */}
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-stone-100/60 pt-4">
               <div>
-                <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">CALORIES</p>
-                <p className="text-[0.68rem] font-light text-stone-700">{FOOD_INSPECT_DATA[activePartIndex].calories}</p>
+                <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">CALORIES</p>
+                <p className="mt-0.5 text-[0.70rem] font-light text-stone-700">
+                  {FOOD_INSPECT_DATA[activePartIndex].calories}
+                </p>
               </div>
               <div>
-                <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">PROTEIN</p>
-                <p className="text-[0.68rem] font-light text-stone-700">{FOOD_INSPECT_DATA[activePartIndex].protein}</p>
+                <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">PROTEIN</p>
+                <p className="mt-0.5 text-[0.70rem] font-light text-stone-700">
+                  {FOOD_INSPECT_DATA[activePartIndex].protein}
+                </p>
               </div>
             </div>
-            <div className="mt-2">
-              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">ALLERGENS</p>
-              <p className="text-[0.62rem] font-light text-stone-600">{FOOD_INSPECT_DATA[activePartIndex].allergens}</p>
+
+            {/* Allergens */}
+            <div className="mt-3">
+              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">ALLERGENS</p>
+              <p className="mt-0.5 text-[0.60rem] font-light text-stone-500/80">
+                {FOOD_INSPECT_DATA[activePartIndex].allergens}
+              </p>
             </div>
-            <div className="mt-2 border-t border-stone-200/30 pt-2">
-              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">INGREDIENTS</p>
-              <p className="mt-0.5 text-[0.60rem] leading-4 text-stone-600/80">{FOOD_INSPECT_DATA[activePartIndex].ingredients}</p>
+
+            {/* Ingredients */}
+            <div className="mt-4 border-t border-stone-100/55 pt-4">
+              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">INGREDIENTS</p>
+              <p className="mt-1 text-[0.58rem] leading-[1.65] text-stone-600/78">
+                {FOOD_INSPECT_DATA[activePartIndex].ingredients}
+              </p>
             </div>
-            <div className="mt-2 border-t border-stone-200/30 pt-2">
-              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">FLAVOR</p>
-              <p className="mt-0.5 text-[0.60rem] leading-4 text-stone-500/75">{FOOD_INSPECT_DATA[activePartIndex].flavorProfile}</p>
+
+            {/* Flavor */}
+            <div className="mt-3">
+              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">FLAVOR</p>
+              <p className="mt-0.5 text-[0.58rem] leading-[1.65] text-stone-500/70">
+                {FOOD_INSPECT_DATA[activePartIndex].flavorProfile}
+              </p>
             </div>
-            <p className="mt-2 border-t border-stone-200/30 pt-2 text-[0.58rem] italic leading-4 text-amber-800/50">
+
+            {/* Chef note — italic, quiet */}
+            <p className="mt-4 border-t border-stone-100/50 pt-4 text-[0.56rem] italic leading-[1.7] text-amber-800/45">
               {FOOD_INSPECT_DATA[activePartIndex].chefNote}
             </p>
-            <p className="mt-3 text-[0.50rem] tracking-[0.22em] text-stone-400/38">
+
+            <p className="mt-4 text-[0.44rem] tracking-[0.24em] text-stone-400/32">
               ← → ROTATE · ESC EXIT
             </p>
           </>
         ) : (
-          <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-500/72">
+          <p className="mt-3 text-[0.76rem] leading-[1.65] text-stone-500/68">
             {activePart.description}
           </p>
         )}
       </div>
 
-      {/* Ingredient HUD — appears only when burger layers are exploded in inspect mode */}
+      {/* ── Ingredient HUD — premium glass, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-amber-400/28 bg-white/42 p-4 text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:left-6 md:p-5 ${
+        className={`pointer-events-none absolute left-4 top-1/2 w-[min(18rem,calc(100vw-2rem))] -translate-y-1/2 border border-white/18 bg-white/26 p-5 text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 md:left-6 md:p-6 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "pointer-events-none opacity-0"
         }`}
       >
-        <p className="mb-3 text-[0.6rem] tracking-[0.38em] text-amber-700/65">
+        <p className="mb-4 text-[0.44rem] tracking-[0.44em] text-stone-400/48">
           INGREDIENTS
         </p>
-        <ul className="space-y-2.5">
+        <ul className="space-y-3">
           {BURGER_INGREDIENTS.map((ingredient) => (
-            <li key={ingredient.name} className="border-b border-stone-300/20 pb-2 last:border-0 last:pb-0">
+            <li key={ingredient.name} className="border-b border-stone-100/55 pb-3 last:border-0 last:pb-0">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[0.75rem] font-light tracking-[0.1em] text-stone-800">
+                <span className="text-[0.72rem] font-light tracking-[0.08em] text-stone-800">
                   {ingredient.name}
                 </span>
-                <span className="shrink-0 text-[0.56rem] tracking-[0.12em] text-amber-700/55">
+                <span className="shrink-0 text-[0.52rem] tracking-[0.10em] text-amber-700/48">
                   {ingredient.cal}
                 </span>
               </div>
-              <p className="mt-0.5 text-[0.6rem] leading-4 text-stone-500/75">
+              <p className="mt-0.5 text-[0.56rem] leading-[1.6] text-stone-500/70">
                 {ingredient.flavor}
               </p>
-              <p className="mt-0.5 text-[0.55rem] tracking-[0.08em] text-amber-700/45">
-                {ingredient.allergen !== "None" ? `Allergens: ${ingredient.allergen}` : ""}
-              </p>
+              {ingredient.allergen !== "None" && (
+                <p className="mt-0.5 text-[0.50rem] tracking-[0.08em] text-amber-700/38">
+                  {ingredient.allergen}
+                </p>
+              )}
             </li>
           ))}
         </ul>
