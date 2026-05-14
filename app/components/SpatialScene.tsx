@@ -121,17 +121,15 @@ const INSPECT_GROW_THRESHOLD = 0.048;   // palm-width growth to confirm approach
 const INSPECT_GUIDANCE_THRESHOLD = 0.018; // lower threshold for "OPEN HAND INSPECT" hint
 const INSPECT_SAMPLE_WINDOW_MS = 600;   // wider window for a more relaxed trigger
 
-// Fist-hold gesture — fingertips curling toward palm center, held for duration.
-// Fist score = average(tipDist[index,middle,ring,pinky] to palmCenter) / palmWidth.
-// Below FIST_OPENNESS_THRESHOLD → classified as fist. Thumb is intentionally excluded
-// because thumb position varies widely across natural fist styles.
-// Gate: only active in !isHandOpen branch so inspect gestures cannot interfere.
+// Double-fist pulse gesture — two distinct fist "pulses" (open→fist transitions)
+// within DOUBLE_FIST_WINDOW_MS confirm add-to-order. Thumb excluded from fist score
+// because its resting position varies across fist styles.
+// Pulse = rising edge only: holding a fist counts as one pulse, never more.
 const FIST_OPENNESS_THRESHOLD = 1.05;    // normalised avg tip distance — below = fist
-const FIST_HOLD_MS = 1100;               // 1.1 s sustained fist required
-const FIST_COOLDOWN_MS = 4000;           // 4 s post-fire lockout
-const FIST_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if swipe fired recently
-const FIST_MAX_MOTION = 0.022;           // max lateral drift during hold before cancel
-const FIST_WARN_MOTION = 0.012;          // threshold for KEEP FIST CLOSED warning
+const DOUBLE_FIST_WINDOW_MS = 1500;      // second fist must arrive within this window
+const FIST_ADD_COOLDOWN_MS = 3000;       // post-fire lockout before gesture can re-arm
+const FIST_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if a swipe fired recently
+const MIN_OPEN_FRAMES = 4;               // min consecutive non-fist frames between pulses
 
 // Exit-inspect gesture — open hand shrinking = hand retreating from camera ("push away").
 // Uses same palm-width metric as enter so they are symmetrically detectable.
@@ -191,8 +189,8 @@ type CameraGestureStatus =
   | "OPPOSITE LOCK"
   | "OPEN HAND INSPECT"
   | "INSPECT GESTURE"
-  | "FIST HOLD TO ADD"
-  | "KEEP FIST CLOSED"
+  | "FIST AGAIN TO ADD"
+  | "ORDER CANCELLED"
   | "ADDED TO ORDER"
   | "MOVE HAND BACK"
   | "EXIT INSPECT"
@@ -1429,11 +1427,11 @@ function CameraGestureLayer({
   const lastSwipeTimeRef = useRef(0);
   const lastInspectTimeRef = useRef(0);
   const lastExitInspectTimeRef = useRef(0);
-  const lastFistTimeRef = useRef(0);
-  const fistActiveRef = useRef(false);
-  const fistWasReleasedRef = useRef(true); // must open hand between fires
-  const fistStartTimeRef = useRef(0);
-  const fistStartPalmXRef = useRef(0);
+  const lastFistAddTimeRef = useRef(0);
+  const fistPulseCountRef = useRef(0);       // 0=idle, 1=armed (first pulse seen)
+  const firstFistTimeRef = useRef(0);        // timestamp of first pulse
+  const prevIsFistRef = useRef(false);       // previous frame's fist state (for rising-edge)
+  const openFramesSinceLastFistRef = useRef(255); // non-fist frames since last fist frame
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -1478,11 +1476,11 @@ function CameraGestureLayer({
     lastSwipeTimeRef.current = 0;
     lastInspectTimeRef.current = 0;
     lastExitInspectTimeRef.current = 0;
-    lastFistTimeRef.current = 0;
-    fistActiveRef.current = false;
-    fistWasReleasedRef.current = true;
-    fistStartTimeRef.current = 0;
-    fistStartPalmXRef.current = 0;
+    lastFistAddTimeRef.current = 0;
+    fistPulseCountRef.current = 0;
+    firstFistTimeRef.current = 0;
+    prevIsFistRef.current = false;
+    openFramesSinceLastFistRef.current = 255;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1524,10 +1522,12 @@ function CameraGestureLayer({
         { time: now, x: palmX },
       ];
 
-      // ── Hand shape discriminator ──────────────────────────────────────────
-      // isHandOpen and pinch are mutually exclusive by physics — a hand cannot
-      // simultaneously have thumb+index far apart AND close together.
-      // This single gate prevents either gesture firing during the other's motion.
+      // ── Hand shape detection ─────────────────────────────────────────────
+      // Two independent classifiers:
+      //   isHandOpen — thumb-index spread; gates inspect enter/exit gestures.
+      //   isFist     — normalised fingertip-to-palm distances; gates add gesture.
+      // isFist and prevIsFistRef are updated before the isHandOpen branch so that
+      // openFramesSinceLastFistRef tracks correctly even during open-hand frames.
       const wrist = landmarks[0];
       const middleTip = landmarks[12];
       const thumbTip = landmarks[4];
@@ -1538,25 +1538,53 @@ function CameraGestureLayer({
           thumbTip.x - indexTip.x,
           thumbTip.y - indexTip.y
         );
-        // Hand is considered open only when thumb and index are clearly apart.
-        // This threshold sits between pinch (<0.068) and natural open-palm (~0.20+).
         const isHandOpen = pinchDist > 0.13;
 
-        // ── Inspect gesture: open palm growing = hand approaching camera ──────
-        // Uses palm WIDTH (landmark 5 → 17: index base to pinky base) which is
-        // stable across all finger poses and far more reliable than wrist→middleTip.
-        // Only accumulates when hand is genuinely open; buffer is wiped on closed hand.
-        const lm5 = landmarks[5];
+        const lm5  = landmarks[5];
+        const lm9  = landmarks[9];
+        const lm13 = landmarks[13];
+        const lm16 = landmarks[16];
         const lm17 = landmarks[17];
+        const lm20 = landmarks[20];
 
-        if (isHandOpen) {
+        // ── Fist score (computed every frame) ────────────────────────────────
+        // Average normalised distance of 4 fingertips to palm center.
+        // Thumb excluded: its resting position varies too much across fist styles.
+        let isFist = false;
+        if (lm5 && lm9 && lm13 && lm17 && lm16 && lm20) {
+          const pcx = (wrist.x + lm5.x + lm9.x + lm13.x + lm17.x) / 5;
+          const pcy = (wrist.y + lm5.y + lm9.y + lm13.y + lm17.y) / 5;
+          const palmWidth = Math.hypot(lm5.x - lm17.x, lm5.y - lm17.y);
+          if (palmWidth > 0.001) {
+            const d8  = Math.hypot(indexTip.x  - pcx, indexTip.y  - pcy) / palmWidth;
+            const d12 = Math.hypot(middleTip.x - pcx, middleTip.y - pcy) / palmWidth;
+            const d16 = Math.hypot(lm16.x      - pcx, lm16.y      - pcy) / palmWidth;
+            const d20 = Math.hypot(lm20.x      - pcx, lm20.y      - pcy) / palmWidth;
+            isFist = (d8 + d12 + d16 + d20) / 4 < FIST_OPENNESS_THRESHOLD;
+          }
+        }
+
+        // Pulse tracking — updated every frame so transitions are never missed.
+        if (isFist) {
+          openFramesSinceLastFistRef.current = 0;
+        } else {
+          openFramesSinceLastFistRef.current = Math.min(
+            openFramesSinceLastFistRef.current + 1, 255
+          );
+        }
+        const isFistPulse = isFist && !prevIsFistRef.current; // rising edge only
+        prevIsFistRef.current = isFist;
+
+        // ── Inspect gesture: open palm approaching / retreating ───────────────
+        // Accumulate palm-size samples only when hand is genuinely open and not a fist.
+        if (isHandOpen && !isFist) {
           const palmWidth = lm5 && lm17
             ? Math.hypot(lm5.x - lm17.x, lm5.y - lm17.y)
             : Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
 
-          // Shared rolling buffer — both enter and exit read the same palm-width history.
-          // Enter looks for growth (positive delta); exit looks for shrink (negative delta).
-          const sampleWindow = inspectMode ? EXIT_INSPECT_SAMPLE_WINDOW_MS : INSPECT_SAMPLE_WINDOW_MS;
+          const sampleWindow = inspectMode
+            ? EXIT_INSPECT_SAMPLE_WINDOW_MS
+            : INSPECT_SAMPLE_WINDOW_MS;
           palmSizeSamplesRef.current = [
             ...palmSizeSamplesRef.current.filter(
               (s) => now - s.time <= Math.max(sampleWindow, INSPECT_SAMPLE_WINDOW_MS)
@@ -1566,36 +1594,34 @@ function CameraGestureLayer({
 
           if (palmSizeSamplesRef.current.length >= 3) {
             const oldest = palmSizeSamplesRef.current[0]!;
-            const delta = palmWidth - oldest.size; // positive = growing, negative = shrinking
+            const delta = palmWidth - oldest.size;
             const elapsed = now - oldest.time;
 
             if (!inspectMode) {
-              // ── Enter-inspect path: open hand approaching camera ──
               if (now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS) {
                 if (delta > INSPECT_GUIDANCE_THRESHOLD && elapsed > 100 && now > statusHoldUntilRef.current) {
                   updateStatus("OPEN HAND INSPECT");
                 }
                 if (delta > INSPECT_GROW_THRESHOLD && elapsed > 150) {
                   lastInspectTimeRef.current = now;
-                  lastExitInspectTimeRef.current = now; // cross-bump: prevent immediate re-exit
+                  lastExitInspectTimeRef.current = now;
                   statusHoldUntilRef.current = now + 1200;
-                  palmSizeSamplesRef.current = []; // wipe buffer after fire
+                  palmSizeSamplesRef.current = [];
                   updateStatus("INSPECT GESTURE");
                   onGesture("ENTER_INSPECT");
                 }
               }
             } else {
-              // ── Exit-inspect path: open hand retreating from camera ──
               if (now - lastExitInspectTimeRef.current > EXIT_INSPECT_COOLDOWN_MS) {
-                const shrink = -delta; // positive when hand moves away
+                const shrink = -delta;
                 if (shrink > EXIT_INSPECT_GUIDANCE_THRESHOLD && elapsed > 100 && now > statusHoldUntilRef.current) {
                   updateStatus("MOVE HAND BACK");
                 }
                 if (shrink > EXIT_INSPECT_SHRINK_THRESHOLD && elapsed > 150) {
                   lastExitInspectTimeRef.current = now;
-                  lastInspectTimeRef.current = now; // cross-bump: prevent immediate re-enter
+                  lastInspectTimeRef.current = now;
                   statusHoldUntilRef.current = now + 1200;
-                  palmSizeSamplesRef.current = []; // wipe buffer after fire
+                  palmSizeSamplesRef.current = [];
                   updateStatus("EXIT INSPECT");
                   onGesture("EXIT_INSPECT");
                 }
@@ -1603,81 +1629,48 @@ function CameraGestureLayer({
             }
           }
         } else {
-          // Hand is closed — wipe palm history so inspect cannot chain into a fist release.
           palmSizeSamplesRef.current = [];
+        }
 
-          // ── Fist-hold gesture ─────────────────────────────────────────────
-          // Measure how curled the four main fingers are: average normalised
-          // distance from each fingertip to the palm center, divided by palm
-          // width so the score is invariant to hand-camera distance.
-          // Thumb excluded — its position varies too much across fist styles.
-          const lm9  = landmarks[9];   // middle MCP
-          const lm13 = landmarks[13];  // ring MCP
-          const lm8  = landmarks[8];   // index tip
-          const lm16 = landmarks[16];  // ring tip
-          const lm20 = landmarks[20];  // pinky tip
+        // ── Double-fist pulse: add to order ──────────────────────────────────
+        // Two distinct open→fist rising edges within DOUBLE_FIST_WINDOW_MS.
+        // MIN_OPEN_FRAMES of non-fist required between pulses to prevent a single
+        // sustained fist from counting twice.
+        const fistPostSwipeSuppressed =
+          now - lastSwipeTimeRef.current < FIST_AFTER_SWIPE_IGNORE_MS;
+        const fistPostFireLocked =
+          now - lastFistAddTimeRef.current < FIST_ADD_COOLDOWN_MS;
 
-          let isFist = false;
-          if (lm5 && lm9 && lm13 && lm17 && lm8 && middleTip && lm16 && lm20) {
-            const pcx = (wrist.x + lm5.x + lm9.x + lm13.x + lm17.x) / 5;
-            const pcy = (wrist.y + lm5.y + lm9.y + lm13.y + lm17.y) / 5;
-            const palmWidth = Math.hypot(lm5.x - lm17.x, lm5.y - lm17.y);
-            if (palmWidth > 0.001) {
-              const d8  = Math.hypot(lm8.x  - pcx, lm8.y  - pcy) / palmWidth;
-              const d12 = Math.hypot(middleTip.x - pcx, middleTip.y - pcy) / palmWidth;
-              const d16 = Math.hypot(lm16.x - pcx, lm16.y - pcy) / palmWidth;
-              const d20 = Math.hypot(lm20.x - pcx, lm20.y - pcy) / palmWidth;
-              const avgTipDist = (d8 + d12 + d16 + d20) / 4;
-              isFist = avgTipDist < FIST_OPENNESS_THRESHOLD;
-            }
-          }
+        // Expire armed state when window closes without a second fist.
+        if (
+          fistPulseCountRef.current === 1 &&
+          now - firstFistTimeRef.current > DOUBLE_FIST_WINDOW_MS
+        ) {
+          fistPulseCountRef.current = 0;
+          statusHoldUntilRef.current = now + 600;
+          updateStatus("ORDER CANCELLED");
+        }
 
-          // Gates: post-fire cooldown, post-swipe suppression, lateral stability.
-          const sinceLastFired = now - lastFistTimeRef.current;
-          const sinceLastSwipe = now - lastSwipeTimeRef.current;
-          const postSwipeSuppressed = sinceLastSwipe < FIST_AFTER_SWIPE_IGNORE_MS;
-          const postFireLocked = sinceLastFired < FIST_COOLDOWN_MS;
+        // Re-display armed hint if status was overwritten inside the window.
+        if (fistPulseCountRef.current === 1 && now > statusHoldUntilRef.current) {
+          updateStatus("FIST AGAIN TO ADD");
+        }
 
-          // Opening hand resets the release gate so a new hold can begin.
-          if (!isFist) {
-            fistWasReleasedRef.current = true;
-            if (fistActiveRef.current) {
-              fistActiveRef.current = false;
-              fistStartTimeRef.current = 0;
-            }
-          }
-
-          if (isFist && !postSwipeSuppressed && !postFireLocked) {
-            // Only start a new hold if the fist was genuinely released since last fire.
-            if (!fistActiveRef.current && fistWasReleasedRef.current) {
-              fistActiveRef.current = true;
-              fistWasReleasedRef.current = false; // consumed — must open before retrying
-              fistStartTimeRef.current = now;
-              fistStartPalmXRef.current = palmX;
-            }
-
-            if (fistActiveRef.current) {
-              const holdMs = now - fistStartTimeRef.current;
-              const palmDrift = Math.abs(palmX - fistStartPalmXRef.current);
-
-              if (palmDrift > FIST_MAX_MOTION) {
-                // Hand drifted — cancel, require open before retry
-                fistActiveRef.current = false;
-                fistWasReleasedRef.current = false;
-                fistStartTimeRef.current = 0;
-              } else if (holdMs >= FIST_HOLD_MS) {
-                // FIRED
-                fistActiveRef.current = false;
-                fistWasReleasedRef.current = false;
-                lastFistTimeRef.current = now;
-                statusHoldUntilRef.current = now + 1500;
-                updateStatus("ADDED TO ORDER");
-                onGesture("ADD_TO_ORDER");
-              } else {
-                statusHoldUntilRef.current = now + 200;
-                updateStatus(palmDrift > FIST_WARN_MOTION ? "KEEP FIST CLOSED" : "FIST HOLD TO ADD");
-              }
-            }
+        if (isFistPulse && !fistPostSwipeSuppressed && !fistPostFireLocked) {
+          if (fistPulseCountRef.current === 0) {
+            fistPulseCountRef.current = 1;
+            firstFistTimeRef.current = now;
+            statusHoldUntilRef.current = now + DOUBLE_FIST_WINDOW_MS;
+            updateStatus("FIST AGAIN TO ADD");
+          } else if (
+            openFramesSinceLastFistRef.current >= MIN_OPEN_FRAMES &&
+            now - firstFistTimeRef.current <= DOUBLE_FIST_WINDOW_MS
+          ) {
+            fistPulseCountRef.current = 0;
+            lastFistAddTimeRef.current = now;
+            statusHoldUntilRef.current = now + 1500;
+            updateStatus("ADDED TO ORDER");
+            onGesture("ADD_TO_ORDER");
           }
         }
       }
@@ -2415,7 +2408,7 @@ export default function SpatialScene() {
       <div className="pointer-events-none absolute bottom-4 right-4 max-w-[20rem] border border-stone-300/20 bg-white/30 px-3 py-2.5 text-right backdrop-blur-md md:right-6">
         <p className="text-[0.58rem] tracking-[0.18em] text-stone-500/65">{gestureHint}</p>
         <p className="mt-1.5 text-[0.54rem] tracking-[0.14em] text-amber-700/48">
-          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • FIST HOLD ADD
+          GESTURE: SWIPE ← → CHANGE • OPEN PALM INSPECT • FIST TWICE TO ADD
         </p>
       </div>
 
