@@ -483,7 +483,7 @@ function Part({
     if (activeLightRef.current) {
       // Warm overhead spotlight — selection presence without color distortion.
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 1.1 : 0.22);
+        highlightRef.current * (isInspectActive ? 1.55 : 0.55);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -588,10 +588,10 @@ function Part({
       {children}
       <pointLight
         ref={activeLightRef}
-        color="#fff4e0"
-        distance={3.2}
+        color="#ffe8c0"
+        distance={5.5}
         intensity={0}
-        position={[0, 1.1, 0.6]}
+        position={[0, 1.4, 0.8]}
       />
     </group>
   );
@@ -1431,52 +1431,68 @@ function CameraGestureLayer({
         { time: now, x: palmX },
       ];
 
-      // ── Inspect gesture: palm size growing = hand approaching camera ──────
+      // ── Hand shape discriminator ──────────────────────────────────────────
+      // isHandOpen and pinch are mutually exclusive by physics — a hand cannot
+      // simultaneously have thumb+index far apart AND close together.
+      // This single gate prevents either gesture firing during the other's motion.
       const wrist = landmarks[0];
       const middleTip = landmarks[12];
       const thumbTip = landmarks[4];
       const indexTip = landmarks[8];
 
       if (wrist && middleTip && thumbTip && indexTip) {
-        const palmSize = Math.hypot(
-          middleTip.x - wrist.x,
-          middleTip.y - wrist.y
-        );
-        palmSizeSamplesRef.current = [
-          ...palmSizeSamplesRef.current.filter(
-            (s) => now - s.time <= INSPECT_SAMPLE_WINDOW_MS
-          ),
-          { time: now, size: palmSize },
-        ];
-
-        if (
-          now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS &&
-          palmSizeSamplesRef.current.length >= 4
-        ) {
-          const oldest = palmSizeSamplesRef.current[0]!;
-          const growth = palmSize - oldest.size;
-          const elapsed = now - oldest.time;
-          if (growth > INSPECT_GROW_THRESHOLD && elapsed > 180) {
-            lastInspectTimeRef.current = now;
-            statusHoldUntilRef.current = now + 1000;
-            updateStatus("INSPECT GESTURE");
-            onGesture("ENTER_INSPECT");
-          }
-        }
-
-        // ── Pinch gesture: thumb tip near index tip ──────────────────────────
         const pinchDist = Math.hypot(
           thumbTip.x - indexTip.x,
           thumbTip.y - indexTip.y
         );
-        if (
-          pinchDist < PINCH_DIST_THRESHOLD &&
-          now - lastPinchTimeRef.current > PINCH_COOLDOWN_MS
-        ) {
-          lastPinchTimeRef.current = now;
-          statusHoldUntilRef.current = now + 1000;
-          updateStatus("PINCH ADD");
-          onGesture("ADD_TO_ORDER");
+        // Hand is considered open only when thumb and index are clearly apart.
+        // This threshold sits between pinch (<0.068) and natural open-palm (~0.20+).
+        const isHandOpen = pinchDist > 0.13;
+
+        // ── Inspect gesture: open palm growing = hand approaching camera ──────
+        // Only accumulate samples when hand is genuinely open. Clearing the buffer
+        // whenever the hand is closed prevents inspect from firing right after a pinch.
+        if (isHandOpen) {
+          const palmSize = Math.hypot(
+            middleTip.x - wrist.x,
+            middleTip.y - wrist.y
+          );
+          palmSizeSamplesRef.current = [
+            ...palmSizeSamplesRef.current.filter(
+              (s) => now - s.time <= INSPECT_SAMPLE_WINDOW_MS
+            ),
+            { time: now, size: palmSize },
+          ];
+
+          if (
+            now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS &&
+            palmSizeSamplesRef.current.length >= 4
+          ) {
+            const oldest = palmSizeSamplesRef.current[0]!;
+            const growth = palmSize - oldest.size;
+            const elapsed = now - oldest.time;
+            if (growth > INSPECT_GROW_THRESHOLD && elapsed > 180) {
+              lastInspectTimeRef.current = now;
+              statusHoldUntilRef.current = now + 1000;
+              updateStatus("INSPECT GESTURE");
+              onGesture("ENTER_INSPECT");
+            }
+          }
+        } else {
+          // Hand is closed — wipe palm history so inspect cannot chain into a pinch release.
+          palmSizeSamplesRef.current = [];
+
+          // ── Pinch gesture: thumb tip near index tip ────────────────────────
+          // Only fires when hand is NOT open, so it can never conflict with inspect.
+          if (
+            pinchDist < PINCH_DIST_THRESHOLD &&
+            now - lastPinchTimeRef.current > PINCH_COOLDOWN_MS
+          ) {
+            lastPinchTimeRef.current = now;
+            statusHoldUntilRef.current = now + 1000;
+            updateStatus("PINCH ADD");
+            onGesture("ADD_TO_ORDER");
+          }
         }
       }
 
@@ -2050,11 +2066,18 @@ export default function SpatialScene() {
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
         <color attach="background" args={["#120e09"]} />
 
-        <ambientLight intensity={0.32} color="#fff4e8" />
+        {/* Warm base fill — lifts shadow areas out of black */}
+        <ambientLight intensity={0.58} color="#fff4e8" />
+        {/* Key light: warm overhead from upper-right — premium food photography angle */}
         <directionalLight position={[3, 6, 2.5]} intensity={1.05} color="#ffe8d0" castShadow={false} />
-        <pointLight position={[-3.5, 2, 3.5]} intensity={0.42} color="#ffd4a0" />
-        <pointLight position={[2.5, -1.5, 2]} intensity={0.14} color="#fff0e0" />
-        <pointLight position={[0, 3, -2.5]} intensity={0.18} color="#ffcc88" />
+        {/* Front soft fill: faces the food directly, simulates photographer's softbox */}
+        <pointLight position={[0, 0.5, 5.5]} intensity={0.55} color="#fff8f0" />
+        {/* Left warm fill */}
+        <pointLight position={[-3.5, 2, 3.5]} intensity={0.38} color="#ffd4a0" />
+        {/* Warm floor bounce — gives depth under items */}
+        <pointLight position={[0, -3.5, 2.5]} intensity={0.28} color="#ff9944" />
+        {/* Subtle rear warm accent — adds restaurant atmosphere depth */}
+        <pointLight position={[0, 2.5, -3]} intensity={0.15} color="#ffcc88" />
         <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
