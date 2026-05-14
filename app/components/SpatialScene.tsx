@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, useGLTF } from "@react-three/drei";
 import {
   type MutableRefObject,
   type ReactNode,
@@ -585,12 +585,69 @@ function Part({
   );
 }
 
+function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
+  const { scene } = useGLTF("/models/burger.glb");
+  const groupRef = useRef<THREE.Group>(null);
+  const explodeFadeRef = useRef(1);
+
+  const { center, normalizedScale } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    return { center: c, normalizedScale: maxDim > 0 ? 0.92 / maxDim : 1 };
+  }, [scene]);
+
+  useEffect(() => {
+    scene.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(obj.material)
+        ? (obj.material as THREE.MeshStandardMaterial[])
+        : [obj.material as THREE.MeshStandardMaterial];
+      mats.forEach((m) => {
+        if (!m.isMeshStandardMaterial) return;
+        m.transparent = true;
+        m.roughness = Math.max(m.roughness, 0.55);
+      });
+    });
+  }, [scene]);
+
+  useFrame((_, delta) => {
+    explodeFadeRef.current = THREE.MathUtils.lerp(
+      explodeFadeRef.current,
+      explodeActive ? 0 : 1,
+      1 - Math.exp(-delta * 3.5)
+    );
+    if (!groupRef.current) return;
+    groupRef.current.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(obj.material)
+        ? (obj.material as THREE.MeshStandardMaterial[])
+        : [obj.material as THREE.MeshStandardMaterial];
+      mats.forEach((m) => {
+        if (!m.isMeshStandardMaterial) return;
+        m.opacity = explodeFadeRef.current;
+      });
+    });
+  });
+
+  return (
+    <group ref={groupRef} scale={normalizedScale}>
+      <group position={[-center.x, -center.y, -center.z]}>
+        <primitive object={scene} />
+      </group>
+    </group>
+  );
+}
+useGLTF.preload("/models/burger.glb");
+
 // Assembled Y positions match the stacked burger look; exploded positions give 0.65 spacing.
 const BURGER_ASSEMBLED_Y = [-0.40, -0.23, -0.13, -0.03, 0.04, 0.09, 0.22] as const;
 const BURGER_EXPLODED_Y  = [-1.20, -0.68, -0.32,  0.02, 0.36, 0.70, 1.20] as const;
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
+  const wrapperRef = useRef<THREE.Group>(null);
   const g0 = useRef<THREE.Group>(null);
   const g1 = useRef<THREE.Group>(null);
   const g2 = useRef<THREE.Group>(null);
@@ -605,6 +662,9 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       active ? 1 : 0,
       1 - Math.exp(-delta * 2.0)
     );
+    if (wrapperRef.current) {
+      wrapperRef.current.visible = active || progressRef.current > 0.02;
+    }
     const p = smoothStep(progressRef.current);
     const t = clock.getElapsedTime();
 
@@ -622,7 +682,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   });
 
   return (
-    <>
+    <group ref={wrapperRef}>
       {/* Layer 0 — Bottom Bun */}
       <group ref={g0}>
         <mesh>
@@ -746,7 +806,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
           </mesh>
         ))}
       </group>
-    </>
+    </group>
   );
 }
 
@@ -952,6 +1012,7 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.12}
         motionSeed={1}
       >
+        <BurgerModel explodeActive={burgerExploded && inspectMode && activePartIndex === 0} />
         <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
       </Part>
 
