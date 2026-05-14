@@ -198,19 +198,6 @@ type CameraGestureStatus =
   | "EXIT INSPECT"
   | "CAMERA ERROR";
 
-type CameraDebugStep =
-  | "Idle"
-  | "Requesting camera"
-  | "Camera stream received"
-  | "Video element assigned"
-  | "Video playback started"
-  | "Loading MediaPipe"
-  | "MediaPipe loaded"
-  | "Initializing HandLandmarker (GPU)"
-  | "GPU init failed — retrying CPU"
-  | "Initializing HandLandmarker (CPU)"
-  | "HandLandmarker ready"
-  | "Detection loop started";
 
 
 function smoothStep(value: number) {
@@ -221,14 +208,6 @@ function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898) * 43758.5453;
 
   return value - Math.floor(value);
-}
-
-function formatCameraError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return String(error);
 }
 
 function phasedPathProgress(progress: number, phase = 0) {
@@ -1553,9 +1532,6 @@ function CameraGestureLayer({
   const isFistLatchRef = useRef(false);      // hysteresis latch: true while hand is in fist state
   const openFramesSinceLastFistRef = useRef(255); // non-fist frames since last fist frame
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [cameraDebugStep, setCameraDebugStep] =
-    useState<CameraDebugStep>("Idle");
-  const [cameraErrorMessage, setCameraErrorMessage] = useState("");
   const [cameraStatus, setCameraStatus] =
     useState<CameraGestureStatus>("CAMERA OFF");
 
@@ -1566,17 +1542,13 @@ function CameraGestureLayer({
     setCameraStatus(status);
   }, []);
 
-  const updateDebugStep = useCallback((step: CameraDebugStep) => {
+  const updateDebugStep = useCallback((step: string) => {
     console.info(`[AURA CAMERA] ${step}`);
-    setCameraDebugStep(step);
   }, []);
 
   const reportCameraError = useCallback(
     (prefix: string, error: unknown) => {
-      const message = `${prefix}: ${formatCameraError(error)}`;
-
       console.error(`[AURA CAMERA] ${prefix}`, error);
-      setCameraErrorMessage(message);
       updateStatus("CAMERA ERROR");
     },
     [updateStatus]
@@ -1613,7 +1585,6 @@ function CameraGestureLayer({
     releaseCameraResources();
 
     setCameraEnabled(false);
-    setCameraDebugStep("Idle");
     updateStatus("CAMERA OFF");
   }, [releaseCameraResources, updateStatus]);
 
@@ -1882,9 +1853,6 @@ function CameraGestureLayer({
           processHandResult(handLandmarker.detectForVideo(video, now), now);
         } catch (error) {
           console.error("[AURA CAMERA] detect loop failed", error);
-          setCameraErrorMessage(
-            `detectForVideo failed: ${formatCameraError(error)}`
-          );
           updateStatus("CAMERA ERROR");
           handLandmarkerRef.current = null;
           return;
@@ -1910,13 +1878,10 @@ function CameraGestureLayer({
 
     if (!navigator.mediaDevices?.getUserMedia) {
       updateStatus("CAMERA ERROR");
-      setCameraErrorMessage("getUserMedia failed: API unavailable");
       console.error("[AURA CAMERA] getUserMedia failed", "API unavailable");
       isInitializingRef.current = false;
       return;
     }
-
-    setCameraErrorMessage("");
     updateStatus("LOADING CAMERA");
     updateDebugStep("Requesting camera");
 
@@ -1957,7 +1922,6 @@ function CameraGestureLayer({
     } catch (error) {
       releaseCameraResources();
       console.error("[AURA CAMERA] video play failed", error);
-      setCameraErrorMessage(`video.play failed: ${formatCameraError(error)}`);
       updateStatus("CAMERA ERROR");
       isInitializingRef.current = false;
       return;
@@ -2051,44 +2015,72 @@ function CameraGestureLayer({
 
   useEffect(() => stopCamera, [stopCamera]);
 
-  return (
-    <div className="absolute right-4 top-4 w-40 border border-stone-400/20 bg-white/45 p-2 text-stone-700 shadow-lg shadow-stone-300/20 backdrop-blur-md md:right-6 md:top-6">
-      <div className="relative aspect-video overflow-hidden bg-stone-200/50">
-        <video
-          ref={videoRef}
-          autoPlay
-          className={`h-full w-full scale-x-[-1] object-cover transition duration-500 ${
-            cameraEnabled ? "opacity-80" : "opacity-30"
-          }`}
-          muted
-          playsInline
-        />
-        {!cameraEnabled ? (
-          <div className="absolute inset-0 flex items-center justify-center text-[0.56rem] tracking-[0.2em] text-stone-500/60">
-            CAMERA
-          </div>
-        ) : null}
-      </div>
+  // Derive a customer-facing label from the raw gesture status
+  const isReady =
+    cameraStatus === "HAND TRACKING READY" ||
+    cameraStatus === "CAMERA READY" ||
+    cameraStatus === "READY" ||
+    cameraStatus === "SWIPE LEFT" ||
+    cameraStatus === "SWIPE RIGHT" ||
+    cameraStatus === "OPEN HAND INSPECT" ||
+    cameraStatus === "INSPECT GESTURE" ||
+    cameraStatus === "FIST AGAIN TO ADD" ||
+    cameraStatus === "ADDED TO ORDER" ||
+    cameraStatus === "ORDER CANCELLED" ||
+    cameraStatus === "MOVE HAND BACK" ||
+    cameraStatus === "EXIT INSPECT" ||
+    cameraStatus === "COOLDOWN" ||
+    cameraStatus === "OPPOSITE LOCK";
+  const isError = cameraStatus === "CAMERA ERROR";
+  const isLoading = !isReady && !isError && cameraEnabled;
 
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="text-[0.56rem] tracking-[0.18em] text-stone-500/70">
-          {cameraStatus}
-        </p>
+  return (
+    <div className="absolute right-4 top-4 md:right-6 md:top-6">
+      {!cameraEnabled ? (
+        /* Camera off — subtle enable prompt */
         <button
           onClick={enableCamera}
-          className="border border-stone-400/30 bg-stone-800/8 px-2 py-1 text-[0.52rem] tracking-[0.18em] text-stone-700 transition hover:bg-stone-800/14"
+          className="flex items-center gap-2 border border-stone-300/32 bg-white/48 px-3.5 py-2 text-[0.50rem] tracking-[0.26em] text-stone-500/70 shadow-sm shadow-stone-200/18 backdrop-blur-md transition hover:bg-white/68 hover:text-stone-700/85"
         >
-          {cameraEnabled ? "OFF" : "ENABLE"}
+          <span className="h-1.5 w-1.5 rounded-full bg-stone-400/45" />
+          ENABLE CAMERA
         </button>
-      </div>
-      <p className="mt-2 text-[0.52rem] leading-4 text-stone-400/60">
-        {cameraDebugStep}
-      </p>
-      {cameraErrorMessage ? (
-        <p className="mt-1 text-[0.5rem] leading-4 text-rose-600/80">
-          {cameraErrorMessage}
-        </p>
-      ) : null}
+      ) : (
+        /* Camera enabled — compact preview + minimal status */
+        <div className="w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md">
+          <div className="relative aspect-video overflow-hidden bg-stone-100/60">
+            <video
+              ref={videoRef}
+              autoPlay
+              className="h-full w-full scale-x-[-1] object-cover"
+              muted
+              playsInline
+            />
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
+                <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
+                isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
+              }`} />
+              <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
+                {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
+              </p>
+            </div>
+            <button
+              onClick={stopCamera}
+              className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
+            >
+              OFF
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2426,15 +2418,17 @@ export default function SpatialScene() {
             introFading ? "opacity-0" : "opacity-100"
           }`}
         >
-          <p className="mb-3 text-[0.6rem] tracking-[0.55em] text-amber-700/55">
-            WELCOME TO
+          <div className="mb-7 h-px w-10 bg-amber-500/28" />
+          <p className="mb-3 text-[0.48rem] tracking-[0.62em] text-amber-700/44">
+            EXPERIENCE
           </p>
-          <h1 className="text-4xl font-light tracking-[0.28em] text-stone-700 md:text-5xl">
+          <h1 className="text-5xl font-extralight tracking-[0.30em] text-stone-700 md:text-6xl">
             AURA ONE
           </h1>
-          <p className="mt-4 text-[0.62rem] tracking-[0.4em] text-amber-700/42">
-            SPATIAL DINING
+          <p className="mt-4 text-[0.60rem] font-light tracking-[0.22em] text-stone-500/52">
+            Spatial Dining Experience
           </p>
+          <div className="mt-7 h-px w-10 bg-amber-500/28" />
         </div>
       )}
 
@@ -2559,9 +2553,6 @@ export default function SpatialScene() {
               {FOOD_INSPECT_DATA[activePartIndex].chefNote}
             </p>
 
-            <p className="mt-4 text-[0.44rem] tracking-[0.24em] text-stone-400/32">
-              ← → ROTATE · ESC EXIT
-            </p>
           </>
         ) : (
           <p className="mt-3 text-[0.76rem] leading-[1.65] text-stone-500/68">
@@ -2614,12 +2605,14 @@ export default function SpatialScene() {
         <div className="h-[1px] w-full bg-gradient-to-r from-stone-300/0 via-stone-300/28 to-stone-300/0" />
       </div>
 
-      {/* ── Minimal bottom branding ── */}
+      {/* ── Minimal bottom branding + contextual gesture hint ── */}
       <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 text-center">
-        <p className="text-[0.44rem] tracking-[0.32em] text-stone-400/30 whitespace-nowrap">
-          SWIPE · OPEN HAND · DOUBLE FIST
+        <p className={`whitespace-nowrap text-[0.44rem] tracking-[0.28em] text-stone-400/28 transition-opacity duration-700 ${exploded ? "opacity-100" : "opacity-0"}`}>
+          {inspectMode
+            ? "Open hand to add  ·  Swipe to return"
+            : "Swipe to explore  ·  Open hand to inspect"}
         </p>
-        <p className="text-[0.54rem] tracking-[0.52em] text-stone-500/42">AURA ONE</p>
+        <p className="text-[0.54rem] tracking-[0.52em] text-stone-500/38">AURA ONE</p>
       </div>
 
       {/* ── Spatial Order Tray ── */}
