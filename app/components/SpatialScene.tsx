@@ -71,9 +71,12 @@ const INSPECT_COOLDOWN_MS = 2800;
 const INSPECT_GROW_THRESHOLD = 0.095;   // normalized landmark distance growth
 const INSPECT_SAMPLE_WINDOW_MS = 480;
 
-// Pinch gesture — thumb tip and index tip converging.
-const PINCH_COOLDOWN_MS = 3200;
-const PINCH_DIST_THRESHOLD = 0.068;     // normalized; below this = pinch detected
+// Pinch-hold gesture — thumb tip and index tip converging, held for duration.
+const PINCH_DIST_THRESHOLD = 0.068;     // normalized; below this = pinch contact
+const PINCH_HOLD_MS = 750;              // must hold this long to confirm add
+const PINCH_COOLDOWN_MS = 3000;         // post-fire lockout
+const PINCH_AFTER_SWIPE_IGNORE_MS = 800; // suppress pinch if swipe fired recently
+const PINCH_MAX_MOTION = 0.038;         // max palm-X drift during hold before cancel
 
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
@@ -121,6 +124,7 @@ type CameraGestureStatus =
   | "COOLDOWN"
   | "OPPOSITE LOCK"
   | "INSPECT GESTURE"
+  | "PINCH HOLD"
   | "PINCH ADD"
   | "CAMERA ERROR";
 
@@ -483,7 +487,7 @@ function Part({
     if (activeLightRef.current) {
       // Warm overhead spotlight — selection presence without color distortion.
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 1.55 : 0.55);
+        highlightRef.current * (isInspectActive ? 2.4 : 1.0);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -1299,11 +1303,11 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 0.9;
+      keyLightRef.current.intensity = blendRef.current * 1.5;
     }
 
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 0.4;
+      rimLightRef.current.intensity = blendRef.current * 0.7;
     }
   });
 
@@ -1346,6 +1350,9 @@ function CameraGestureLayer({
   const lastSwipeTimeRef = useRef(0);
   const lastInspectTimeRef = useRef(0);
   const lastPinchTimeRef = useRef(0);
+  const pinchActiveRef = useRef(false);
+  const pinchStartTimeRef = useRef(0);
+  const pinchStartPalmXRef = useRef(0);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraDebugStep, setCameraDebugStep] =
     useState<CameraDebugStep>("Idle");
@@ -1390,6 +1397,9 @@ function CameraGestureLayer({
     lastSwipeTimeRef.current = 0;
     lastInspectTimeRef.current = 0;
     lastPinchTimeRef.current = 0;
+    pinchActiveRef.current = false;
+    pinchStartTimeRef.current = 0;
+    pinchStartPalmXRef.current = 0;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1482,16 +1492,47 @@ function CameraGestureLayer({
           // Hand is closed — wipe palm history so inspect cannot chain into a pinch release.
           palmSizeSamplesRef.current = [];
 
-          // ── Pinch gesture: thumb tip near index tip ────────────────────────
-          // Only fires when hand is NOT open, so it can never conflict with inspect.
-          if (
-            pinchDist < PINCH_DIST_THRESHOLD &&
-            now - lastPinchTimeRef.current > PINCH_COOLDOWN_MS
-          ) {
-            lastPinchTimeRef.current = now;
-            statusHoldUntilRef.current = now + 1000;
-            updateStatus("PINCH ADD");
-            onGesture("ADD_TO_ORDER");
+          // ── Pinch-hold gesture: must sustain pinch for PINCH_HOLD_MS ──────
+          // Gates: not inside post-fire cooldown, not inside post-swipe window,
+          //        hand must stay laterally stable (no swipe-like motion).
+          const sinceLastFired = now - lastPinchTimeRef.current;
+          const sinceLastSwipe = now - lastSwipeTimeRef.current;
+          const postSwipeSuppressed = sinceLastSwipe < PINCH_AFTER_SWIPE_IGNORE_MS;
+          const postFireLocked = sinceLastFired < PINCH_COOLDOWN_MS;
+
+          const pinchContact = pinchDist < PINCH_DIST_THRESHOLD;
+
+          if (pinchContact && !postSwipeSuppressed && !postFireLocked) {
+            if (!pinchActiveRef.current) {
+              // Transition IDLE → HOLDING
+              pinchActiveRef.current = true;
+              pinchStartTimeRef.current = now;
+              pinchStartPalmXRef.current = palmX;
+            }
+            // Holding — check stability and duration
+            const holdMs = now - pinchStartTimeRef.current;
+            const palmDrift = Math.abs(palmX - pinchStartPalmXRef.current);
+
+            if (palmDrift > PINCH_MAX_MOTION) {
+              // Hand drifted laterally (probably a swipe) — cancel hold
+              pinchActiveRef.current = false;
+              pinchStartTimeRef.current = 0;
+            } else if (holdMs >= PINCH_HOLD_MS) {
+              // Transition HOLDING → FIRED
+              pinchActiveRef.current = false;
+              lastPinchTimeRef.current = now;
+              statusHoldUntilRef.current = now + 1200;
+              updateStatus("PINCH ADD");
+              onGesture("ADD_TO_ORDER");
+            } else {
+              // Still counting — keep status live so READY cannot overwrite it
+              statusHoldUntilRef.current = now + 200;
+              updateStatus("PINCH HOLD");
+            }
+          } else if (pinchActiveRef.current) {
+            // Pinch broke contact, swipe fired, or cooldown kicked in — cancel hold
+            pinchActiveRef.current = false;
+            pinchStartTimeRef.current = 0;
           }
         }
       }
@@ -2064,20 +2105,20 @@ export default function SpatialScene() {
       )}
 
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
-        <color attach="background" args={["#120e09"]} />
+        <color attach="background" args={["#1a1208"]} />
 
-        {/* Warm base fill — lifts shadow areas out of black */}
-        <ambientLight intensity={0.58} color="#fff4e8" />
-        {/* Key light: warm overhead from upper-right — premium food photography angle */}
-        <directionalLight position={[3, 6, 2.5]} intensity={1.05} color="#ffe8d0" castShadow={false} />
-        {/* Front soft fill: faces the food directly, simulates photographer's softbox */}
-        <pointLight position={[0, 0.5, 5.5]} intensity={0.55} color="#fff8f0" />
-        {/* Left warm fill */}
-        <pointLight position={[-3.5, 2, 3.5]} intensity={0.38} color="#ffd4a0" />
-        {/* Warm floor bounce — gives depth under items */}
-        <pointLight position={[0, -3.5, 2.5]} intensity={0.28} color="#ff9944" />
-        {/* Subtle rear warm accent — adds restaurant atmosphere depth */}
-        <pointLight position={[0, 2.5, -3]} intensity={0.15} color="#ffcc88" />
+        {/* Warm base fill — lifts shadow areas off absolute black */}
+        <ambientLight intensity={0.85} color="#fff4e8" />
+        {/* Key light: warm overhead-right — premium food photography angle */}
+        <directionalLight position={[3, 6, 2.5]} intensity={1.10} color="#ffe8d0" castShadow={false} />
+        {/* Front softbox: directly faces food — primary readability light */}
+        <pointLight position={[0, 0.8, 6]} intensity={1.05} color="#fff8f2" />
+        {/* Left warm fill — softens right-side shadows */}
+        <pointLight position={[-3.5, 2, 3.5]} intensity={0.45} color="#ffd4a0" />
+        {/* Warm floor bounce — depth and ground presence under items */}
+        <pointLight position={[0, -3.5, 2.5]} intensity={0.35} color="#ff9944" />
+        {/* Rear warm glow — restaurant atmosphere, prevents black void behind carousel */}
+        <pointLight position={[0, 1.5, -4]} intensity={0.28} color="#ffcc88" />
         <InspectSceneLighting inspectMode={inspectMode} />
 
         <AmbientParticles />
