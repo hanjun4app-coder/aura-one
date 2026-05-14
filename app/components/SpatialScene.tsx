@@ -366,6 +366,7 @@ function Part({
   focusScale = 1.45,
   secondaryScale = 0.74,
   inspectZFocus = 0.9,
+  inspectScaleMultiplier = 1.38,
   explodeDelay = 0,
   assembleDelay = 0,
   baseRotation = [0, 0, 0],
@@ -388,6 +389,7 @@ function Part({
   focusScale?: number;
   secondaryScale?: number;
   inspectZFocus?: number;
+  inspectScaleMultiplier?: number;
   explodeDelay?: number;
   assembleDelay?: number;
   baseRotation?: [number, number, number];
@@ -493,7 +495,7 @@ function Part({
       slot === 0
         ? focusScale
         : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
-    const inspectScale = slot === 0 ? focusScale * 1.12 : 0.22;
+    const inspectScale = slot === 0 ? focusScale * inspectScaleMultiplier : 0.22;
     const scaleTarget = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(0, carouselScale, carouselPresence),
       inspectScale,
@@ -1195,7 +1197,8 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.18, 0]}
         focusScale={1.22}
         secondaryScale={0.66}
-        inspectZFocus={0.9}
+        inspectZFocus={1.1}
+        inspectScaleMultiplier={1.38}
         selfRotationAmount={0.12}
         motionSeed={1}
       >
@@ -1203,7 +1206,7 @@ function SpatialMenuCarousel({
         <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
       </Part>
 
-      {/* ── Item 1: Crispy Chicken Combo ── */}
+      {/* ── Item 1: Sushi Roll Combo ── */}
       <Part
         partIndex={1}
         progressRef={progressRef}
@@ -1218,6 +1221,7 @@ function SpatialMenuCarousel({
         focusScale={1.32}
         secondaryScale={0.64}
         inspectZFocus={1.5}
+        inspectScaleMultiplier={1.52}
         explodeDelay={0.022}
         assembleDelay={0.042}
         selfRotationAmount={0.14}
@@ -1244,7 +1248,8 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.15, 0]}
         focusScale={1.2}
         secondaryScale={0.64}
-        inspectZFocus={1.1}
+        inspectZFocus={1.3}
+        inspectScaleMultiplier={1.44}
         explodeDelay={0.04}
         assembleDelay={0.06}
         selfRotationAmount={0.16}
@@ -1271,6 +1276,7 @@ function SpatialMenuCarousel({
         focusScale={1.38}
         secondaryScale={0.66}
         inspectZFocus={1.6}
+        inspectScaleMultiplier={1.55}
         explodeDelay={0.055}
         assembleDelay={0.04}
         selfRotationAmount={0.18}
@@ -1296,7 +1302,8 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.16, 0]}
         focusScale={1.28}
         secondaryScale={0.66}
-        inspectZFocus={1.25}
+        inspectZFocus={1.4}
+        inspectScaleMultiplier={1.50}
         explodeDelay={0.07}
         assembleDelay={0.025}
         selfRotationAmount={0.2}
