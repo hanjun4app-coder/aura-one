@@ -23,8 +23,8 @@ const CAROUSEL_PARTS = [
     description: "Double wagyu patty, truffle mayo, aged cheddar, brioche bun.",
   },
   {
-    name: "Crispy Chicken Combo",
-    description: "Buttermilk fried chicken, slaw, sriracha honey glaze.",
+    name: "Sushi Roll Combo",
+    description: "California roll with crab, avocado, cucumber, toasted sesame.",
   },
   {
     name: "Classic Fries Set",
@@ -641,6 +641,54 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
 }
 useGLTF.preload("/models/burger.glb");
 
+function FoodModel({
+  path,
+  targetSize = 0.92,
+  positionOffset = [0, 0, 0] as [number, number, number],
+  rotationOffset = [0, 0, 0] as [number, number, number],
+}: {
+  path: string;
+  targetSize?: number;
+  positionOffset?: [number, number, number];
+  rotationOffset?: [number, number, number];
+}) {
+  const { scene } = useGLTF(path);
+
+  const { center, normalizedScale } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    return { center: c, normalizedScale: maxDim > 0 ? targetSize / maxDim : 1 };
+  }, [scene, targetSize]);
+
+  useEffect(() => {
+    scene.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(obj.material)
+        ? (obj.material as THREE.MeshStandardMaterial[])
+        : [obj.material as THREE.MeshStandardMaterial];
+      mats.forEach((m) => {
+        if (!m.isMeshStandardMaterial) return;
+        m.transparent = true;
+        m.roughness = Math.max(m.roughness, 0.55);
+      });
+    });
+  }, [scene]);
+
+  return (
+    <group scale={normalizedScale} position={positionOffset} rotation={rotationOffset}>
+      <group position={[-center.x, -center.y, -center.z]}>
+        <primitive object={scene} />
+      </group>
+    </group>
+  );
+}
+useGLTF.preload("/models/california-roll.glb");
+useGLTF.preload("/models/fries.glb");
+useGLTF.preload("/models/coffee.glb");
+useGLTF.preload("/models/ice-cream.glb");
+
 // Assembled Y positions match the stacked burger look; exploded positions give 0.65 spacing.
 const BURGER_ASSEMBLED_Y = [-0.40, -0.23, -0.13, -0.03, 0.04, 0.09, 0.22] as const;
 const BURGER_EXPLODED_Y  = [-1.20, -0.68, -0.32,  0.02, 0.36, 0.70, 1.20] as const;
@@ -1035,41 +1083,11 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.14}
         motionSeed={2}
       >
-        {/* Serving box base */}
-        <mesh position={[0, -0.28, 0]}>
-          <boxGeometry args={[0.78, 0.52, 0.62]} />
-          <meshStandardMaterial color="#f5f0e8" metalness={0.06} roughness={0.72} />
-        </mesh>
-        {/* Box lid */}
-        <mesh position={[0, 0.02, 0]}>
-          <boxGeometry args={[0.8, 0.08, 0.64]} />
-          <meshStandardMaterial color="#e8e2d6" metalness={0.06} roughness={0.74} />
-        </mesh>
-        {/* Chicken piece 1 — main breast */}
-        <mesh position={[0, 0.14, 0.04]}>
-          <sphereGeometry args={[0.28, 16, 10]} />
-          <meshStandardMaterial color="#c8800a" metalness={0.06} roughness={0.84} />
-        </mesh>
-        {/* Chicken piece 2 — offset chunk */}
-        <mesh position={[-0.18, 0.1, -0.08]} scale={[1, 0.82, 0.9]}>
-          <sphereGeometry args={[0.22, 14, 9]} />
-          <meshStandardMaterial color="#ae6408" metalness={0.06} roughness={0.86} />
-        </mesh>
-        {/* Chicken piece 3 — front bite */}
-        <mesh position={[0.16, 0.08, 0.1]} scale={[0.9, 0.78, 0.88]}>
-          <sphereGeometry args={[0.19, 12, 9]} />
-          <meshStandardMaterial color="#d8960e" metalness={0.05} roughness={0.82} />
-        </mesh>
-        {/* Slaw garnish disc */}
-        <mesh position={[0, 0.0, -0.14]}>
-          <cylinderGeometry args={[0.18, 0.18, 0.05, 16]} />
-          <meshStandardMaterial color="#d4e8c0" metalness={0.04} roughness={0.88} />
-        </mesh>
-        {/* Cyan brand stripe */}
-        <mesh position={[0, -0.02, 0.33]}>
-          <boxGeometry args={[0.78, 0.06, 0.01]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.55} metalness={0.5} roughness={0.1} />
-        </mesh>
+        <FoodModel
+          path="/models/california-roll.glb"
+          targetSize={0.88}
+          rotationOffset={[0.18, 0, 0]}
+        />
       </Part>
 
       {/* ── Item 2: Classic Fries Set ── */}
@@ -1091,39 +1109,10 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.16}
         motionSeed={3}
       >
-        {/* Red fry carton */}
-        <mesh position={[0, -0.12, 0]}>
-          <boxGeometry args={[0.52, 0.6, 0.38]} />
-          <meshStandardMaterial color="#c02820" metalness={0.08} roughness={0.64} />
-        </mesh>
-        {/* Carton top bevel */}
-        <mesh position={[0, 0.2, 0]}>
-          <boxGeometry args={[0.56, 0.06, 0.42]} />
-          <meshStandardMaterial color="#a82218" metalness={0.08} roughness={0.68} />
-        </mesh>
-        {/* 14 fry sticks via seeded positions */}
-        {([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] as const).map((i) => {
-          const offsetX = (seededUnit(i * 5) - 0.5) * 0.38;
-          const offsetZ = (seededUnit(i * 6) - 0.5) * 0.24;
-          const height = 0.52 + seededUnit(i * 7) * 0.28;
-          const tiltX = (seededUnit(i * 8) - 0.5) * 0.32;
-          const tiltZ = (seededUnit(i * 9) - 0.5) * 0.28;
-          return (
-            <mesh
-              key={i}
-              position={[offsetX, 0.26 + height * 0.5, offsetZ]}
-              rotation={[tiltX, 0, tiltZ]}
-            >
-              <cylinderGeometry args={[0.024, 0.026, height, 6]} />
-              <meshStandardMaterial color="#f0b42a" metalness={0.04} roughness={0.78} />
-            </mesh>
-          );
-        })}
-        {/* Logo badge on carton */}
-        <mesh position={[0, -0.08, 0.2]}>
-          <boxGeometry args={[0.32, 0.14, 0.01]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.45} metalness={0.5} roughness={0.12} />
-        </mesh>
+        <FoodModel
+          path="/models/fries.glb"
+          targetSize={0.92}
+        />
       </Part>
 
       {/* ── Item 3: Artisan Coffee Set ── */}
@@ -1145,46 +1134,10 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.18}
         motionSeed={4}
       >
-        {/* Saucer plate */}
-        <mesh position={[0, -0.5, 0]}>
-          <cylinderGeometry args={[0.46, 0.48, 0.04, 28]} />
-          <meshStandardMaterial color="#e8e0d8" metalness={0.12} roughness={0.58} />
-        </mesh>
-        {/* Saucer rim */}
-        <mesh position={[0, -0.48, 0]}>
-          <torusGeometry args={[0.42, 0.022, 10, 40]} />
-          <meshStandardMaterial color="#d4ccc4" metalness={0.14} roughness={0.54} />
-        </mesh>
-        {/* Cup body — tapered */}
-        <mesh position={[0, -0.18, 0]}>
-          <cylinderGeometry args={[0.24, 0.19, 0.6, 24]} />
-          <meshStandardMaterial color="#1c0e08" metalness={0.22} roughness={0.5} />
-        </mesh>
-        {/* Sleeve band */}
-        <mesh position={[0, -0.22, 0]}>
-          <cylinderGeometry args={[0.255, 0.21, 0.32, 24]} />
-          <meshStandardMaterial color="#2a1a10" metalness={0.18} roughness={0.62} />
-        </mesh>
-        {/* Coffee surface */}
-        <mesh position={[0, 0.12, 0]}>
-          <cylinderGeometry args={[0.232, 0.232, 0.02, 24]} />
-          <meshStandardMaterial color="#2c1408" metalness={0.1} roughness={0.72} />
-        </mesh>
-        {/* Foam microring */}
-        <mesh position={[0, 0.14, 0]}>
-          <torusGeometry args={[0.14, 0.048, 10, 28]} />
-          <meshStandardMaterial color="#f0e8dc" metalness={0.06} roughness={0.82} />
-        </mesh>
-        {/* Lid */}
-        <mesh position={[0, 0.2, 0]}>
-          <cylinderGeometry args={[0.248, 0.24, 0.1, 24]} />
-          <meshStandardMaterial color="#0e0806" metalness={0.24} roughness={0.46} />
-        </mesh>
-        {/* Cyan brand stripe on cup */}
-        <mesh position={[0, -0.14, 0.255]}>
-          <boxGeometry args={[0.18, 0.04, 0.01]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.7} metalness={0.5} roughness={0.08} />
-        </mesh>
+        <FoodModel
+          path="/models/coffee.glb"
+          targetSize={0.88}
+        />
       </Part>
 
       {/* ── Item 4: Chef's Dessert Combo ── */}
@@ -1206,55 +1159,10 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.2}
         motionSeed={5}
       >
-        {/* White plate */}
-        <mesh position={[0, -0.46, 0]}>
-          <cylinderGeometry args={[0.58, 0.6, 0.06, 32]} />
-          <meshStandardMaterial color="#f8f6f2" metalness={0.14} roughness={0.44} />
-        </mesh>
-        {/* Plate rim ring */}
-        <mesh position={[0, -0.43, 0]}>
-          <torusGeometry args={[0.54, 0.018, 10, 44]} />
-          <meshStandardMaterial color="#e8e4de" metalness={0.16} roughness={0.42} />
-        </mesh>
-        {/* Chocolate fondant cylinder */}
-        <mesh position={[0, -0.22, 0]}>
-          <cylinderGeometry args={[0.2, 0.22, 0.46, 20]} />
-          <meshStandardMaterial color="#2a1208" metalness={0.1} roughness={0.72} />
-        </mesh>
-        {/* Melt flow disc */}
-        <mesh position={[0, -0.22, 0]}>
-          <cylinderGeometry args={[0.28, 0.28, 0.04, 24]} />
-          <meshStandardMaterial color="#4a1e0a" metalness={0.08} roughness={0.78} />
-        </mesh>
-        {/* Fondant top dome cap */}
-        <mesh position={[0, 0.02, 0]}>
-          <sphereGeometry args={[0.19, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45]} />
-          <meshStandardMaterial color="#3a1810" metalness={0.1} roughness={0.68} />
-        </mesh>
-        {/* Ice cream scoop */}
-        <mesh position={[0.3, -0.12, 0.08]}>
-          <sphereGeometry args={[0.2, 16, 12]} />
-          <meshStandardMaterial color="#f8f0e0" metalness={0.06} roughness={0.64} />
-        </mesh>
-        {/* 3 gold dust dots */}
-        {([0, 1, 2] as const).map((i) => (
-          <mesh
-            key={i}
-            position={[
-              (seededUnit(i * 11) - 0.5) * 0.7,
-              -0.43,
-              (seededUnit(i * 13) - 0.5) * 0.7,
-            ]}
-          >
-            <sphereGeometry args={[0.018, 6, 5]} />
-            <meshStandardMaterial color="#d4a822" emissive="#c89010" emissiveIntensity={0.6} metalness={0.7} roughness={0.2} />
-          </mesh>
-        ))}
-        {/* Cyan accent ring under plate */}
-        <mesh position={[0, -0.49, 0]}>
-          <torusGeometry args={[0.56, 0.007, 8, 44]} />
-          <meshStandardMaterial color="#00d4ff" emissive="#00d4ff" emissiveIntensity={0.38} metalness={0.5} roughness={0.12} />
-        </mesh>
+        <FoodModel
+          path="/models/ice-cream.glb"
+          targetSize={0.92}
+        />
       </Part>
 
     </group>
