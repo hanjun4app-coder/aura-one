@@ -52,6 +52,54 @@ const BURGER_INGREDIENTS = [
 
 const ITEM_PRICES = [18.90, 15.50, 7.90, 6.50, 12.80];
 
+const FOOD_INSPECT_DATA = [
+  {
+    special: "TODAY'S SPECIAL",
+    calories: "780 kcal",
+    protein: "38g",
+    allergens: "Wheat, dairy, egg",
+    flavorProfile: "Savory, creamy, smoky, lightly sweet",
+    ingredients: "Brioche bun · wagyu beef patty · aged cheddar · crisp lettuce · tomato · truffle sauce",
+    chefNote: "Signature layered burger with warm brioche and rich truffle sauce.",
+  },
+  {
+    special: null,
+    calories: "420 kcal",
+    protein: "18g",
+    allergens: "Shellfish, soy, sesame",
+    flavorProfile: "Clean, oceanic, nutty, lightly vinegared",
+    ingredients: "Sushi rice · nori · crab · avocado · cucumber · sesame seeds",
+    chefNote: "House-rolled California with ripe avocado and toasted sesame.",
+  },
+  {
+    special: null,
+    calories: "380 kcal",
+    protein: "5g",
+    allergens: "None",
+    flavorProfile: "Crispy, salty, lightly herbed",
+    ingredients: "Russet potatoes · sunflower oil · sea salt · house seasoning",
+    chefNote: "Hand-cut daily and seasoned with our house spice blend.",
+  },
+  {
+    special: null,
+    calories: "120 kcal",
+    protein: "4g",
+    allergens: "Dairy (oat milk)",
+    flavorProfile: "Rich, floral, creamy, subtly sweet",
+    ingredients: "Single-origin espresso · oat milk · seasonal syrup",
+    chefNote: "Pulled from single-origin beans with precision-steamed oat milk.",
+  },
+  {
+    special: null,
+    calories: "640 kcal",
+    protein: "8g",
+    allergens: "Wheat, dairy, egg",
+    flavorProfile: "Warm, chocolatey, rich, cooling",
+    ingredients: "Dark chocolate · butter · egg · flour · vanilla bean ice cream",
+    chefNote: "Warm fondant paired with housemade vanilla bean ice cream.",
+  },
+] as const;
+
 const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
@@ -74,11 +122,22 @@ const INSPECT_GUIDANCE_THRESHOLD = 0.018; // lower threshold for "OPEN HAND INSP
 const INSPECT_SAMPLE_WINDOW_MS = 600;   // wider window for a more relaxed trigger
 
 // Pinch-hold gesture — thumb tip and index tip converging, held for duration.
-const PINCH_DIST_THRESHOLD = 0.068;     // normalized; below this = pinch contact
-const PINCH_HOLD_MS = 750;              // must hold this long to confirm add
-const PINCH_COOLDOWN_MS = 3000;         // post-fire lockout
-const PINCH_AFTER_SWIPE_IGNORE_MS = 800; // suppress pinch if swipe fired recently
-const PINCH_MAX_MOTION = 0.038;         // max palm-X drift during hold before cancel
+// Safety rules: tighter pinch threshold, longer hold, stricter stability, release required between fires.
+const PINCH_DIST_THRESHOLD = 0.060;      // tighter contact requirement (was 0.068)
+const PINCH_HOLD_MS = 1100;              // 1.1 s sustained hold required (was 750)
+const PINCH_COOLDOWN_MS = 4000;          // 4 s post-fire lockout (was 3000)
+const PINCH_AFTER_SWIPE_IGNORE_MS = 1200; // suppress if swipe fired recently (was 800)
+const PINCH_MAX_MOTION = 0.022;          // strict lateral stability gate (was 0.038)
+const PINCH_WARN_MOTION = 0.012;         // threshold for KEEP STILL warning
+
+// Exit-inspect gesture — open hand shrinking = hand retreating from camera ("push away").
+// Uses same palm-width metric as enter so they are symmetrically detectable.
+// Mutual exclusion: enter only fires when NOT in inspect; exit only fires when IN inspect.
+// Cross-bumping cooldowns prevent immediate re-entry after exit and vice versa.
+const EXIT_INSPECT_SHRINK_THRESHOLD = 0.045;   // palm-width shrink required to confirm exit
+const EXIT_INSPECT_GUIDANCE_THRESHOLD = 0.016; // lower threshold for "MOVE HAND BACK" hint
+const EXIT_INSPECT_SAMPLE_WINDOW_MS = 650;      // rolling window (slightly wider than enter)
+const EXIT_INSPECT_COOLDOWN_MS = 2500;          // post-exit lockout prevents double-fire
 
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
@@ -130,7 +189,12 @@ type CameraGestureStatus =
   | "OPEN HAND INSPECT"
   | "INSPECT GESTURE"
   | "PINCH HOLD"
+  | "PINCH HOLD TO ADD"
+  | "KEEP STILL"
   | "PINCH ADD"
+  | "ADDED TO ORDER"
+  | "MOVE HAND BACK"
+  | "EXIT INSPECT"
   | "CAMERA ERROR";
 
 type CameraDebugStep =
@@ -1344,8 +1408,10 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
 
 function CameraGestureLayer({
   onGesture,
+  inspectMode,
 }: {
   onGesture: (action: GestureAction) => void;
+  inspectMode: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
@@ -1361,8 +1427,10 @@ function CameraGestureLayer({
   const lastSwipeDirectionRef = useRef<"left" | "right" | null>(null);
   const lastSwipeTimeRef = useRef(0);
   const lastInspectTimeRef = useRef(0);
+  const lastExitInspectTimeRef = useRef(0);
   const lastPinchTimeRef = useRef(0);
   const pinchActiveRef = useRef(false);
+  const pinchWasReleasedRef = useRef(true); // must release between fires
   const pinchStartTimeRef = useRef(0);
   const pinchStartPalmXRef = useRef(0);
   const [cameraEnabled, setCameraEnabled] = useState(false);
@@ -1408,8 +1476,10 @@ function CameraGestureLayer({
     lastSwipeDirectionRef.current = null;
     lastSwipeTimeRef.current = 0;
     lastInspectTimeRef.current = 0;
+    lastExitInspectTimeRef.current = 0;
     lastPinchTimeRef.current = 0;
     pinchActiveRef.current = false;
+    pinchWasReleasedRef.current = true;
     pinchStartTimeRef.current = 0;
     pinchStartPalmXRef.current = 0;
     handLandmarkerRef.current?.close?.();
@@ -1483,31 +1553,52 @@ function CameraGestureLayer({
             ? Math.hypot(lm5.x - lm17.x, lm5.y - lm17.y)
             : Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y);
 
+          // Shared rolling buffer — both enter and exit read the same palm-width history.
+          // Enter looks for growth (positive delta); exit looks for shrink (negative delta).
+          const sampleWindow = inspectMode ? EXIT_INSPECT_SAMPLE_WINDOW_MS : INSPECT_SAMPLE_WINDOW_MS;
           palmSizeSamplesRef.current = [
             ...palmSizeSamplesRef.current.filter(
-              (s) => now - s.time <= INSPECT_SAMPLE_WINDOW_MS
+              (s) => now - s.time <= Math.max(sampleWindow, INSPECT_SAMPLE_WINDOW_MS)
             ),
             { time: now, size: palmWidth },
           ];
 
-          if (
-            now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS &&
-            palmSizeSamplesRef.current.length >= 3
-          ) {
+          if (palmSizeSamplesRef.current.length >= 3) {
             const oldest = palmSizeSamplesRef.current[0]!;
-            const growth = palmWidth - oldest.size;
+            const delta = palmWidth - oldest.size; // positive = growing, negative = shrinking
             const elapsed = now - oldest.time;
 
-            if (growth > INSPECT_GUIDANCE_THRESHOLD && elapsed > 100 && now > statusHoldUntilRef.current) {
-              // Show approach guidance before threshold is met
-              updateStatus("OPEN HAND INSPECT");
-            }
-
-            if (growth > INSPECT_GROW_THRESHOLD && elapsed > 150) {
-              lastInspectTimeRef.current = now;
-              statusHoldUntilRef.current = now + 1200;
-              updateStatus("INSPECT GESTURE");
-              onGesture("ENTER_INSPECT");
+            if (!inspectMode) {
+              // ── Enter-inspect path: open hand approaching camera ──
+              if (now - lastInspectTimeRef.current > INSPECT_COOLDOWN_MS) {
+                if (delta > INSPECT_GUIDANCE_THRESHOLD && elapsed > 100 && now > statusHoldUntilRef.current) {
+                  updateStatus("OPEN HAND INSPECT");
+                }
+                if (delta > INSPECT_GROW_THRESHOLD && elapsed > 150) {
+                  lastInspectTimeRef.current = now;
+                  lastExitInspectTimeRef.current = now; // cross-bump: prevent immediate re-exit
+                  statusHoldUntilRef.current = now + 1200;
+                  palmSizeSamplesRef.current = []; // wipe buffer after fire
+                  updateStatus("INSPECT GESTURE");
+                  onGesture("ENTER_INSPECT");
+                }
+              }
+            } else {
+              // ── Exit-inspect path: open hand retreating from camera ──
+              if (now - lastExitInspectTimeRef.current > EXIT_INSPECT_COOLDOWN_MS) {
+                const shrink = -delta; // positive when hand moves away
+                if (shrink > EXIT_INSPECT_GUIDANCE_THRESHOLD && elapsed > 100 && now > statusHoldUntilRef.current) {
+                  updateStatus("MOVE HAND BACK");
+                }
+                if (shrink > EXIT_INSPECT_SHRINK_THRESHOLD && elapsed > 150) {
+                  lastExitInspectTimeRef.current = now;
+                  lastInspectTimeRef.current = now; // cross-bump: prevent immediate re-enter
+                  statusHoldUntilRef.current = now + 1200;
+                  palmSizeSamplesRef.current = []; // wipe buffer after fire
+                  updateStatus("EXIT INSPECT");
+                  onGesture("EXIT_INSPECT");
+                }
+              }
             }
           }
         } else {
@@ -1524,37 +1615,47 @@ function CameraGestureLayer({
 
           const pinchContact = pinchDist < PINCH_DIST_THRESHOLD;
 
+          // Mark released whenever finger contact breaks — required before a new hold can start.
+          if (!pinchContact) {
+            pinchWasReleasedRef.current = true;
+            if (pinchActiveRef.current) {
+              pinchActiveRef.current = false;
+              pinchStartTimeRef.current = 0;
+            }
+          }
+
           if (pinchContact && !postSwipeSuppressed && !postFireLocked) {
-            if (!pinchActiveRef.current) {
-              // Transition IDLE → HOLDING
+            // Only start a new hold if the finger was genuinely released since last fire.
+            if (!pinchActiveRef.current && pinchWasReleasedRef.current) {
               pinchActiveRef.current = true;
+              pinchWasReleasedRef.current = false; // consumed — must re-release to start again
               pinchStartTimeRef.current = now;
               pinchStartPalmXRef.current = palmX;
             }
-            // Holding — check stability and duration
-            const holdMs = now - pinchStartTimeRef.current;
-            const palmDrift = Math.abs(palmX - pinchStartPalmXRef.current);
 
-            if (palmDrift > PINCH_MAX_MOTION) {
-              // Hand drifted laterally (probably a swipe) — cancel hold
-              pinchActiveRef.current = false;
-              pinchStartTimeRef.current = 0;
-            } else if (holdMs >= PINCH_HOLD_MS) {
-              // Transition HOLDING → FIRED
-              pinchActiveRef.current = false;
-              lastPinchTimeRef.current = now;
-              statusHoldUntilRef.current = now + 1200;
-              updateStatus("PINCH ADD");
-              onGesture("ADD_TO_ORDER");
-            } else {
-              // Still counting — keep status live so READY cannot overwrite it
-              statusHoldUntilRef.current = now + 200;
-              updateStatus("PINCH HOLD");
+            if (pinchActiveRef.current) {
+              const holdMs = now - pinchStartTimeRef.current;
+              const palmDrift = Math.abs(palmX - pinchStartPalmXRef.current);
+
+              if (palmDrift > PINCH_MAX_MOTION) {
+                // Hand drifted laterally — cancel hold, require release before retry
+                pinchActiveRef.current = false;
+                pinchWasReleasedRef.current = false;
+                pinchStartTimeRef.current = 0;
+              } else if (holdMs >= PINCH_HOLD_MS) {
+                // FIRED — require full release before next hold can start
+                pinchActiveRef.current = false;
+                pinchWasReleasedRef.current = false;
+                lastPinchTimeRef.current = now;
+                statusHoldUntilRef.current = now + 1500;
+                updateStatus("ADDED TO ORDER");
+                onGesture("ADD_TO_ORDER");
+              } else {
+                // Still counting — hold status live so READY cannot overwrite
+                statusHoldUntilRef.current = now + 200;
+                updateStatus(palmDrift > PINCH_WARN_MOTION ? "KEEP STILL" : "PINCH HOLD TO ADD");
+              }
             }
-          } else if (pinchActiveRef.current) {
-            // Pinch broke contact, swipe fired, or cooldown kicked in — cancel hold
-            pinchActiveRef.current = false;
-            pinchStartTimeRef.current = 0;
           }
         }
       }
@@ -1620,7 +1721,7 @@ function CameraGestureLayer({
         onGesture("NEXT_PART");
       }
     },
-    [onGesture, updateStatus]
+    [inspectMode, onGesture, updateStatus]
   );
 
   const runDetectionLoop = useCallback(() => {
@@ -2185,7 +2286,7 @@ export default function SpatialScene() {
         style={{ background: "radial-gradient(ellipse at 50% 52%, transparent 34%, rgba(28,20,10,0.30) 100%)" }}
       />
 
-      <CameraGestureLayer onGesture={applyGestureAction} />
+      <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} />
 
       <div
         className={`pointer-events-none absolute ${hudPositionClass} w-[min(22rem,calc(100vw-2rem))] border border-stone-300/25 bg-white/40 p-4 text-left text-stone-800 shadow-lg shadow-stone-400/12 backdrop-blur-md transition-all duration-500 md:p-5 ${
@@ -2197,6 +2298,17 @@ export default function SpatialScene() {
         <p className="mb-2 text-[0.58rem] tracking-[0.36em] text-amber-700/62">
           {inspectMode ? "INSPECT MODE" : "FEATURED COMBO"}
         </p>
+
+        {/* Special tag — carousel and inspect mode */}
+        {FOOD_INSPECT_DATA[activePartIndex].special && (
+          <div className="mb-2 inline-flex items-center gap-1.5 border border-amber-400/48 bg-amber-50/62 px-2 py-0.5">
+            <span className="h-1 w-1 rounded-full bg-amber-500/60" />
+            <span className="text-[0.50rem] tracking-[0.32em] text-amber-800/78">
+              {FOOD_INSPECT_DATA[activePartIndex].special}
+            </span>
+          </div>
+        )}
+
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-light leading-snug tracking-[0.12em] text-stone-800">
             {activePart.name}
@@ -2205,14 +2317,44 @@ export default function SpatialScene() {
             ${ITEM_PRICES[activePartIndex].toFixed(2)}
           </span>
         </div>
-        <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-500/72">
-          {activePart.description}
-        </p>
+
         {inspectMode ? (
-          <p className="mt-3 text-[0.58rem] tracking-[0.22em] text-amber-700/45">
-            WASD ROTATE • ESC BACK
+          <>
+            {/* Rich inspect-mode data */}
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-stone-200/38 pt-3">
+              <div>
+                <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">CALORIES</p>
+                <p className="text-[0.68rem] font-light text-stone-700">{FOOD_INSPECT_DATA[activePartIndex].calories}</p>
+              </div>
+              <div>
+                <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">PROTEIN</p>
+                <p className="text-[0.68rem] font-light text-stone-700">{FOOD_INSPECT_DATA[activePartIndex].protein}</p>
+              </div>
+            </div>
+            <div className="mt-2">
+              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">ALLERGENS</p>
+              <p className="text-[0.62rem] font-light text-stone-600">{FOOD_INSPECT_DATA[activePartIndex].allergens}</p>
+            </div>
+            <div className="mt-2 border-t border-stone-200/30 pt-2">
+              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">INGREDIENTS</p>
+              <p className="mt-0.5 text-[0.60rem] leading-4 text-stone-600/80">{FOOD_INSPECT_DATA[activePartIndex].ingredients}</p>
+            </div>
+            <div className="mt-2 border-t border-stone-200/30 pt-2">
+              <p className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">FLAVOR</p>
+              <p className="mt-0.5 text-[0.60rem] leading-4 text-stone-500/75">{FOOD_INSPECT_DATA[activePartIndex].flavorProfile}</p>
+            </div>
+            <p className="mt-2 border-t border-stone-200/30 pt-2 text-[0.58rem] italic leading-4 text-amber-800/50">
+              {FOOD_INSPECT_DATA[activePartIndex].chefNote}
+            </p>
+            <p className="mt-3 text-[0.52rem] tracking-[0.22em] text-amber-700/40">
+              WASD ROTATE • ESC BACK
+            </p>
+          </>
+        ) : (
+          <p className="mt-2.5 text-[0.78rem] leading-5 text-stone-500/72">
+            {activePart.description}
           </p>
-        ) : null}
+        )}
       </div>
 
       {/* Ingredient HUD — appears only when burger layers are exploded in inspect mode */}
