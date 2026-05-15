@@ -813,9 +813,9 @@ useGLTF.preload("/models/ice-cream.glb");
 // 8-layer stack — bottom → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.
 // Assembled Y — tight overlap so layers read as one burger during hero crossfade.
 const BURGER_ASSEMBLED_Y = [-0.38, -0.26, -0.15, -0.05, 0.05, 0.15, 0.24, 0.35] as const;
-// Exploded Y — maximized separation for clear ingredient diagram (3.10 unit total range).
+// Exploded Y — 20% closer than max-separation version (2.48 unit total range).
 // bacon (i=2) sits above patty (i=3) — correct real-burger physical order.
-const BURGER_EXPLODED_Y  = [-1.45, -1.00, -0.10, -0.55, 0.30, 0.70, 1.15, 1.65] as const;
+const BURGER_EXPLODED_Y  = [-1.14, -0.78, -0.06, -0.42, 0.26, 0.58, 0.94, 1.34] as const;
 // Very slow Y-only rotation — luxury restraint, alternating direction per layer.
 const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
 // Per-layer [x, z] offsets in exploded state. Patty (i=3) anchors at center.
@@ -831,6 +831,8 @@ const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
 ];
 // Per-layer scale multipliers. Buns, bacon, lettuce reduced so no layer dominates.
 const BURGER_LAYER_SCALES = [0.82, 0.90, 0.80, 0.95, 0.90, 0.88, 0.82, 0.82] as const;
+// Uniform scale applied to the whole exploded stack group so it fits the viewport.
+const EXPLODED_STACK_SCALE = 0.72;
 
 // Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
 // Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
@@ -856,11 +858,13 @@ function BurgerLayerGLB({ path }: { path: string }) {
         m.transparent = true;
         m.depthWrite = false;
         m.envMapIntensity = 0.72;
-        // GLBs from Tripo omit metallicFactor/roughnessFactor — Three.js defaults to
-        // metalness=1, roughness=1 which renders nearly black without an env map.
-        m.metalness = Math.min(m.metalness, 0.12);
-        m.roughness = Math.max(0.68, Math.min(m.roughness, 0.95));
-        // Render both faces so inverted or downward-facing normals still receive light.
+        // Tripo GLBs omit metallicFactor/roughnessFactor — Three.js GLTF defaults to
+        // metalness=1, roughness=1, which renders black without an env map.
+        // Force metalness to 0 to restore warm food color from texture.
+        m.metalness = 0;
+        // Only cap the roughness ceiling; preserve per-texture relative differences.
+        m.roughness = Math.min(m.roughness, 0.88);
+        // Render both faces so downward-facing normals still receive light.
         m.side = THREE.DoubleSide;
         m.needsUpdate = true;
       });
@@ -956,26 +960,29 @@ function BurgerExplodedView({ active }: { active: boolean }) {
 
   return (
     <group ref={wrapperRef}>
-      {/* Contact shadow — softens as layers separate */}
-      <mesh ref={shadowRef} position={[0, -1.60, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.42, 36]} />
-        <meshStandardMaterial
-          color="#180804"
-          transparent
-          opacity={0}
-          roughness={1}
-          depthWrite={false}
-        />
-      </mesh>
+      {/* Uniform framing scale — keeps stack inside viewport without camera change */}
+      <group scale={EXPLODED_STACK_SCALE}>
+        {/* Contact shadow — sits just below the bottom bun local Y */}
+        <mesh ref={shadowRef} position={[0, -1.30, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.42, 36]} />
+          <meshStandardMaterial
+            color="#180804"
+            transparent
+            opacity={0}
+            roughness={1}
+            depthWrite={false}
+          />
+        </mesh>
 
-      <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} /></group>
-      <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} /></group>
-      <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} /></group>
-      <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} /></group>
-      <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} /></group>
-      <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} /></group>
-      <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} /></group>
-      <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} /></group>
+        <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} /></group>
+        <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} /></group>
+        <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} /></group>
+        <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} /></group>
+        <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} /></group>
+        <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} /></group>
+        <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} /></group>
+        <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} /></group>
+      </group>
     </group>
   );
 }
@@ -1534,12 +1541,12 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         distance={11}
         intensity={0}
       />
-      {/* Warm underlight — bottom bun sits at Y=−1.45, light placed well below to rake up */}
+      {/* Warm underlight — rakes up from below to light the bottom bun underside */}
       <pointLight
         ref={underlightRef}
-        position={[0, -2.6, 2.0]}
+        position={[0, -1.8, 1.8]}
         color="#ffb870"
-        distance={14}
+        distance={10}
         intensity={0}
       />
       {/* Back separation rim — gives depth between layers */}
