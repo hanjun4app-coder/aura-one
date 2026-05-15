@@ -794,11 +794,13 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// Assembled Y — compressed natural stack. Exploded Y — tighter elegant spacing (~0.24 apart).
+// Assembled Y — overlapping positions so layers read as one solid burger when stacked.
 const BURGER_ASSEMBLED_Y = [-0.36, -0.20, -0.11, -0.01, 0.06, 0.12, 0.25] as const;
-const BURGER_EXPLODED_Y  = [-0.60, -0.36, -0.16,  0.02, 0.20, 0.40, 0.60] as const;
-// Per-layer Y-axis rotation speed (rad/s). Alternating direction adds visual depth.
-const BURGER_LAYER_ROT_SPEED = [0.10, -0.14, 0.08, -0.11, 0.15, -0.09, 0.12] as const;
+// Exploded Y — controlled elegant spread. ~0.14 between each layer, total 0.88 range.
+// Keeps the stack visually connected — tasting diagram, not a cartoon tower.
+const BURGER_EXPLODED_Y  = [-0.44, -0.27, -0.12,  0.00, 0.12, 0.27, 0.44] as const;
+// Slow cinematic Y-axis rotation per layer — alternating direction for visual depth.
+const BURGER_LAYER_ROT_SPEED = [0.04, -0.06, 0.03, -0.05, 0.07, -0.04, 0.05] as const;
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
@@ -813,17 +815,17 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g6 = useRef<THREE.Group>(null);
   const layerRot = useRef([0, 0, 0, 0, 0, 0, 0]);
 
+  // Faster stagger so layers feel responsive — last layer waits only 0.24 of travel.
   const staggerP = (raw: number, i: number) => {
-    const staggerOffset = i * 0.055;
-    const usableRange = 1 - 6 * 0.055;
-    return smoothStep(Math.max(0, Math.min(1, (raw - staggerOffset) / usableRange)));
+    const offset = i * 0.04;
+    return smoothStep(Math.max(0, Math.min(1, (raw - offset) / (1 - 6 * 0.04))));
   };
 
   useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 2.0)
+      1 - Math.exp(-delta * 2.2)
     );
 
     if (wrapperRef.current) {
@@ -837,26 +839,28 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     refs.forEach((ref, i) => {
       if (!ref.current) return;
       const p = staggerP(raw, i);
+      // Gentle hover — barely perceptible, just enough to feel alive.
       ref.current.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
-        Math.sin(t * 0.40 + i * 0.90) * 0.014 * p;
+        Math.sin(t * 0.34 + i * 1.1) * 0.009 * p;
+      // Slow cinematic Y-only rotation — never X or Z.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
-      ref.current.rotation.y = layerRot.current[i];
+      ref.current.rotation.set(0, layerRot.current[i], 0);
     });
 
     if (shadowRef.current) {
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        smoothStep(raw) * 0.26;
+        smoothStep(raw) * 0.22;
     }
   });
 
   return (
     <group ref={wrapperRef}>
-      {/* Soft contact shadow */}
-      <mesh ref={shadowRef} position={[0, -0.62, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.42, 36]} />
+      {/* Soft shadow beneath the stack — scales with explode progress */}
+      <mesh ref={shadowRef} position={[0, -0.46, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.38, 36]} />
         <meshStandardMaterial
-          color="#1c0c04"
+          color="#180804"
           transparent
           opacity={0}
           roughness={1}
@@ -864,95 +868,105 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         />
       </mesh>
 
-      {/* Layer 0 — Bottom Bun */}
+      {/* ── Layer 0 — Bottom Bun ──────────────────────────────────────────── */}
+      {/* Flat brioche base. Toasted golden with darker underside crust. */}
       <group ref={g0}>
         <mesh>
-          <cylinderGeometry args={[0.34, 0.36, 0.12, 28]} />
-          <meshStandardMaterial color="#b06e36" metalness={0.04} roughness={0.84} />
+          <cylinderGeometry args={[0.32, 0.34, 0.095, 36]} />
+          <meshStandardMaterial color="#aa6830" metalness={0.03} roughness={0.86} />
         </mesh>
-        <mesh position={[0, -0.063, 0]}>
-          <cylinderGeometry args={[0.36, 0.36, 0.022, 28]} />
-          <meshStandardMaterial color="#884428" metalness={0.03} roughness={0.92} />
+        {/* Toasted underside — slightly darker, flat ring */}
+        <mesh position={[0, -0.050, 0]}>
+          <cylinderGeometry args={[0.33, 0.33, 0.014, 36]} />
+          <meshStandardMaterial color="#7c3e1c" metalness={0.02} roughness={0.94} />
         </mesh>
       </group>
 
-      {/* Layer 1 — Truffle Sauce */}
+      {/* ── Layer 1 — Truffle Sauce ──────────────────────────────────────── */}
+      {/* Thin glossy disc — golden cream with warm sheen. */}
       <group ref={g1}>
         <mesh>
-          <cylinderGeometry args={[0.28, 0.30, 0.034, 24]} />
-          <meshStandardMaterial color="#c09030" metalness={0.12} roughness={0.52} />
-        </mesh>
-        <mesh position={[0, 0.014, 0]}>
-          <cylinderGeometry args={[0.30, 0.30, 0.010, 24]} />
-          <meshStandardMaterial color="#d4a838" metalness={0.16} roughness={0.40} />
+          <cylinderGeometry args={[0.25, 0.27, 0.018, 32]} />
+          <meshStandardMaterial color="#c49040" metalness={0.18} roughness={0.42} />
         </mesh>
       </group>
 
-      {/* Layer 2 — Wagyu Patty */}
+      {/* ── Layer 2 — Wagyu Patty ────────────────────────────────────────── */}
+      {/* Dark dense disc — near-black char exterior, matte roughness. */}
       <group ref={g2}>
         <mesh>
-          <cylinderGeometry args={[0.32, 0.34, 0.14, 24]} />
-          <meshStandardMaterial color="#1a0803" metalness={0.08} roughness={0.93} />
+          <cylinderGeometry args={[0.29, 0.31, 0.115, 32]} />
+          <meshStandardMaterial color="#160703" metalness={0.06} roughness={0.95} />
         </mesh>
-        <mesh position={[0, 0.070, 0]}>
-          <cylinderGeometry args={[0.32, 0.32, 0.014, 24]} />
-          <meshStandardMaterial color="#0f0401" metalness={0.06} roughness={0.96} />
+        {/* Char crust face — ultra-dark, flat top reads as seared surface */}
+        <mesh position={[0, 0.058, 0]}>
+          <cylinderGeometry args={[0.29, 0.29, 0.010, 32]} />
+          <meshStandardMaterial color="#0c0401" metalness={0.04} roughness={0.98} />
         </mesh>
       </group>
 
-      {/* Layer 3 — Aged Cheddar */}
+      {/* ── Layer 3 — Aged Cheddar ───────────────────────────────────────── */}
+      {/* Ultra-thin square — warm amber, slight gloss. Slightly wider than patty. */}
       <group ref={g3}>
         <mesh>
-          <boxGeometry args={[0.60, 0.030, 0.60]} />
-          <meshStandardMaterial color="#e6a01c" metalness={0.10} roughness={0.50} />
+          <boxGeometry args={[0.58, 0.018, 0.58]} />
+          <meshStandardMaterial color="#e09820" metalness={0.12} roughness={0.48} />
         </mesh>
       </group>
 
-      {/* Layer 4 — Tomato */}
+      {/* ── Layer 4 — Tomato ─────────────────────────────────────────────── */}
+      {/* Thin muted-red slice — deep natural tomato color, slight sheen. */}
       <group ref={g4}>
         <mesh>
-          <cylinderGeometry args={[0.28, 0.30, 0.050, 24]} />
-          <meshStandardMaterial color="#b02020" metalness={0.05} roughness={0.68} />
+          <cylinderGeometry args={[0.27, 0.28, 0.028, 32]} />
+          <meshStandardMaterial color="#9c1c18" metalness={0.04} roughness={0.72} />
         </mesh>
-        <mesh position={[0, 0.022, 0]}>
-          <cylinderGeometry args={[0.28, 0.28, 0.008, 24]} />
-          <meshStandardMaterial color="#cc3028" metalness={0.04} roughness={0.62} />
+        {/* Brighter top surface — catches light like a fresh cut */}
+        <mesh position={[0, 0.012, 0]}>
+          <cylinderGeometry args={[0.27, 0.27, 0.005, 32]} />
+          <meshStandardMaterial color="#c02420" metalness={0.06} roughness={0.60} />
         </mesh>
       </group>
 
-      {/* Layer 5 — Crisp Lettuce */}
+      {/* ── Layer 5 — Crisp Lettuce ──────────────────────────────────────── */}
+      {/* Widest layer, thinnest. Natural muted green — organic, not neon. */}
       <group ref={g5}>
         <mesh>
-          <cylinderGeometry args={[0.36, 0.36, 0.024, 24]} />
-          <meshStandardMaterial color="#386828" metalness={0.02} roughness={0.92} />
+          <cylinderGeometry args={[0.34, 0.34, 0.013, 32]} />
+          <meshStandardMaterial color="#346020" metalness={0.02} roughness={0.94} />
         </mesh>
-        <mesh position={[0, 0.010, 0]}>
-          <cylinderGeometry args={[0.22, 0.22, 0.012, 24]} />
-          <meshStandardMaterial color="#529838" metalness={0.02} roughness={0.90} />
+        {/* Inner vein highlight — very subtle lighter center */}
+        <mesh position={[0, 0.006, 0]}>
+          <cylinderGeometry args={[0.18, 0.18, 0.008, 32]} />
+          <meshStandardMaterial color="#4a8030" metalness={0.02} roughness={0.92} />
         </mesh>
       </group>
 
-      {/* Layer 6 — Top Bun */}
+      {/* ── Layer 6 — Top Bun ────────────────────────────────────────────── */}
+      {/* Brioche dome — warm golden, smooth hemisphere. A few sesame seeds. */}
       <group ref={g6}>
-        <mesh position={[0, -0.044, 0]}>
-          <cylinderGeometry args={[0.32, 0.35, 0.14, 28]} />
-          <meshStandardMaterial color="#bc7636" metalness={0.04} roughness={0.75} />
+        {/* Flat cylinder base — connects dome to ingredients below */}
+        <mesh position={[0, -0.036, 0]}>
+          <cylinderGeometry args={[0.30, 0.32, 0.082, 36]} />
+          <meshStandardMaterial color="#b47030" metalness={0.04} roughness={0.78} />
         </mesh>
-        <mesh position={[0, 0.050, 0]}>
-          <sphereGeometry args={[0.28, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.50]} />
-          <meshStandardMaterial color="#b07032" metalness={0.05} roughness={0.73} />
+        {/* Dome hemisphere */}
+        <mesh position={[0, 0.038, 0]}>
+          <sphereGeometry args={[0.27, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.50]} />
+          <meshStandardMaterial color="#a86428" metalness={0.04} roughness={0.76} />
         </mesh>
-        {([0, 1, 2, 3] as const).map((i) => (
+        {/* 5 sesame seeds — small, natural cream, seeded positions */}
+        {([0, 1, 2, 3, 4] as const).map((i) => (
           <mesh
             key={i}
             position={[
-              Math.cos((i / 4) * Math.PI * 2) * 0.11,
-              0.108,
-              Math.sin((i / 4) * Math.PI * 2) * 0.11,
+              Math.cos((i / 5) * Math.PI * 2 + 0.4) * (0.09 + seededUnit(i * 13) * 0.04),
+              0.094,
+              Math.sin((i / 5) * Math.PI * 2 + 0.4) * (0.09 + seededUnit(i * 13) * 0.04),
             ]}
           >
-            <sphereGeometry args={[0.012, 6, 4]} />
-            <meshStandardMaterial color="#ece0b0" metalness={0.06} roughness={0.70} />
+            <sphereGeometry args={[0.009, 5, 4]} />
+            <meshStandardMaterial color="#e8d8a4" metalness={0.04} roughness={0.74} />
           </mesh>
         ))}
       </group>
