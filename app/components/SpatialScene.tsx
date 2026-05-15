@@ -686,8 +686,21 @@ function Part({
   );
 }
 
+const BURGER_HERO_PATH = "/models/premium-burger/burger-hero.glb";
+
+const BURGER_LAYER_PATHS = [
+  "/models/burger-layers/bottom.glb",
+  "/models/burger-layers/sauce.glb",
+  "/models/burger-layers/bacon.glb",
+  "/models/burger-layers/patty.glb",
+  "/models/burger-layers/cheese.glb",
+  "/models/burger-layers/tomato.glb",
+  "/models/burger-layers/lettuce.glb",
+  "/models/burger-layers/top-bun.glb",
+] as const;
+
 function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
-  const { scene } = useGLTF("/models/burger.glb");
+  const { scene } = useGLTF(BURGER_HERO_PATH);
   const groupRef = useRef<THREE.Group>(null);
   const explodeFadeRef = useRef(1);
 
@@ -744,7 +757,8 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
     </group>
   );
 }
-useGLTF.preload("/models/burger.glb");
+useGLTF.preload(BURGER_HERO_PATH);
+BURGER_LAYER_PATHS.forEach((layerPath) => useGLTF.preload(layerPath));
 
 function FoodModel({
   path,
@@ -794,18 +808,56 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// Assembled Y — overlapping positions so layers read as one solid burger when stacked.
-const BURGER_ASSEMBLED_Y = [-0.36, -0.20, -0.11, -0.01, 0.06, 0.12, 0.25] as const;
-// Exploded Y — controlled elegant spread. ~0.14 between each layer, total 0.88 range.
-// Keeps the stack visually connected — tasting diagram, not a cartoon tower.
-const BURGER_EXPLODED_Y  = [-0.44, -0.27, -0.12,  0.00, 0.12, 0.27, 0.44] as const;
-// Slow cinematic Y-axis rotation per layer — alternating direction for visual depth.
-const BURGER_LAYER_ROT_SPEED = [0.04, -0.06, 0.03, -0.05, 0.07, -0.04, 0.05] as const;
+// 8-layer stack — bottom.glb → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.glb.
+// Assembled Y — tight overlap so layers read as a single solid burger during GLB crossfade.
+const BURGER_ASSEMBLED_Y = [-0.39, -0.27, -0.16, -0.05, 0.06, 0.16, 0.26, 0.38] as const;
+// Exploded Y — 0.15 even spacing centered at 0, total 1.05 range. Tasting-diagram feel.
+const BURGER_EXPLODED_Y  = [-0.52, -0.37, -0.22, -0.07, 0.08, 0.23, 0.38, 0.53] as const;
+// Slow cinematic Y-axis rotation per layer — alternating direction.
+const BURGER_LAYER_ROT_SPEED = [0.04, -0.06, 0.05, -0.03, 0.06, -0.05, 0.04, -0.04] as const;
+
+// Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
+// Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
+function BurgerLayerGLB({ path }: { path: string }) {
+  const { scene } = useGLTF(path);
+
+  const { center, normalizedScale } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(scene);
+    const size = box.getSize(new THREE.Vector3());
+    const c = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    return { center: c, normalizedScale: maxDim > 0 ? 0.85 / maxDim : 1 };
+  }, [scene]);
+
+  useEffect(() => {
+    scene.traverse((obj) => {
+      if (!(obj instanceof THREE.Mesh)) return;
+      const mats = Array.isArray(obj.material)
+        ? (obj.material as THREE.MeshStandardMaterial[])
+        : [obj.material as THREE.MeshStandardMaterial];
+      mats.forEach((m) => {
+        if (!m.isMeshStandardMaterial) return;
+        m.transparent = true;
+        m.envMapIntensity = 0.72;
+      });
+    });
+  }, [scene]);
+
+  return (
+    <group scale={normalizedScale}>
+      <group position={[-center.x, -center.y, -center.z]}>
+        <primitive object={scene} />
+      </group>
+    </group>
+  );
+}
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
   const wrapperRef = useRef<THREE.Group>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
+
+  // 8 stable individual group refs — one per layer GLB.
   const g0 = useRef<THREE.Group>(null);
   const g1 = useRef<THREE.Group>(null);
   const g2 = useRef<THREE.Group>(null);
@@ -813,13 +865,13 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g4 = useRef<THREE.Group>(null);
   const g5 = useRef<THREE.Group>(null);
   const g6 = useRef<THREE.Group>(null);
-  const layerRot = useRef([0, 0, 0, 0, 0, 0, 0]);
+  const g7 = useRef<THREE.Group>(null);
+  const layerRot = useRef([0, 0, 0, 0, 0, 0, 0, 0]);
 
-  // Faster stagger so layers feel responsive — last layer waits only 0.24 of travel.
-  const staggerP = (raw: number, i: number) => {
-    const offset = i * 0.04;
-    return smoothStep(Math.max(0, Math.min(1, (raw - offset) / (1 - 6 * 0.04))));
-  };
+  // Stagger: each layer starts moving 0.04 later than the one below.
+  // Last layer (i=7) waits until raw=0.28 before it begins. Total usable range=0.72.
+  const staggerP = (raw: number, i: number) =>
+    smoothStep(Math.max(0, Math.min(1, (raw - i * 0.04) / (1 - 7 * 0.04))));
 
   useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
@@ -828,37 +880,53 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       1 - Math.exp(-delta * 2.2)
     );
 
+    const raw = progressRef.current;
+
     if (wrapperRef.current) {
-      wrapperRef.current.visible = active || progressRef.current > 0.01;
+      wrapperRef.current.visible = active || raw > 0.01;
     }
 
-    const raw = progressRef.current;
     const t = clock.getElapsedTime();
-    const refs = [g0, g1, g2, g3, g4, g5, g6];
+    const gRefs = [g0, g1, g2, g3, g4, g5, g6, g7];
 
-    refs.forEach((ref, i) => {
-      if (!ref.current) return;
+    gRefs.forEach((ref, i) => {
+      const group = ref.current;
+      if (!group) return;
+
       const p = staggerP(raw, i);
-      // Gentle hover — barely perceptible, just enough to feel alive.
-      ref.current.position.y =
+
+      // Y: lerp assembled → exploded with very gentle alive float.
+      group.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
         Math.sin(t * 0.34 + i * 1.1) * 0.009 * p;
-      // Slow cinematic Y-only rotation — never X or Z.
+
+      // Y-axis only rotation — cinematic, slow, no X/Z drift.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
-      ref.current.rotation.set(0, layerRot.current[i], 0);
+      group.rotation.set(0, layerRot.current[i], 0);
+
+      // Staggered opacity — fade each layer in/out with its own progress value.
+      group.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        const mats = Array.isArray(obj.material)
+          ? (obj.material as THREE.MeshStandardMaterial[])
+          : [obj.material as THREE.MeshStandardMaterial];
+        mats.forEach((m) => {
+          if (m.isMeshStandardMaterial) m.opacity = p;
+        });
+      });
     });
 
     if (shadowRef.current) {
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        smoothStep(raw) * 0.22;
+        smoothStep(raw) * 0.24;
     }
   });
 
   return (
     <group ref={wrapperRef}>
-      {/* Soft shadow beneath the stack — scales with explode progress */}
-      <mesh ref={shadowRef} position={[0, -0.46, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.38, 36]} />
+      {/* Contact shadow — softens as layers separate */}
+      <mesh ref={shadowRef} position={[0, -0.55, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.42, 36]} />
         <meshStandardMaterial
           color="#180804"
           transparent
@@ -868,108 +936,14 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         />
       </mesh>
 
-      {/* ── Layer 0 — Bottom Bun ──────────────────────────────────────────── */}
-      {/* Flat brioche base. Toasted golden with darker underside crust. */}
-      <group ref={g0}>
-        <mesh>
-          <cylinderGeometry args={[0.32, 0.34, 0.095, 36]} />
-          <meshStandardMaterial color="#aa6830" metalness={0.03} roughness={0.86} />
-        </mesh>
-        {/* Toasted underside — slightly darker, flat ring */}
-        <mesh position={[0, -0.050, 0]}>
-          <cylinderGeometry args={[0.33, 0.33, 0.014, 36]} />
-          <meshStandardMaterial color="#7c3e1c" metalness={0.02} roughness={0.94} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 1 — Truffle Sauce ──────────────────────────────────────── */}
-      {/* Thin glossy disc — golden cream with warm sheen. */}
-      <group ref={g1}>
-        <mesh>
-          <cylinderGeometry args={[0.25, 0.27, 0.018, 32]} />
-          <meshStandardMaterial color="#c49040" metalness={0.18} roughness={0.42} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 2 — Wagyu Patty ────────────────────────────────────────── */}
-      {/* Dark dense disc — near-black char exterior, matte roughness. */}
-      <group ref={g2}>
-        <mesh>
-          <cylinderGeometry args={[0.29, 0.31, 0.115, 32]} />
-          <meshStandardMaterial color="#160703" metalness={0.06} roughness={0.95} />
-        </mesh>
-        {/* Char crust face — ultra-dark, flat top reads as seared surface */}
-        <mesh position={[0, 0.058, 0]}>
-          <cylinderGeometry args={[0.29, 0.29, 0.010, 32]} />
-          <meshStandardMaterial color="#0c0401" metalness={0.04} roughness={0.98} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 3 — Aged Cheddar ───────────────────────────────────────── */}
-      {/* Ultra-thin square — warm amber, slight gloss. Slightly wider than patty. */}
-      <group ref={g3}>
-        <mesh>
-          <boxGeometry args={[0.58, 0.018, 0.58]} />
-          <meshStandardMaterial color="#e09820" metalness={0.12} roughness={0.48} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 4 — Tomato ─────────────────────────────────────────────── */}
-      {/* Thin muted-red slice — deep natural tomato color, slight sheen. */}
-      <group ref={g4}>
-        <mesh>
-          <cylinderGeometry args={[0.27, 0.28, 0.028, 32]} />
-          <meshStandardMaterial color="#9c1c18" metalness={0.04} roughness={0.72} />
-        </mesh>
-        {/* Brighter top surface — catches light like a fresh cut */}
-        <mesh position={[0, 0.012, 0]}>
-          <cylinderGeometry args={[0.27, 0.27, 0.005, 32]} />
-          <meshStandardMaterial color="#c02420" metalness={0.06} roughness={0.60} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 5 — Crisp Lettuce ──────────────────────────────────────── */}
-      {/* Widest layer, thinnest. Natural muted green — organic, not neon. */}
-      <group ref={g5}>
-        <mesh>
-          <cylinderGeometry args={[0.34, 0.34, 0.013, 32]} />
-          <meshStandardMaterial color="#346020" metalness={0.02} roughness={0.94} />
-        </mesh>
-        {/* Inner vein highlight — very subtle lighter center */}
-        <mesh position={[0, 0.006, 0]}>
-          <cylinderGeometry args={[0.18, 0.18, 0.008, 32]} />
-          <meshStandardMaterial color="#4a8030" metalness={0.02} roughness={0.92} />
-        </mesh>
-      </group>
-
-      {/* ── Layer 6 — Top Bun ────────────────────────────────────────────── */}
-      {/* Brioche dome — warm golden, smooth hemisphere. A few sesame seeds. */}
-      <group ref={g6}>
-        {/* Flat cylinder base — connects dome to ingredients below */}
-        <mesh position={[0, -0.036, 0]}>
-          <cylinderGeometry args={[0.30, 0.32, 0.082, 36]} />
-          <meshStandardMaterial color="#b47030" metalness={0.04} roughness={0.78} />
-        </mesh>
-        {/* Dome hemisphere */}
-        <mesh position={[0, 0.038, 0]}>
-          <sphereGeometry args={[0.27, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.50]} />
-          <meshStandardMaterial color="#a86428" metalness={0.04} roughness={0.76} />
-        </mesh>
-        {/* 5 sesame seeds — small, natural cream, seeded positions */}
-        {([0, 1, 2, 3, 4] as const).map((i) => (
-          <mesh
-            key={i}
-            position={[
-              Math.cos((i / 5) * Math.PI * 2 + 0.4) * (0.09 + seededUnit(i * 13) * 0.04),
-              0.094,
-              Math.sin((i / 5) * Math.PI * 2 + 0.4) * (0.09 + seededUnit(i * 13) * 0.04),
-            ]}
-          >
-            <sphereGeometry args={[0.009, 5, 4]} />
-            <meshStandardMaterial color="#e8d8a4" metalness={0.04} roughness={0.74} />
-          </mesh>
-        ))}
-      </group>
+      <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} /></group>
+      <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} /></group>
+      <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} /></group>
+      <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} /></group>
+      <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} /></group>
+      <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} /></group>
+      <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} /></group>
+      <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} /></group>
     </group>
   );
 }
