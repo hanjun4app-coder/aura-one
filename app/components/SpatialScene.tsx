@@ -714,6 +714,11 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
   // Shared reveal progress (0 = assembled, 1 = fully exploded). Same lerp
   // dynamics as BurgerExplodedView so hero fade and layer phases align.
   const progressRef = useRef(0);
+  // Direction tracking — 0 = reassemble target, 1 = reveal target. Smoothly
+  // lerped so band parameters slide continuously when the user toggles, even
+  // mid-flight. This lets reveal and reassemble use different fade windows
+  // (asymmetric phasing the user asked for) without sudden opacity pops.
+  const dirRef = useRef(0);
   // Tracks current material mode so we only toggle transparent/depthWrite on
   // transition (fade ↔ solid), not every frame. Avoids stale transparent state
   // after reassemble leaving the hero burger semi-transparent / corrupted.
@@ -756,18 +761,25 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
       explodeActive ? 1 : 0,
       1 - Math.exp(-delta * 2.5)
     );
+    // Direction lerp — bands shift between reveal and reassemble shapes.
+    dirRef.current = THREE.MathUtils.lerp(
+      dirRef.current,
+      explodeActive ? 1 : 0,
+      1 - Math.exp(-delta * 2.5)
+    );
     if (!groupRef.current) return;
 
     const progress = progressRef.current;
-    // Hero fade band — front-loaded so hero is gone before any layer spread.
-    // Below 0.22: fading or solid. Above 0.22: hard invisible.
-    // Hero fade band — tight and early so hero is gone (opacity ≈ 0) by
-    // progress 0.12. Combined with the layer-appear band starting at 0.20,
-    // this creates a 0.08-wide dead zone where neither side is visible —
-    // guarantees no hero/layer overlap during reassemble.
-    const heroOpacity = 1 - smoothBand(progress, 0.00, 0.12);
-    // Scale cue runs over the same band so the lift settles back to 1.0 on reassemble.
-    const scaleCue = 1 + smoothBand(progress, 0.00, 0.12) * 0.04;
+    const dir = dirRef.current;
+    // Asymmetric hero fade band:
+    //   reveal direction (dir → 1): [0.00, 0.22] — slow, dramatic dissolve.
+    //   reassemble direction (dir → 0): [0.00, 0.08] — hero stays hidden until
+    //     layers are well clear (layers gone by ~0.20), then appears in a
+    //     tight 0.08-wide window. Guarantees no hero/layer overlap.
+    const heroFadeEnd = THREE.MathUtils.lerp(0.08, 0.22, dir);
+    const heroOpacity = 1 - smoothBand(progress, 0.00, heroFadeEnd);
+    // Scale cue follows the same band so the lift settles back to 1.0 on reassemble.
+    const scaleCue = 1 + smoothBand(progress, 0.00, heroFadeEnd) * 0.04;
     groupRef.current.scale.setScalar(normalizedScale * scaleCue);
 
     // Hide entirely once opacity is negligible — eliminates any residual
@@ -968,6 +980,9 @@ function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolea
 
 function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
+  // Direction tracking — same role as in BurgerModel; lets reveal and
+  // reassemble use different appear-band windows without mid-flight pops.
+  const dirRef = useRef(0);
   const wrapperRef = useRef<THREE.Group>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
 
@@ -988,25 +1003,31 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   ]);
 
   useFrame(({ clock }, delta) => {
-    // Shared lerp dynamics with BurgerModel — both phase bands sample the
-    // same progress value, guaranteeing hero and layer phases never collide.
+    // Shared lerp dynamics with BurgerModel — both components run the same
+    // progress and direction lerps so their bands stay in lock-step.
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
       1 - Math.exp(-delta * 2.5)
     );
+    dirRef.current = THREE.MathUtils.lerp(
+      dirRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 2.5)
+    );
 
     const progress = progressRef.current;
+    const dir = dirRef.current;
 
-    // Phase bands — hero fades over [0.00, 0.22] then layers take over:
-    //   appear: 0.18–0.34   — layer opacity 0 → 1 while clustered.
-    //   spread: 0.34–0.95   — per-layer staggered separation.
-    // The 0.18–0.22 overlap with hero fade is a 4-progress smoothing window
-    // so neither side has a hard pop.
-    // Layer appear band — shifted later so layers fully disappear by progress
-    // 0.20 during reassemble (rather than 0.18). Combined with hero band ending
-    // at 0.12, this leaves a clear 0.08-wide gap with neither side visible.
-    const appearP = smoothBand(progress, 0.20, 0.36);
+    // Asymmetric layer appear band:
+    //   reveal direction (dir → 1): [0.24, 0.42] — layers wait until hero is
+    //     well past its fade-end (0.22) before becoming visible. Clean handoff.
+    //   reassemble direction (dir → 0): [0.12, 0.28] — layers fade out earlier
+    //     (gone by ~0.12) so hero (which doesn't appear until 0.08) has clear
+    //     air. No layer/hero overlap in either direction.
+    const appearStart = THREE.MathUtils.lerp(0.12, 0.24, dir);
+    const appearEnd   = THREE.MathUtils.lerp(0.28, 0.42, dir);
+    const appearP = smoothBand(progress, appearStart, appearEnd);
 
     if (wrapperRef.current) {
       // Hard visibility cutoff — wrapper only renders once layers are
@@ -1023,9 +1044,16 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       if (!group) return;
 
       // Per-layer spread band — staggered start so layers separate one after
-      // another. All layers finish by progress=0.95 (lerp asymptote).
-      // Spread starts right where appear ends (0.36) for a smooth handoff.
-      const spreadP = smoothBand(progress, 0.36 + i * 0.025, 0.95);
+      // another. Direction-aware start:
+      //   reveal:    starts at 0.30 (just after appear band ends at 0.42 — wait,
+      //              starts shortly after appear begins, so layers begin
+      //              drifting outward as they finish fading in).
+      //   reassemble: starts at 0.20 (layers must be fully collapsed before
+      //              fade-out, which begins at 0.28 going down).
+      // Using direction-aware start keeps spread tightly coupled to the
+      // direction-aware appear band on each side.
+      const spreadStart = THREE.MathUtils.lerp(0.20, 0.30, dir) + i * 0.025;
+      const spreadP = smoothBand(progress, spreadStart, 0.95);
 
       // Y position — lerp assembled (clustered) → exploded by spread progress.
       // Gated by spreadP so layers stay clustered through the appear phase.
