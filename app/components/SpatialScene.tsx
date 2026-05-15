@@ -214,6 +214,15 @@ function smoothStep(value: number) {
   return value * value * (3 - 2 * value);
 }
 
+// Smooth 0→1 ramp inside a [a, b] band. Returns 0 below `a`, 1 above `b`,
+// and a smoothStep curve between. Used to slice a single progress value
+// (0..1) into disjoint timeline phases for staged transitions.
+function smoothBand(value: number, a: number, b: number) {
+  if (b <= a) return value >= b ? 1 : 0;
+  const t = (value - a) / (b - a);
+  return smoothStep(Math.max(0, Math.min(1, t)));
+}
+
 function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898) * 43758.5453;
 
@@ -702,7 +711,9 @@ const BURGER_LAYER_PATHS = [
 function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
   const { scene } = useGLTF(BURGER_HERO_PATH);
   const groupRef = useRef<THREE.Group>(null);
-  const explodeFadeRef = useRef(1);
+  // Shared reveal progress (0 = assembled, 1 = fully exploded). Same lerp
+  // dynamics as BurgerExplodedView so hero fade and layer phases align.
+  const progressRef = useRef(0);
   // Tracks current material mode so we only toggle transparent/depthWrite on
   // transition (fade ↔ solid), not every frame. Avoids stale transparent state
   // after reassemble leaving the hero burger semi-transparent / corrupted.
@@ -738,21 +749,32 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
   }, [scene]);
 
   useFrame((_, delta) => {
-    explodeFadeRef.current = THREE.MathUtils.lerp(
-      explodeFadeRef.current,
-      explodeActive ? 0 : 1,
-      1 - Math.exp(-delta * 6.0)
+    // Shared progress lerp — same rate as BurgerExplodedView so the two
+    // components stay phase-aligned in real time.
+    progressRef.current = THREE.MathUtils.lerp(
+      progressRef.current,
+      explodeActive ? 1 : 0,
+      1 - Math.exp(-delta * 2.5)
     );
     if (!groupRef.current) return;
-    // Hide the group entirely once opacity is negligible — eliminates any
-    // residual z-fighting against the ingredient layer GLBs.
-    groupRef.current.visible = explodeFadeRef.current > 0.015;
+
+    const progress = progressRef.current;
+    // Hero fade band — front-loaded so hero is gone before any layer spread.
+    // Below 0.22: fading or solid. Above 0.22: hard invisible.
+    const heroOpacity = 1 - smoothBand(progress, 0.00, 0.22);
+    // Subtle scale-up cue while hero fades so the dissolve feels intentional.
+    const scaleCue = 1 + smoothBand(progress, 0.00, 0.22) * 0.04;
+    groupRef.current.scale.setScalar(normalizedScale * scaleCue);
+
+    // Hide entirely once opacity is negligible — eliminates any residual
+    // z-fighting against the ingredient layer GLBs and prevents ghost rendering.
+    groupRef.current.visible = heroOpacity > 0.02;
     if (!groupRef.current.visible) return;
 
-    // Solid mode once almost fully reassembled — restores transparent=false,
-    // depthWrite=true, opacity=1 so the hero burger renders cleanly.
-    const desiredMode: "fade" | "solid" =
-      explodeFadeRef.current >= 0.99 ? "solid" : "fade";
+    // Solid mode whenever hero is at or near full opacity — restores
+    // transparent=false, depthWrite=true so the hero renders cleanly with no
+    // alpha-sort or see-through artifacts.
+    const desiredMode: "fade" | "solid" = heroOpacity >= 0.99 ? "solid" : "fade";
     const modeChanged = fadeModeRef.current !== desiredMode;
     if (modeChanged) fadeModeRef.current = desiredMode;
 
@@ -773,7 +795,7 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
           }
           m.needsUpdate = true;
         }
-        m.opacity = desiredMode === "solid" ? 1 : explodeFadeRef.current;
+        m.opacity = desiredMode === "solid" ? 1 : heroOpacity;
       });
     });
   });
@@ -957,23 +979,29 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     "fade", "fade", "fade", "fade", "fade", "fade", "fade", "fade",
   ]);
 
-  // Stagger: each layer starts moving 0.03 later than the one below.
-  // Last layer waits until raw=0.21 before beginning. Usable range=0.79.
-  const staggerP = (raw: number, i: number) =>
-    smoothStep(Math.max(0, Math.min(1, (raw - i * 0.03) / (1 - 7 * 0.03))));
-
   useFrame(({ clock }, delta) => {
-    // Deliberate 1.8× speed — unhurried, cinematic reveal.
+    // Shared lerp dynamics with BurgerModel — both phase bands sample the
+    // same progress value, guaranteeing hero and layer phases never collide.
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 1.8)
+      1 - Math.exp(-delta * 2.5)
     );
 
-    const raw = progressRef.current;
+    const progress = progressRef.current;
+
+    // Phase bands — hero fades over [0.00, 0.22] then layers take over:
+    //   appear: 0.18–0.34   — layer opacity 0 → 1 while clustered.
+    //   spread: 0.34–0.95   — per-layer staggered separation.
+    // The 0.18–0.22 overlap with hero fade is a 4-progress smoothing window
+    // so neither side has a hard pop.
+    const appearP = smoothBand(progress, 0.18, 0.34);
 
     if (wrapperRef.current) {
-      wrapperRef.current.visible = active || raw > 0.01;
+      // Hard visibility cutoff — wrapper only renders once layers are
+      // measurably visible. Avoids any layer state being seen while hero
+      // is still solid.
+      wrapperRef.current.visible = appearP > 0.01;
     }
 
     const t = clock.getElapsedTime();
@@ -983,29 +1011,32 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       const group = ref.current;
       if (!group) return;
 
-      const p = staggerP(raw, i);
+      // Per-layer spread band — staggered start so layers separate one after
+      // another. All layers finish by progress=0.95 (lerp asymptote).
+      const spreadP = smoothBand(progress, 0.34 + i * 0.025, 0.95);
 
-      // Y: lerp assembled → exploded. Float is barely perceptible — luxury restraint.
+      // Y position — lerp assembled (clustered) → exploded by spread progress.
+      // Gated by spreadP so layers stay clustered through the appear phase.
       group.position.y =
-        THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
-        Math.sin(t * 0.26 + i * 0.80) * 0.005 * p;
+        THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], spreadP) +
+        Math.sin(t * 0.26 + i * 0.80) * 0.005 * spreadP;
 
-      // X/Z: lerp from 0 to per-layer offset so layers drift apart on reveal.
-      group.position.x = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][0], p);
-      group.position.z = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][1], p);
+      // X/Z drift — also gated by spread; zero offset while clustered.
+      group.position.x = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][0], spreadP);
+      group.position.z = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][1], spreadP);
 
       // Per-layer scale — bacon and lettuce slightly reduced to prevent overlap.
       group.scale.setScalar(BURGER_LAYER_SCALES[i]);
 
       // Idle Y rotation composed with fixed per-layer base orientation offsets.
-      // X/Z offsets are constant — only Y accumulates the slow idle spin.
-      layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
+      // Idle spin gated by spreadP so clustered layers don't rotate prematurely.
+      layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * spreadP;
       const [rx, ryBase, rz] = BURGER_LAYER_ROT_OFFSETS[i];
       group.rotation.set(rx, ryBase + layerRot.current[i], rz);
 
-      // Toggle transparent only on state change (fade ↔ solid). Once a layer is
-      // fully revealed it renders as a solid mesh — no see-through artifacts.
-      const desiredMode: "fade" | "solid" = p >= 0.98 ? "solid" : "fade";
+      // Layer opacity driven by shared appearP — all layers fade in together.
+      // Solid mode once appearP ≥ 0.99 restores transparent=false / depthWrite=true.
+      const desiredMode: "fade" | "solid" = appearP >= 0.99 ? "solid" : "fade";
       const modeChanged = layerFadeMode.current[i] !== desiredMode;
       if (modeChanged) layerFadeMode.current[i] = desiredMode;
 
@@ -1026,14 +1057,15 @@ function BurgerExplodedView({ active }: { active: boolean }) {
             }
             m.needsUpdate = true;
           }
-          m.opacity = desiredMode === "solid" ? 1 : p;
+          m.opacity = desiredMode === "solid" ? 1 : appearP;
         });
       });
     });
 
     if (shadowRef.current) {
+      // Shadow tracks appear phase so it fades in with the layers, not earlier.
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        smoothStep(raw) * 0.24;
+        appearP * 0.24;
     }
   });
 
