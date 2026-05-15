@@ -703,6 +703,10 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
   const { scene } = useGLTF(BURGER_HERO_PATH);
   const groupRef = useRef<THREE.Group>(null);
   const explodeFadeRef = useRef(1);
+  // Tracks current material mode so we only toggle transparent/depthWrite on
+  // transition (fade ↔ solid), not every frame. Avoids stale transparent state
+  // after reassemble leaving the hero burger semi-transparent / corrupted.
+  const fadeModeRef = useRef<"fade" | "solid">("solid");
 
   const { center, normalizedScale } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene);
@@ -720,12 +724,17 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
         : [obj.material as THREE.MeshStandardMaterial];
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
-        m.transparent = true;
-        m.depthWrite = false;
+        // Default to fully opaque solid rendering. Fade state is applied only
+        // while transitioning; restored to solid once explodeFadeRef ≈ 1.
+        m.transparent = false;
+        m.depthWrite = true;
+        m.opacity = 1;
         m.roughness = Math.max(m.roughness, 0.32);
         m.envMapIntensity = 0.75;
+        m.needsUpdate = true;
       });
     });
+    fadeModeRef.current = "solid";
   }, [scene]);
 
   useFrame((_, delta) => {
@@ -739,6 +748,14 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
     // residual z-fighting against the ingredient layer GLBs.
     groupRef.current.visible = explodeFadeRef.current > 0.015;
     if (!groupRef.current.visible) return;
+
+    // Solid mode once almost fully reassembled — restores transparent=false,
+    // depthWrite=true, opacity=1 so the hero burger renders cleanly.
+    const desiredMode: "fade" | "solid" =
+      explodeFadeRef.current >= 0.99 ? "solid" : "fade";
+    const modeChanged = fadeModeRef.current !== desiredMode;
+    if (modeChanged) fadeModeRef.current = desiredMode;
+
     groupRef.current.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
       const mats = Array.isArray(obj.material)
@@ -746,7 +763,17 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
         : [obj.material as THREE.MeshStandardMaterial];
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
-        m.opacity = explodeFadeRef.current;
+        if (modeChanged) {
+          if (desiredMode === "solid") {
+            m.transparent = false;
+            m.depthWrite = true;
+          } else {
+            m.transparent = true;
+            m.depthWrite = false;
+          }
+          m.needsUpdate = true;
+        }
+        m.opacity = desiredMode === "solid" ? 1 : explodeFadeRef.current;
       });
     });
   });
