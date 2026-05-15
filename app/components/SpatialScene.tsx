@@ -695,8 +695,6 @@ function Part({
   );
 }
 
-const BURGER_HERO_PATH = "/models/premium-burger/burger-hero.glb";
-
 const BURGER_LAYER_PATHS = [
   "/models/burger-layers/bottom.glb",
   "/models/burger-layers/sauce.glb",
@@ -708,123 +706,13 @@ const BURGER_LAYER_PATHS = [
   "/models/burger-layers/top-bun.glb",
 ] as const;
 
-function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
-  const { scene } = useGLTF(BURGER_HERO_PATH);
-  const groupRef = useRef<THREE.Group>(null);
-  // Shared reveal progress (0 = assembled, 1 = fully exploded). Same lerp
-  // dynamics as BurgerExplodedView so hero fade and layer phases align.
-  const progressRef = useRef(0);
-  // Direction tracking — 0 = reassemble target, 1 = reveal target. Smoothly
-  // lerped so band parameters slide continuously when the user toggles, even
-  // mid-flight. This lets reveal and reassemble use different fade windows
-  // (asymmetric phasing the user asked for) without sudden opacity pops.
-  const dirRef = useRef(0);
-  // Tracks current material mode so we only toggle transparent/depthWrite on
-  // transition (fade ↔ solid), not every frame. Avoids stale transparent state
-  // after reassemble leaving the hero burger semi-transparent / corrupted.
-  const fadeModeRef = useRef<"fade" | "solid">("solid");
+// Position of each GLB in the vertical stack, counting from the top (0 = top).
+// Used to stagger the assemble → reveal animation so the top bun lifts first
+// on reveal and lands last on reassemble (cinematic "open / close" feel).
+//   Stack:  top-bun(7)=0, sauce(1)=1, tomato(5)=2, cheese(4)=3,
+//           patty(3)=4, bacon(2)=5, lettuce(6)=6, bottom(0)=7
+const BURGER_LAYER_STACK_POS = [7, 1, 5, 4, 3, 2, 6, 0] as const;
 
-  const { center, normalizedScale } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(scene);
-    const size = box.getSize(new THREE.Vector3());
-    const c = box.getCenter(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    return { center: c, normalizedScale: maxDim > 0 ? 0.92 / maxDim : 1 };
-  }, [scene]);
-
-  useEffect(() => {
-    scene.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
-      const mats = Array.isArray(obj.material)
-        ? (obj.material as THREE.MeshStandardMaterial[])
-        : [obj.material as THREE.MeshStandardMaterial];
-      mats.forEach((m) => {
-        if (!m.isMeshStandardMaterial) return;
-        // Default to fully opaque solid rendering. Fade state is applied only
-        // while transitioning; restored to solid once explodeFadeRef ≈ 1.
-        m.transparent = false;
-        m.depthWrite = true;
-        m.opacity = 1;
-        m.roughness = Math.max(m.roughness, 0.32);
-        m.envMapIntensity = 0.75;
-        m.needsUpdate = true;
-      });
-    });
-    fadeModeRef.current = "solid";
-  }, [scene]);
-
-  useFrame((_, delta) => {
-    // Shared progress lerp — same rate as BurgerExplodedView so the two
-    // components stay phase-aligned in real time.
-    progressRef.current = THREE.MathUtils.lerp(
-      progressRef.current,
-      explodeActive ? 1 : 0,
-      1 - Math.exp(-delta * 2.5)
-    );
-    // Direction lerp — bands shift between reveal and reassemble shapes.
-    dirRef.current = THREE.MathUtils.lerp(
-      dirRef.current,
-      explodeActive ? 1 : 0,
-      1 - Math.exp(-delta * 2.5)
-    );
-    if (!groupRef.current) return;
-
-    const progress = progressRef.current;
-    const dir = dirRef.current;
-    // Asymmetric hero fade band:
-    //   reveal direction (dir → 1): [0.00, 0.22] — slow, dramatic dissolve.
-    //   reassemble direction (dir → 0): [0.00, 0.08] — hero stays hidden until
-    //     layers are well clear (layers gone by ~0.20), then appears in a
-    //     tight 0.08-wide window. Guarantees no hero/layer overlap.
-    const heroFadeEnd = THREE.MathUtils.lerp(0.08, 0.22, dir);
-    const heroOpacity = 1 - smoothBand(progress, 0.00, heroFadeEnd);
-    // Scale cue follows the same band so the lift settles back to 1.0 on reassemble.
-    const scaleCue = 1 + smoothBand(progress, 0.00, heroFadeEnd) * 0.04;
-    groupRef.current.scale.setScalar(normalizedScale * scaleCue);
-
-    // Hide entirely once opacity is negligible — eliminates any residual
-    // z-fighting against the ingredient layer GLBs and prevents ghost rendering.
-    groupRef.current.visible = heroOpacity > 0.02;
-    if (!groupRef.current.visible) return;
-
-    // Solid mode whenever hero is at or near full opacity — restores
-    // transparent=false, depthWrite=true so the hero renders cleanly with no
-    // alpha-sort or see-through artifacts.
-    const desiredMode: "fade" | "solid" = heroOpacity >= 0.99 ? "solid" : "fade";
-    const modeChanged = fadeModeRef.current !== desiredMode;
-    if (modeChanged) fadeModeRef.current = desiredMode;
-
-    groupRef.current.traverse((obj) => {
-      if (!(obj instanceof THREE.Mesh)) return;
-      const mats = Array.isArray(obj.material)
-        ? (obj.material as THREE.MeshStandardMaterial[])
-        : [obj.material as THREE.MeshStandardMaterial];
-      mats.forEach((m) => {
-        if (!m.isMeshStandardMaterial) return;
-        if (modeChanged) {
-          if (desiredMode === "solid") {
-            m.transparent = false;
-            m.depthWrite = true;
-          } else {
-            m.transparent = true;
-            m.depthWrite = false;
-          }
-          m.needsUpdate = true;
-        }
-        m.opacity = desiredMode === "solid" ? 1 : heroOpacity;
-      });
-    });
-  });
-
-  return (
-    <group ref={groupRef} scale={normalizedScale}>
-      <group position={[-center.x, -center.y, -center.z]}>
-        <primitive object={scene} />
-      </group>
-    </group>
-  );
-}
-useGLTF.preload(BURGER_HERO_PATH);
 BURGER_LAYER_PATHS.forEach((layerPath) => useGLTF.preload(layerPath));
 
 function FoodModel({
@@ -979,11 +867,8 @@ function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolea
 }
 
 function BurgerExplodedView({ active }: { active: boolean }) {
+  // Single progress: 0 = assembled (looks like one burger), 1 = fully spread.
   const progressRef = useRef(0);
-  // Direction tracking — same role as in BurgerModel; lets reveal and
-  // reassemble use different appear-band windows without mid-flight pops.
-  const dirRef = useRef(0);
-  const wrapperRef = useRef<THREE.Group>(null);
   const shadowRef = useRef<THREE.Mesh>(null);
 
   // 8 stable individual group refs — one per layer GLB.
@@ -996,46 +881,14 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g6 = useRef<THREE.Group>(null);
   const g7 = useRef<THREE.Group>(null);
   const layerRot = useRef([0, 0, 0, 0, 0, 0, 0, 0]);
-  // Tracks whether each layer is currently in "fade" or "solid" mode so we only
-  // toggle material.transparent on state transitions (not every frame).
-  const layerFadeMode = useRef<("fade" | "solid")[]>([
-    "fade", "fade", "fade", "fade", "fade", "fade", "fade", "fade",
-  ]);
 
   useFrame(({ clock }, delta) => {
-    // Shared lerp dynamics with BurgerModel — both components run the same
-    // progress and direction lerps so their bands stay in lock-step.
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
       1 - Math.exp(-delta * 2.5)
     );
-    dirRef.current = THREE.MathUtils.lerp(
-      dirRef.current,
-      active ? 1 : 0,
-      1 - Math.exp(-delta * 2.5)
-    );
-
     const progress = progressRef.current;
-    const dir = dirRef.current;
-
-    // Asymmetric layer appear band:
-    //   reveal direction (dir → 1): [0.24, 0.42] — layers wait until hero is
-    //     well past its fade-end (0.22) before becoming visible. Clean handoff.
-    //   reassemble direction (dir → 0): [0.12, 0.28] — layers fade out earlier
-    //     (gone by ~0.12) so hero (which doesn't appear until 0.08) has clear
-    //     air. No layer/hero overlap in either direction.
-    const appearStart = THREE.MathUtils.lerp(0.12, 0.24, dir);
-    const appearEnd   = THREE.MathUtils.lerp(0.28, 0.42, dir);
-    const appearP = smoothBand(progress, appearStart, appearEnd);
-
-    if (wrapperRef.current) {
-      // Hard visibility cutoff — wrapper only renders once layers are
-      // measurably visible. Avoids any layer state being seen while hero
-      // is still solid.
-      wrapperRef.current.visible = appearP > 0.01;
-    }
-
     const t = clock.getElapsedTime();
     const gRefs = [g0, g1, g2, g3, g4, g5, g6, g7];
 
@@ -1043,74 +896,48 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       const group = ref.current;
       if (!group) return;
 
-      // Per-layer spread band — staggered start so layers separate one after
-      // another. Direction-aware start:
-      //   reveal:    starts at 0.30 (just after appear band ends at 0.42 — wait,
-      //              starts shortly after appear begins, so layers begin
-      //              drifting outward as they finish fading in).
-      //   reassemble: starts at 0.20 (layers must be fully collapsed before
-      //              fade-out, which begins at 0.28 going down).
-      // Using direction-aware start keeps spread tightly coupled to the
-      // direction-aware appear band on each side.
-      const spreadStart = THREE.MathUtils.lerp(0.20, 0.30, dir) + i * 0.025;
-      const spreadP = smoothBand(progress, spreadStart, 0.95);
+      // Per-layer staggered spread band keyed by stack position from top.
+      // Top of stack starts moving at progress=0 (lifts first on reveal),
+      // bottom of stack starts at 0.21 (settles first on reassemble).
+      // All layers finish by progress=0.92 so the exploded state is fully formed.
+      const stackPos = BURGER_LAYER_STACK_POS[i];
+      const spreadP = smoothBand(progress, stackPos * 0.03, 0.92);
 
-      // Y position — lerp assembled (clustered) → exploded by spread progress.
-      // Gated by spreadP so layers stay clustered through the appear phase.
+      // Y position — lerp assembled (tightly clustered, reads as one burger)
+      // → exploded (clear ingredient diagram).
       group.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], spreadP) +
         Math.sin(t * 0.26 + i * 0.80) * 0.005 * spreadP;
 
-      // X/Z drift — also gated by spread; zero offset while clustered.
+      // X/Z drift — zero when assembled; only applies during spread.
       group.position.x = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][0], spreadP);
       group.position.z = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][1], spreadP);
 
-      // Per-layer scale — bacon and lettuce slightly reduced to prevent overlap.
+      // Per-layer scale — bacon and lettuce slightly reduced.
       group.scale.setScalar(BURGER_LAYER_SCALES[i]);
 
-      // Idle Y rotation composed with fixed per-layer base orientation offsets.
-      // Idle spin gated by spreadP so clustered layers don't rotate prematurely.
+      // Idle Y rotation and per-layer tilt offsets, both gated by spreadP so
+      // assembled layers stack flat with no rotation drift.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * spreadP;
       const [rx, ryBase, rz] = BURGER_LAYER_ROT_OFFSETS[i];
-      group.rotation.set(rx, ryBase + layerRot.current[i], rz);
-
-      // Layer opacity driven by shared appearP — all layers fade in together.
-      // Solid mode once appearP ≥ 0.99 restores transparent=false / depthWrite=true.
-      const desiredMode: "fade" | "solid" = appearP >= 0.99 ? "solid" : "fade";
-      const modeChanged = layerFadeMode.current[i] !== desiredMode;
-      if (modeChanged) layerFadeMode.current[i] = desiredMode;
-
-      group.traverse((obj) => {
-        if (!(obj instanceof THREE.Mesh)) return;
-        const mats = Array.isArray(obj.material)
-          ? (obj.material as THREE.MeshStandardMaterial[])
-          : [obj.material as THREE.MeshStandardMaterial];
-        mats.forEach((m) => {
-          if (!m.isMeshStandardMaterial) return;
-          if (modeChanged) {
-            if (desiredMode === "solid") {
-              m.transparent = false;
-              m.depthWrite = true;
-            } else {
-              m.transparent = true;
-              m.depthWrite = false;
-            }
-            m.needsUpdate = true;
-          }
-          m.opacity = desiredMode === "solid" ? 1 : appearP;
-        });
-      });
+      group.rotation.set(
+        rx * spreadP,
+        ryBase * spreadP + layerRot.current[i],
+        rz * spreadP
+      );
     });
 
     if (shadowRef.current) {
-      // Shadow tracks appear phase so it fades in with the layers, not earlier.
+      // Shadow deepens slightly as layers spread (the cluster shadow is more
+      // diffuse; the separated stack casts a darker pool underneath).
+      const shadowP = smoothStep(Math.max(0, Math.min(1, progress)));
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        appearP * 0.24;
+        0.18 + shadowP * 0.10;
     }
   });
 
   return (
-    <group ref={wrapperRef}>
+    <group>
       {/* Uniform framing scale — keeps stack inside viewport without camera change */}
       <group scale={EXPLODED_STACK_SCALE}>
         {/* Contact shadow — sits just below the bottom bun local Y */}
@@ -1343,7 +1170,6 @@ function SpatialMenuCarousel({
         selfRotationAmount={0.12}
         motionSeed={1}
       >
-        <BurgerModel explodeActive={burgerExploded && inspectMode && activePartIndex === 0} />
         <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
       </Part>
 
