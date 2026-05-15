@@ -833,10 +833,36 @@ const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
 const BURGER_LAYER_SCALES = [0.82, 0.90, 0.80, 0.95, 0.90, 0.88, 0.82, 0.82] as const;
 // Uniform scale applied to the whole exploded stack group so it fits the viewport.
 const EXPLODED_STACK_SCALE = 0.72;
+// Per-layer fixed [x, y, z] rotation offset (radians). Composes with idle Y spin.
+// Positive X tilts the top of the layer forward toward the camera, exposing the
+// appetizing top surface (sesame crown, grilled patty top, etc.).
+const BURGER_LAYER_ROT_OFFSETS: ReadonlyArray<[number, number, number]> = [
+  [ 0.08,  0.00,  0.00],  // 0 bottom-bun — slight forward tilt
+  [ 0.06,  0.20,  0.00],  // 1 sauce      — slight rotation, expose top
+  [ 0.14,  0.40, -0.05],  // 2 bacon      — angled to show wavy strips
+  [ 0.14,  0.10,  0.00],  // 3 patty      — show flame-grilled top
+  [ 0.10,  0.18,  0.00],  // 4 cheese     — gentle tilt for readability
+  [ 0.10,  0.25,  0.00],  // 5 tomato     — slight tilt, slice face visible
+  [ 0.07, -0.20,  0.05],  // 6 lettuce    — organic tilt
+  [ 0.16,  0.00,  0.00],  // 7 top-bun    — forward tilt to show sesame crown
+];
+// DoubleSide only for thin ingredients where back-face culling causes holes.
+// Thick layers stay FrontSide for proper depth and to avoid z-fighting on overlap.
+const BURGER_LAYER_DOUBLE_SIDE = [
+  false,  // 0 bottom-bun — thick
+  true,   // 1 sauce      — thin layer
+  true,   // 2 bacon      — thin strips
+  false,  // 3 patty      — thick
+  true,   // 4 cheese     — thin slice
+  true,   // 5 tomato     — thin slice
+  true,   // 6 lettuce    — thin leaves
+  false,  // 7 top-bun    — thick
+] as const;
 
-// Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
-// Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
-function BurgerLayerGLB({ path }: { path: string }) {
+// Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
+// Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
+// a layer is fading. This prevents see-through artifacts on fully-revealed ingredients.
+function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolean }) {
   const { scene } = useGLTF(path);
 
   const { center, normalizedScale } = useMemo(() => {
@@ -855,8 +881,11 @@ function BurgerLayerGLB({ path }: { path: string }) {
         : [obj.material as THREE.MeshStandardMaterial];
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
-        m.transparent = true;
-        m.depthWrite = false;
+        // Default to fully opaque, solid rendering. Parent toggles transparency
+        // only during fade transitions to avoid z-sort / see-through artifacts.
+        m.transparent = false;
+        m.depthWrite = true;
+        m.opacity = 1;
         m.envMapIntensity = 0.72;
         // Tripo GLBs omit metallicFactor/roughnessFactor — Three.js GLTF defaults to
         // metalness=1, roughness=1, which renders black without an env map.
@@ -864,12 +893,12 @@ function BurgerLayerGLB({ path }: { path: string }) {
         m.metalness = 0;
         // Only cap the roughness ceiling; preserve per-texture relative differences.
         m.roughness = Math.min(m.roughness, 0.88);
-        // Render both faces so downward-facing normals still receive light.
-        m.side = THREE.DoubleSide;
+        // DoubleSide only for thin ingredients where the back face would otherwise be culled.
+        m.side = doubleSide ? THREE.DoubleSide : THREE.FrontSide;
         m.needsUpdate = true;
       });
     });
-  }, [scene]);
+  }, [scene, doubleSide]);
 
   return (
     <group scale={normalizedScale}>
@@ -895,6 +924,11 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g6 = useRef<THREE.Group>(null);
   const g7 = useRef<THREE.Group>(null);
   const layerRot = useRef([0, 0, 0, 0, 0, 0, 0, 0]);
+  // Tracks whether each layer is currently in "fade" or "solid" mode so we only
+  // toggle material.transparent on state transitions (not every frame).
+  const layerFadeMode = useRef<("fade" | "solid")[]>([
+    "fade", "fade", "fade", "fade", "fade", "fade", "fade", "fade",
+  ]);
 
   // Stagger: each layer starts moving 0.03 later than the one below.
   // Last layer waits until raw=0.21 before beginning. Usable range=0.79.
@@ -936,18 +970,36 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       // Per-layer scale — bacon and lettuce slightly reduced to prevent overlap.
       group.scale.setScalar(BURGER_LAYER_SCALES[i]);
 
-      // Y-axis only rotation — cinematic, slow, no X/Z drift.
+      // Idle Y rotation composed with fixed per-layer base orientation offsets.
+      // X/Z offsets are constant — only Y accumulates the slow idle spin.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
-      group.rotation.set(0, layerRot.current[i], 0);
+      const [rx, ryBase, rz] = BURGER_LAYER_ROT_OFFSETS[i];
+      group.rotation.set(rx, ryBase + layerRot.current[i], rz);
 
-      // Staggered opacity — fade each layer in/out with its own progress value.
+      // Toggle transparent only on state change (fade ↔ solid). Once a layer is
+      // fully revealed it renders as a solid mesh — no see-through artifacts.
+      const desiredMode: "fade" | "solid" = p >= 0.98 ? "solid" : "fade";
+      const modeChanged = layerFadeMode.current[i] !== desiredMode;
+      if (modeChanged) layerFadeMode.current[i] = desiredMode;
+
       group.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh)) return;
         const mats = Array.isArray(obj.material)
           ? (obj.material as THREE.MeshStandardMaterial[])
           : [obj.material as THREE.MeshStandardMaterial];
         mats.forEach((m) => {
-          if (m.isMeshStandardMaterial) m.opacity = p;
+          if (!m.isMeshStandardMaterial) return;
+          if (modeChanged) {
+            if (desiredMode === "solid") {
+              m.transparent = false;
+              m.depthWrite = true;
+            } else {
+              m.transparent = true;
+              m.depthWrite = false;
+            }
+            m.needsUpdate = true;
+          }
+          m.opacity = desiredMode === "solid" ? 1 : p;
         });
       });
     });
@@ -974,14 +1026,14 @@ function BurgerExplodedView({ active }: { active: boolean }) {
           />
         </mesh>
 
-        <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} /></group>
-        <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} /></group>
-        <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} /></group>
-        <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} /></group>
-        <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} /></group>
-        <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} /></group>
-        <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} /></group>
-        <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} /></group>
+        <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[0]} /></group>
+        <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[1]} /></group>
+        <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[2]} /></group>
+        <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[3]} /></group>
+        <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[4]} /></group>
+        <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[5]} /></group>
+        <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[6]} /></group>
+        <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[7]} /></group>
       </group>
     </group>
   );
@@ -1510,6 +1562,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
   const warmFillRef  = useRef<THREE.PointLight>(null);
   const underlightRef = useRef<THREE.PointLight>(null);
   const backRimRef   = useRef<THREE.DirectionalLight>(null);
+  const ambientFillRef = useRef<THREE.HemisphereLight>(null);
   const blendRef     = useRef(0);
 
   useFrame((_, delta) => {
@@ -1522,6 +1575,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
     if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.80;
     if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 1.10;
     if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.40;
+    if (ambientFillRef.current) ambientFillRef.current.intensity = blendRef.current * 0.28;
   });
 
   return (
@@ -1555,6 +1609,11 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         position={[1.2, 2.5, -3.0]}
         color="#ffe8c8"
         intensity={0}
+      />
+      {/* Warm hemisphere fill — lifts shadowed underside without washing out warm look */}
+      <hemisphereLight
+        ref={ambientFillRef}
+        args={["#fff1d8", "#3a2010", 0]}
       />
     </>
   );
