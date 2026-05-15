@@ -721,10 +721,8 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
         m.transparent = true;
-        // Lower floor lets GLB's natural sheen and sauce gloss show through.
-        // Only prevent fully mirror-like surfaces which look wrong on food.
+        m.depthWrite = false;
         m.roughness = Math.max(m.roughness, 0.32);
-        // Subtle environment response — warm cream background reads as ambient glow.
         m.envMapIntensity = 0.75;
       });
     });
@@ -734,9 +732,13 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
     explodeFadeRef.current = THREE.MathUtils.lerp(
       explodeFadeRef.current,
       explodeActive ? 0 : 1,
-      1 - Math.exp(-delta * 3.5)
+      1 - Math.exp(-delta * 6.0)
     );
     if (!groupRef.current) return;
+    // Hide the group entirely once opacity is negligible — eliminates any
+    // residual z-fighting against the ingredient layer GLBs.
+    groupRef.current.visible = explodeFadeRef.current > 0.015;
+    if (!groupRef.current.visible) return;
     groupRef.current.traverse((obj) => {
       if (!(obj instanceof THREE.Mesh)) return;
       const mats = Array.isArray(obj.material)
@@ -808,13 +810,14 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// 8-layer stack — bottom.glb → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.glb.
-// Assembled Y — tight overlap so layers read as a single solid burger during GLB crossfade.
-const BURGER_ASSEMBLED_Y = [-0.39, -0.27, -0.16, -0.05, 0.06, 0.16, 0.26, 0.38] as const;
-// Exploded Y — 0.15 even spacing centered at 0, total 1.05 range. Tasting-diagram feel.
-const BURGER_EXPLODED_Y  = [-0.52, -0.37, -0.22, -0.07, 0.08, 0.23, 0.38, 0.53] as const;
-// Slow cinematic Y-axis rotation per layer — alternating direction.
-const BURGER_LAYER_ROT_SPEED = [0.04, -0.06, 0.05, -0.03, 0.06, -0.05, 0.04, -0.04] as const;
+// 8-layer stack — bottom → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.
+// Assembled Y — tight overlap so layers read as one burger during hero crossfade.
+const BURGER_ASSEMBLED_Y = [-0.38, -0.26, -0.15, -0.05, 0.05, 0.15, 0.24, 0.35] as const;
+// Exploded Y — 0.10 spacing, total 0.70 range. Burger silhouette stays readable.
+// Patty (i=3) anchors near center. Stack feels suspended, not scattered.
+const BURGER_EXPLODED_Y  = [-0.35, -0.25, -0.15, -0.05, 0.05, 0.15, 0.25, 0.35] as const;
+// Very slow Y-only rotation — luxury restraint, alternating direction per layer.
+const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
 
 // Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
 // Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
@@ -838,6 +841,7 @@ function BurgerLayerGLB({ path }: { path: string }) {
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
         m.transparent = true;
+        m.depthWrite = false;
         m.envMapIntensity = 0.72;
       });
     });
@@ -868,16 +872,17 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const g7 = useRef<THREE.Group>(null);
   const layerRot = useRef([0, 0, 0, 0, 0, 0, 0, 0]);
 
-  // Stagger: each layer starts moving 0.04 later than the one below.
-  // Last layer (i=7) waits until raw=0.28 before it begins. Total usable range=0.72.
+  // Stagger: each layer starts moving 0.03 later than the one below.
+  // Last layer waits until raw=0.21 before beginning. Usable range=0.79.
   const staggerP = (raw: number, i: number) =>
-    smoothStep(Math.max(0, Math.min(1, (raw - i * 0.04) / (1 - 7 * 0.04))));
+    smoothStep(Math.max(0, Math.min(1, (raw - i * 0.03) / (1 - 7 * 0.03))));
 
   useFrame(({ clock }, delta) => {
+    // Deliberate 1.8× speed — unhurried, cinematic reveal.
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 2.2)
+      1 - Math.exp(-delta * 1.8)
     );
 
     const raw = progressRef.current;
@@ -895,10 +900,10 @@ function BurgerExplodedView({ active }: { active: boolean }) {
 
       const p = staggerP(raw, i);
 
-      // Y: lerp assembled → exploded with very gentle alive float.
+      // Y: lerp assembled → exploded. Float is barely perceptible — luxury restraint.
       group.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
-        Math.sin(t * 0.34 + i * 1.1) * 0.009 * p;
+        Math.sin(t * 0.26 + i * 0.80) * 0.005 * p;
 
       // Y-axis only rotation — cinematic, slow, no X/Z drift.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
@@ -1479,10 +1484,10 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
       active ? 1 : 0,
       1 - Math.exp(-delta * 1.8)
     );
-    if (topKeyRef.current)    topKeyRef.current.intensity    = blendRef.current * 1.3;
-    if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.65;
-    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.38;
-    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.45;
+    if (topKeyRef.current)    topKeyRef.current.intensity    = blendRef.current * 1.2;
+    if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.80;
+    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.60;
+    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.40;
   });
 
   return (
@@ -1502,12 +1507,12 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         distance={11}
         intensity={0}
       />
-      {/* Warm underlight — lifts shadow beneath each floating layer */}
+      {/* Warm underlight — lifts shadow beneath the bottom bun and lower layers */}
       <pointLight
         ref={underlightRef}
-        position={[0, -1.4, 1.6]}
-        color="#ffaa60"
-        distance={5}
+        position={[0, -1.1, 1.8]}
+        color="#ffb870"
+        distance={7}
         intensity={0}
       />
       {/* Back separation rim — gives depth between layers */}
