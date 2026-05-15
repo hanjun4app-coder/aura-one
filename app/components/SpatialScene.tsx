@@ -761,9 +761,13 @@ function BurgerModel({ explodeActive }: { explodeActive: boolean }) {
     const progress = progressRef.current;
     // Hero fade band — front-loaded so hero is gone before any layer spread.
     // Below 0.22: fading or solid. Above 0.22: hard invisible.
-    const heroOpacity = 1 - smoothBand(progress, 0.00, 0.22);
-    // Subtle scale-up cue while hero fades so the dissolve feels intentional.
-    const scaleCue = 1 + smoothBand(progress, 0.00, 0.22) * 0.04;
+    // Hero fade band — tight and early so hero is gone (opacity ≈ 0) by
+    // progress 0.12. Combined with the layer-appear band starting at 0.20,
+    // this creates a 0.08-wide dead zone where neither side is visible —
+    // guarantees no hero/layer overlap during reassemble.
+    const heroOpacity = 1 - smoothBand(progress, 0.00, 0.12);
+    // Scale cue runs over the same band so the lift settles back to 1.0 on reassemble.
+    const scaleCue = 1 + smoothBand(progress, 0.00, 0.12) * 0.04;
     groupRef.current.scale.setScalar(normalizedScale * scaleCue);
 
     // Hide entirely once opacity is negligible — eliminates any residual
@@ -859,12 +863,16 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// 8-layer stack — bottom → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.
+// Visual stack order, top → bottom:
+//   top-bun (idx 7), sauce (idx 1), tomato (idx 5), cheese (idx 4),
+//   patty (idx 3), bacon (idx 2), lettuce (idx 6), bottom (idx 0).
+// Arrays below are indexed by GLB index — each entry is the Y for that GLB.
 // Assembled Y — tight overlap so layers read as one burger during hero crossfade.
-const BURGER_ASSEMBLED_Y = [-0.38, -0.26, -0.15, -0.05, 0.05, 0.15, 0.24, 0.35] as const;
-// Exploded Y — 20% closer than max-separation version (2.48 unit total range).
-// bacon (i=2) sits above patty (i=3) — correct real-burger physical order.
-const BURGER_EXPLODED_Y  = [-1.14, -0.78, -0.06, -0.42, 0.26, 0.58, 0.94, 1.34] as const;
+const BURGER_ASSEMBLED_Y = [-0.38, 0.24, -0.15, -0.05, 0.05, 0.15, -0.26, 0.35] as const;
+// Exploded Y — evenly spaced across ~2.48 unit range. Patty (idx 3) anchors near
+// center, sauce (idx 1) sits just below top-bun (idx 7), lettuce (idx 6) sits
+// just above bottom-bun (idx 0).
+const BURGER_EXPLODED_Y  = [-1.14, 0.99, -0.42, -0.07, 0.28, 0.63, -0.78, 1.34] as const;
 // Very slow Y-only rotation — luxury restraint, alternating direction per layer.
 const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
 // Per-layer [x, z] offsets in exploded state. Patty (i=3) anchors at center.
@@ -995,7 +1003,10 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     //   spread: 0.34–0.95   — per-layer staggered separation.
     // The 0.18–0.22 overlap with hero fade is a 4-progress smoothing window
     // so neither side has a hard pop.
-    const appearP = smoothBand(progress, 0.18, 0.34);
+    // Layer appear band — shifted later so layers fully disappear by progress
+    // 0.20 during reassemble (rather than 0.18). Combined with hero band ending
+    // at 0.12, this leaves a clear 0.08-wide gap with neither side visible.
+    const appearP = smoothBand(progress, 0.20, 0.36);
 
     if (wrapperRef.current) {
       // Hard visibility cutoff — wrapper only renders once layers are
@@ -1013,7 +1024,8 @@ function BurgerExplodedView({ active }: { active: boolean }) {
 
       // Per-layer spread band — staggered start so layers separate one after
       // another. All layers finish by progress=0.95 (lerp asymptote).
-      const spreadP = smoothBand(progress, 0.34 + i * 0.025, 0.95);
+      // Spread starts right where appear ends (0.36) for a smooth handoff.
+      const spreadP = smoothBand(progress, 0.36 + i * 0.025, 0.95);
 
       // Y position — lerp assembled (clustered) → exploded by spread progress.
       // Gated by spreadP so layers stay clustered through the appear phase.
