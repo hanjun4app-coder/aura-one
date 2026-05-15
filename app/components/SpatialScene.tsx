@@ -813,11 +813,23 @@ useGLTF.preload("/models/ice-cream.glb");
 // 8-layer stack — bottom → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.
 // Assembled Y — tight overlap so layers read as one burger during hero crossfade.
 const BURGER_ASSEMBLED_Y = [-0.38, -0.26, -0.15, -0.05, 0.05, 0.15, 0.24, 0.35] as const;
-// Exploded Y — 0.10 spacing, total 0.70 range. Burger silhouette stays readable.
-// Patty (i=3) anchors near center. Stack feels suspended, not scattered.
-const BURGER_EXPLODED_Y  = [-0.35, -0.25, -0.15, -0.05, 0.05, 0.15, 0.25, 0.35] as const;
+// Exploded Y — 0.14 spacing, total 0.98 range. Clear layer separation.
+const BURGER_EXPLODED_Y  = [-0.49, -0.35, -0.21, -0.07, 0.07, 0.21, 0.35, 0.49] as const;
 // Very slow Y-only rotation — luxury restraint, alternating direction per layer.
 const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
+// Per-layer [x, z] offsets in exploded state. Patty (i=3) anchors at center.
+const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
+  [ 0.04, -0.03],  // 0 bottom-bun  — slightly right, back
+  [ 0.00,  0.00],  // 1 sauce       — centered
+  [ 0.00,  0.05],  // 2 bacon       — slightly front (toward camera)
+  [ 0.00,  0.00],  // 3 patty       — anchor
+  [ 0.00,  0.00],  // 4 cheese      — centered
+  [ 0.03,  0.00],  // 5 tomato      — slightly right
+  [-0.03,  0.00],  // 6 lettuce     — slightly left
+  [-0.04, -0.03],  // 7 top-bun     — slightly left, back
+];
+// Per-layer scale multipliers. Bacon and lettuce reduced to prevent overlap.
+const BURGER_LAYER_SCALES = [1.0, 1.0, 0.86, 1.0, 1.0, 1.0, 0.88, 1.0] as const;
 
 // Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
 // Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
@@ -904,6 +916,13 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       group.position.y =
         THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], p) +
         Math.sin(t * 0.26 + i * 0.80) * 0.005 * p;
+
+      // X/Z: lerp from 0 to per-layer offset so layers drift apart on reveal.
+      group.position.x = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][0], p);
+      group.position.z = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][1], p);
+
+      // Per-layer scale — bacon and lettuce slightly reduced to prevent overlap.
+      group.scale.setScalar(BURGER_LAYER_SCALES[i]);
 
       // Y-axis only rotation — cinematic, slow, no X/Z drift.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * p;
