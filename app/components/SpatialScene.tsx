@@ -813,23 +813,24 @@ useGLTF.preload("/models/ice-cream.glb");
 // 8-layer stack — bottom → sauce → bacon → patty → cheese → tomato → lettuce → top-bun.
 // Assembled Y — tight overlap so layers read as one burger during hero crossfade.
 const BURGER_ASSEMBLED_Y = [-0.38, -0.26, -0.15, -0.05, 0.05, 0.15, 0.24, 0.35] as const;
-// Exploded Y — 0.14 spacing, total 0.98 range. Clear layer separation.
-const BURGER_EXPLODED_Y  = [-0.49, -0.35, -0.21, -0.07, 0.07, 0.21, 0.35, 0.49] as const;
+// Exploded Y — maximized separation for clear ingredient diagram (3.10 unit total range).
+// bacon (i=2) sits above patty (i=3) — correct real-burger physical order.
+const BURGER_EXPLODED_Y  = [-1.45, -1.00, -0.10, -0.55, 0.30, 0.70, 1.15, 1.65] as const;
 // Very slow Y-only rotation — luxury restraint, alternating direction per layer.
 const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
 // Per-layer [x, z] offsets in exploded state. Patty (i=3) anchors at center.
 const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
-  [ 0.04, -0.03],  // 0 bottom-bun  — slightly right, back
-  [ 0.00,  0.00],  // 1 sauce       — centered
+  [ 0.00, -0.03],  // 0 bottom-bun  — centered, slightly back
+  [-0.02,  0.03],  // 1 sauce       — slightly left, front
   [ 0.00,  0.05],  // 2 bacon       — slightly front (toward camera)
   [ 0.00,  0.00],  // 3 patty       — anchor
   [ 0.00,  0.00],  // 4 cheese      — centered
   [ 0.03,  0.00],  // 5 tomato      — slightly right
   [-0.03,  0.00],  // 6 lettuce     — slightly left
-  [-0.04, -0.03],  // 7 top-bun     — slightly left, back
+  [ 0.00, -0.03],  // 7 top-bun     — centered, slightly back
 ];
-// Per-layer scale multipliers. Bacon and lettuce reduced to prevent overlap.
-const BURGER_LAYER_SCALES = [1.0, 1.0, 0.86, 1.0, 1.0, 1.0, 0.88, 1.0] as const;
+// Per-layer scale multipliers. Buns, bacon, lettuce reduced so no layer dominates.
+const BURGER_LAYER_SCALES = [0.82, 0.90, 0.80, 0.95, 0.90, 0.88, 0.82, 0.82] as const;
 
 // Loads a single burger layer GLB, normalizes it, and marks all materials transparent.
 // Opacity is driven per-frame by the parent BurgerExplodedView via group.traverse.
@@ -855,6 +856,13 @@ function BurgerLayerGLB({ path }: { path: string }) {
         m.transparent = true;
         m.depthWrite = false;
         m.envMapIntensity = 0.72;
+        // GLBs from Tripo omit metallicFactor/roughnessFactor — Three.js defaults to
+        // metalness=1, roughness=1 which renders nearly black without an env map.
+        m.metalness = Math.min(m.metalness, 0.12);
+        m.roughness = Math.max(0.68, Math.min(m.roughness, 0.95));
+        // Render both faces so inverted or downward-facing normals still receive light.
+        m.side = THREE.DoubleSide;
+        m.needsUpdate = true;
       });
     });
   }, [scene]);
@@ -949,7 +957,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   return (
     <group ref={wrapperRef}>
       {/* Contact shadow — softens as layers separate */}
-      <mesh ref={shadowRef} position={[0, -0.55, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={shadowRef} position={[0, -1.60, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.42, 36]} />
         <meshStandardMaterial
           color="#180804"
@@ -1505,7 +1513,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
     );
     if (topKeyRef.current)    topKeyRef.current.intensity    = blendRef.current * 1.2;
     if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.80;
-    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 0.60;
+    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 1.10;
     if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.40;
   });
 
@@ -1526,12 +1534,12 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         distance={11}
         intensity={0}
       />
-      {/* Warm underlight — lifts shadow beneath the bottom bun and lower layers */}
+      {/* Warm underlight — bottom bun sits at Y=−1.45, light placed well below to rake up */}
       <pointLight
         ref={underlightRef}
-        position={[0, -1.1, 1.8]}
+        position={[0, -2.6, 2.0]}
         color="#ffb870"
-        distance={7}
+        distance={14}
         intensity={0}
       />
       {/* Back separation rim — gives depth between layers */}
