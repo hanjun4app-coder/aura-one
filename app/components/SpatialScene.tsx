@@ -762,7 +762,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/top-bun.glb",
     name: "Top Bun",
-    assembledY:  0.40,
+    // Lowered from 0.40 → 0.34 so the bun sits down closer to bacon for a
+    // more compact, realistic burger silhouette. 0.06 clearance above bacon
+    // (0.28) — tight but no severe clipping for typical bacon-strip height.
+    assembledY:  0.34,
     revealedY:   1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
