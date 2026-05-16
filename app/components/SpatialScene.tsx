@@ -771,7 +771,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.16,         0, 0],
     idleYRotSpeed: -0.018,
-    scale: 0.82,
+    // +12% from 0.82 — bun frames the burger more prominently
+    scale: 0.92,
     doubleSide: false,
   },
   // 1 — BACON  (moved up into the old sauce slot, sits directly under top bun)
