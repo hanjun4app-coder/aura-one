@@ -35,8 +35,8 @@ const CAROUSEL_PARTS = [
     description: "Single-origin espresso, oat milk foam, seasonal flavor notes.",
   },
   {
-    name: "Chef's Dessert Combo",
-    description: "Warm chocolate fondant with vanilla bean ice cream.",
+    name: "Premium Dessert",
+    description: "Elegant layered sweet finish, served chilled with seasonal accents.",
   },
   {
     name: "Crispy Fried Chicken",
@@ -94,12 +94,12 @@ const FOOD_INSPECT_DATA = [
   },
   {
     special: null,
-    calories: "640 kcal",
-    protein: "8g",
-    allergens: "Wheat, dairy, egg",
-    flavorProfile: "Warm, chocolatey, rich, cooling",
-    ingredients: "Dark chocolate · butter · egg · flour · vanilla bean ice cream",
-    chefNote: "Warm fondant paired with housemade vanilla bean ice cream.",
+    calories: "480 kcal",
+    protein: "6g",
+    allergens: "Dairy, egg, gluten",
+    flavorProfile: "Creamy, delicate, layered, lightly floral",
+    ingredients: "Vanilla cream · seasonal fruit · pastry layers · honeyed praline",
+    chefNote: "An elegant layered finish — silky cream against crisp, hand-folded pastry.",
   },
   {
     special: null,
@@ -1018,7 +1018,7 @@ function FoodModel({
 useGLTF.preload("/models/steak.glb");
 useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
-useGLTF.preload("/models/ice-cream.glb");
+useGLTF.preload("/models/dessert.glb");
 useGLTF.preload("/models/fried%20chicken.glb");
 
 // Uniform scale applied to the whole burger group so it fits the viewport.
@@ -1549,8 +1549,9 @@ function SpatialMenuCarousel({
         motionSeed={5}
       >
         <FoodModel
-          path="/models/ice-cream.glb"
-          targetSize={0.92}
+          path="/models/dessert.glb"
+          targetSize={0.90}
+          rotationOffset={[0.06, 0, 0]}
         />
       </Part>
 
