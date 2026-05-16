@@ -750,11 +750,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.78,
     doubleSide: true,
   },
-  // 2 — LETTUCE  (new asset: lettuce2.glb)
-  // Custom rotation correction and squish that were tailored to the old
-  // lettuce (1).glb have been reset — the new asset's natural orientation
-  // is used. If this lettuce still ships upright, re-add modelRotationCorrection
-  // / scaleY here as needed.
+  // 2 — LETTUCE  (lettuce2.glb ships rotated 90° around X — lay it flat)
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
@@ -762,6 +758,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
     baseRotation:    [ 0, 0, 0],
+    // Counter-rotate the GLB's authored vertical orientation. −π/2 around X
+    // takes the leaf's standing pose to a flat-on-bun pose (broad face up).
+    modelRotationCorrection: [-Math.PI / 2, 0, 0],
     revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
     scale: 0.80,
@@ -780,7 +779,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.88,
     doubleSide: true,
   },
-  // 4 — ONION RING (anchored at center)
+  // 4 — ONION RING (anchored at center; ships rotated 90° around X — lay it flat)
   {
     path: "/models/burger-layers/onion%20ring2.glb",
     name: "Onion Ring",
@@ -788,6 +787,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedY:  -0.20,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
+    // Counter-rotate the GLB's authored vertical orientation so the ring's
+    // hole faces up (axis along world Y) like a real onion ring on a burger.
+    modelRotationCorrection: [-Math.PI / 2, 0, 0],
     revealedRotation:[ 0.04,  0.15,    0],
     idleYRotSpeed:  0.022,
     scale: 0.85,
