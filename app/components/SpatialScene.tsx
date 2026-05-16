@@ -801,8 +801,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     modelRotationCorrection: ORIENTATION_TESTS[LETTUCE_ORIENTATION_TEST],
     revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
-    // +25% from 0.80 — lettuce is realistically wider than the bun
-    scale: 1.00,
+    // +10% from 1.00 — leaf extends further past inner layers
+    scale: 1.10,
     doubleSide: true,
   },
   // 3 — TOMATO
@@ -869,7 +869,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
     idleYRotSpeed:  0.018,
-    scale: 0.82,
+    // +10% from 0.82 — bottom bun supports the burger more visually
+    scale: 0.90,
     doubleSide: false,
   },
 ];
