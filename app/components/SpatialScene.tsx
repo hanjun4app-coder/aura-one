@@ -750,36 +750,26 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.78,
     doubleSide: true,
   },
-  // 2 — LETTUCE  (lies fully flat — broad leaf surface faces up)
-  // The GLB ships as a 3D lettuce head whose dominant axis didn't align with
-  // any pure-axis rotation tried so far. We now apply the correction inside
-  // BurgerLayerGLB (as modelRotationCorrection) AND aggressively squish the
-  // local Y dimension so the result reads as a thin layer regardless of which
-  // axis was "tall" in the source asset.
+  // 2 — LETTUCE  (new asset: lettuce2.glb)
+  // Custom rotation correction and squish that were tailored to the old
+  // lettuce (1).glb have been reset — the new asset's natural orientation
+  // is used. If this lettuce still ships upright, re-add modelRotationCorrection
+  // / scaleY here as needed.
   {
-    path: "/models/burger-layers/lettuce%20(1).glb",
+    path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
     assembledY:  0.20,
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
-    // baseRotation kept zero — let the corrected geometry be the rest pose.
     baseRotation:    [ 0, 0, 0],
-    // Combined X + Z rotation (90° each). After both, any of the original
-    // ±X / ±Y / ±Z normal directions ends up mapped to ±Y or ±X — combined
-    // with the heavy local-Y squish below, the leaf reads as a thin pad.
-    modelRotationCorrection: [Math.PI / 2, 0, Math.PI / 2],
     revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
     scale: 0.80,
-    // Heavy local-Y squish (40% of uniform scale). Whatever axis the GLB's
-    // "tall" dimension is, the squish guarantees the visible height is small
-    // — the leaf cannot remain visually upright.
-    scaleY: 0.40,
     doubleSide: true,
   },
   // 3 — TOMATO
   {
-    path: "/models/burger-layers/tomato1.glb",
+    path: "/models/burger-layers/tomato%20slice%203.glb",
     name: "Tomato",
     assembledY:  0.06,
     revealedY:   0.20,
@@ -792,7 +782,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   },
   // 4 — ONION RING (anchored at center)
   {
-    path: "/models/burger-layers/onion%20ring.glb",
+    path: "/models/burger-layers/onion%20ring2.glb",
     name: "Onion Ring",
     assembledY: -0.06,
     revealedY:  -0.20,
