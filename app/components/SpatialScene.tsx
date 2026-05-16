@@ -1540,13 +1540,15 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
     );
 
     if (keyLightRef.current) {
-      keyLightRef.current.intensity = blendRef.current * 1.5;
+      // Slightly stronger so the hero item feels lifted from the background
+      // when inspect engages (food-commercial focus emphasis).
+      keyLightRef.current.intensity = blendRef.current * 1.70;
     }
     if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 0.78;
+      rimLightRef.current.intensity = blendRef.current * 0.90;
     }
     if (floorPoolRef.current) {
-      floorPoolRef.current.intensity = blendRef.current * 0.50;
+      floorPoolRef.current.intensity = blendRef.current * 0.58;
     }
   });
 
@@ -1578,9 +1580,20 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
 
 // Warm cinematic hero lighting for the assembled burger in inspect mode.
 // Distinct from InspectSceneLighting (which serves all items generically).
+// Six-light setup mirroring a food-commercial stage:
+//   - cinemaKey: raking warm key from upper-left/front (Phase 1)
+//   - sideFill:  soft warm fill from upper-right balances the key
+//   - heroFill:  low front-warm fill catches bun underside / sesame
+//   - bottomBounce: warm bounce simulating table reflection (Phase 3)
+//   - backRim:   wide warm separation rim from the rear (Phase 2)
+//   - edgeRim:   tighter cooler-warm rim catching bun crown edges (Phase 2)
 function BurgerInspectLighting({ active }: { active: boolean }) {
+  const cinemaKeyRef = useRef<THREE.DirectionalLight>(null);
+  const sideFillRef  = useRef<THREE.PointLight>(null);
   const heroFillRef  = useRef<THREE.PointLight>(null);
+  const bottomBounceRef = useRef<THREE.PointLight>(null);
   const backRimRef   = useRef<THREE.DirectionalLight>(null);
+  const edgeRimRef   = useRef<THREE.DirectionalLight>(null);
   const blendRef     = useRef(0);
 
   useFrame((_, delta) => {
@@ -1589,14 +1602,41 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
       active ? 1 : 0,
       1 - Math.exp(-delta * 2.2)
     );
-    // Low front-warm fill catches the bun underside and sesame seeds.
-    if (heroFillRef.current)  heroFillRef.current.intensity  = blendRef.current * 0.80;
-    // Back rim separates the burger silhouette from the darkened background.
-    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.52;
+    const b = blendRef.current;
+    // Cinematic key: dominant light, warm, rakes the top of the stack.
+    if (cinemaKeyRef.current)    cinemaKeyRef.current.intensity    = b * 1.30;
+    // Side fill: prevents the un-keyed side from going flat / dead.
+    if (sideFillRef.current)     sideFillRef.current.intensity     = b * 0.55;
+    // Hero front fill: catches sesame seeds + bun upper crust.
+    if (heroFillRef.current)     heroFillRef.current.intensity     = b * 0.92;
+    // Bottom bounce: simulated table reflection; lifts cheese / patty / bottom bun
+    // without an orange glow puddle. Distance is short so it's localised to the
+    // burger and doesn't bleed into the carousel rear.
+    if (bottomBounceRef.current) bottomBounceRef.current.intensity = b * 0.55;
+    // Back rim: separates silhouette from background.
+    if (backRimRef.current)      backRimRef.current.intensity      = b * 0.62;
+    // Edge rim: catches the top of the bun crown.
+    if (edgeRimRef.current)      edgeRimRef.current.intensity      = b * 0.45;
   });
 
   return (
     <>
+      {/* 1. Cinematic key — upper-left/front, warm amber */}
+      <directionalLight
+        ref={cinemaKeyRef}
+        position={[-2.0, 4.6, 3.2]}
+        color="#ffd6a0"
+        intensity={0}
+      />
+      {/* 2. Soft side fill — upper-right, gentle warm, fills the key shadow */}
+      <pointLight
+        ref={sideFillRef}
+        position={[2.6, 2.4, 2.4]}
+        color="#ffe0b0"
+        distance={11}
+        intensity={0}
+      />
+      {/* 3. Hero front fill — low-front, warm, catches sesame + bun upper crust */}
       <pointLight
         ref={heroFillRef}
         position={[-1.0, 0.6, 4.0]}
@@ -1604,10 +1644,26 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         distance={9}
         intensity={0}
       />
+      {/* 4. Warm bottom bounce — simulates table reflection lifting lower layers */}
+      <pointLight
+        ref={bottomBounceRef}
+        position={[0, -1.6, 2.4]}
+        color="#ffc890"
+        distance={5.5}
+        intensity={0}
+      />
+      {/* 5. Back rim — wide warm separation from rear */}
       <directionalLight
         ref={backRimRef}
         position={[1.4, 2.8, -3.2]}
         color="#ffe4c0"
+        intensity={0}
+      />
+      {/* 6. Edge rim — tighter cooler-warm rim catching bun crown edges */}
+      <directionalLight
+        ref={edgeRimRef}
+        position={[-1.6, 3.4, -2.6]}
+        color="#fff0d8"
         intensity={0}
       />
     </>
