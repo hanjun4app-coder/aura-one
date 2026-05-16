@@ -728,6 +728,10 @@ type BurgerLayerConfig = {
   // Mathematically equivalent to baseRotation, but kept separate so it can
   // be reasoned about as a "fix the GLB's authoring orientation" knob.
   modelRotationCorrection?: readonly [number, number, number];
+  // Optional motion weight. >1 = heavier ingredient (slower spread / settle),
+  // <1 = lighter (faster). Used to give buns / patty a slight heft while
+  // bacon / lettuce / onion ring read as lighter. Defaults to 1.0.
+  weight?: number;
   doubleSide: boolean;
 };
 
@@ -781,6 +785,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed: -0.018,
     // +12% from 0.82 — bun frames the burger more prominently
     scale: 0.92,
+    weight: 1.10,  // heavier bun — lifts first on reveal, settles last on reassemble
     doubleSide: false,
   },
   // 1 — BACON  (moved up into the old sauce slot, sits directly under top bun)
@@ -797,6 +802,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed:  0.020,
     // +15% from 0.78 — bacon reads more clearly across the burger
     scale: 0.90,
+    weight: 0.85,  // light strips — quick to spread
     doubleSide: true,
   },
   // 2 — LETTUCE  (lettuce2.glb — orientation corrected via test harness)
@@ -815,6 +821,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed:  0.016,
     // +10% from 1.00 — leaf extends further past inner layers
     scale: 1.10,
+    weight: 0.85,  // light leaf
     doubleSide: true,
   },
   // 3 — TOMATO
@@ -828,6 +835,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedRotation:[ 0.10,  0.25,    0],
     idleYRotSpeed: -0.018,
     scale: 0.88,
+    weight: 0.95,  // medium slice
     doubleSide: true,
   },
   // 4 — ONION RING (onion ring2.glb still vertical — testing candidate rotations)
@@ -843,6 +851,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedRotation:[ 0.04,  0.15,    0],
     idleYRotSpeed:  0.022,
     scale: 0.85,
+    weight: 0.90,  // light ring
     doubleSide: true,
   },
   // 5 — CHEESE
@@ -856,6 +865,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedRotation:[ 0.10,  0.18,    0],
     idleYRotSpeed: -0.014,
     scale: 0.90,
+    weight: 0.95,  // medium slice
     doubleSide: true,
   },
   // 6 — PATTY  (near-flat tilt; preserve grilled top via subtle X tilt + camera angle)
@@ -869,6 +879,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedRotation:[ 0.02,  0.08,    0],
     idleYRotSpeed: -0.026,
     scale: 0.95,
+    weight: 1.15,  // heaviest — patty as the anchor
     doubleSide: false,
   },
   // 7 — BOTTOM BUN
@@ -883,6 +894,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed:  0.018,
     // +10% from 0.82 — bottom bun supports the burger more visually
     scale: 0.90,
+    weight: 1.10,  // heavy bun
     doubleSide: false,
   },
 ];
@@ -1027,10 +1039,16 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const layerRot = useRef<number[]>(new Array(BURGER_LAYERS.length).fill(0));
 
   useFrame(({ clock }, delta) => {
+    // Asymmetric lerp dynamics:
+    //   reveal     → 2.3 (slow, elegant unfurl)
+    //   reassemble → 3.2 (faster decisive pull, "magnetic close")
+    // Faster reassemble against the smoothBand easing curve reads as the
+    // layers being softly drawn back into the assembled burger.
+    const lerpRate = active ? 2.3 : 3.2;
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       active ? 1 : 0,
-      1 - Math.exp(-delta * 2.5)
+      1 - Math.exp(-delta * lerpRate)
     );
     const progress = progressRef.current;
     const t = clock.getElapsedTime();
@@ -1040,8 +1058,17 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       if (!group) return;
 
       // Per-layer staggered spread band keyed by stack position from top.
-      // Index already orders top → bottom, so idx 0 (top-bun) lifts first.
-      const spreadP = smoothBand(progress, i * 0.025, 0.92);
+      // Index already orders top → bottom, so idx 0 (top-bun) lifts first
+      // on reveal and lands last on reassemble.
+      // Weight gives heavier ingredients a wider band (slower) and lighter
+      // ingredients a narrower band (faster), creating subtle physical weight.
+      const weight = layer.weight ?? 1.0;
+      const bandStart = i * 0.030;
+      const bandEnd   = 0.92 + (weight - 1.0) * 0.10;
+      // smoothBand wraps smoothStep — a smooth cubic Hermite curve.
+      // Combined with the exponential lerp on `progress`, this produces a
+      // cinematic ease-in-out without snapping at either end.
+      const spreadP = smoothBand(progress, bandStart, bandEnd);
 
       // Y position — lerp assembled → revealed by spread progress.
       group.position.y =
