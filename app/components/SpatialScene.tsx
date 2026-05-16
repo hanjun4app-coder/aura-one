@@ -762,10 +762,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/top-bun.glb",
     name: "Top Bun",
-    // Lowered from 0.40 → 0.34 so the bun sits down closer to bacon for a
-    // more compact, realistic burger silhouette. 0.06 clearance above bacon
-    // (0.28) — tight but no severe clipping for typical bacon-strip height.
-    assembledY:  0.34,
+    // Lowered from 0.40 → 0.34 → 0.28 — bun now sits down with the upper-group
+    // shift so cheese can hug the patty without the upper stack feeling stretched.
+    assembledY:  0.28,
     revealedY:   1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
@@ -779,7 +778,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/bacon%20(1).glb",
     name: "Bacon",
-    assembledY:  0.28,
+    assembledY:  0.22,
     revealedY:   1.00,
     revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
@@ -793,7 +792,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
-    assembledY:  0.20,
+    assembledY:  0.14,
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
     baseRotation:    [ 0, 0, 0],
@@ -809,7 +808,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/tomato%20slice%203.glb",
     name: "Tomato",
-    assembledY:  0.06,
+    assembledY:  0.00,
     revealedY:   0.20,
     revealedOffset:  [ 0.03,  0.00],
     baseRotation:    [ 0,            0, 0],
@@ -822,7 +821,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/onion%20ring2.glb",
     name: "Onion Ring",
-    assembledY: -0.06,
+    assembledY: -0.12,
     revealedY:  -0.20,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
@@ -837,7 +836,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/Cheese%20(1).glb",
     name: "Cheese",
-    assembledY: -0.18,
+    assembledY: -0.26,
     revealedY:  -0.60,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
