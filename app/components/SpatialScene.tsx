@@ -781,10 +781,11 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.14,  0.40, -0.05],
     idleYRotSpeed:  0.020,
-    scale: 0.78,
+    // +15% from 0.78 — bacon reads more clearly across the burger
+    scale: 0.90,
     doubleSide: true,
   },
-  // 2 — LETTUCE  (lettuce2.glb still vertical — testing candidate rotations)
+  // 2 — LETTUCE  (lettuce2.glb — orientation corrected via test harness)
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
@@ -796,7 +797,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     modelRotationCorrection: ORIENTATION_TESTS[LETTUCE_ORIENTATION_TEST],
     revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
-    scale: 0.80,
+    // +25% from 0.80 — lettuce is realistically wider than the bun
+    scale: 1.00,
     doubleSide: true,
   },
   // 3 — TOMATO
