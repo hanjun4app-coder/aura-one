@@ -42,7 +42,6 @@ const CAROUSEL_PARTS = [
 
 const BURGER_INGREDIENTS = [
   { name: "Bottom Bun", cal: "160 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche base, golden butter crust" },
-  { name: "Truffle Sauce", cal: "90 kcal", allergen: "Eggs, Mustard", flavor: "House truffle mayo with Dijon, earthy and tangy" },
   { name: "Wagyu Patty", cal: "340 kcal", allergen: "None", flavor: "Flame-grilled premium wagyu, rich umami char" },
   { name: "Aged Cheddar", cal: "110 kcal", allergen: "Dairy", flavor: "Two-year reserve, sharp and creamy" },
   { name: "Tomato", cal: "10 kcal", allergen: "None", flavor: "Vine-ripened beefsteak, sweet and bright" },
@@ -720,7 +719,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/top-bun.glb",
     name: "Top Bun",
-    assembledY:  0.42,
+    assembledY:  0.40,
     revealedY:   1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
@@ -729,38 +728,41 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.82,
     doubleSide: false,
   },
-  // 1 — SAUCE
+  // 1 — BACON  (moved up into the old sauce slot, sits directly under top bun)
   {
-    path: "/models/burger-layers/sauce1.glb",
-    name: "Sauce",
-    assembledY:  0.30,
-    revealedY:   1.04,
-    revealedOffset:  [-0.02,  0.03],
+    path: "/models/burger-layers/bacon%20(1).glb",
+    name: "Bacon",
+    assembledY:  0.28,
+    revealedY:   1.00,
+    revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
-    revealedRotation:[ 0.06,  0.20,    0],
+    revealedRotation:[ 0.14,  0.40, -0.05],
     idleYRotSpeed:  0.020,
-    scale: 0.88,
+    scale: 0.78,
     doubleSide: true,
   },
-  // 2 — LETTUCE  (ships standing vertical — +π/2 X lays the leaf flat)
+  // 2 — LETTUCE  (lies fully flat — broad leaf surface faces up)
   {
     path: "/models/burger-layers/lettuce%20(1).glb",
     name: "Lettuce",
-    assembledY:  0.20,
-    revealedY:   0.68,
+    assembledY:  0.18,
+    revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
-    baseRotation:    [ Math.PI / 2,  0, 0],
-    revealedRotation:[ 0.01, -0.12,  0.01],
+    // GLB ships oriented with leaf standing vertical — −π/2 X lays it flat
+    // with the broad surface facing upward (normal +Y).
+    baseRotation:    [-Math.PI / 2, 0, 0],
+    // Zero X/Z tilt: leaf stays parallel to the bun, no side lean.
+    revealedRotation:[ 0,            0, 0],
     idleYRotSpeed:  0.016,
-    scale: 0.82,
+    scale: 0.78,
     doubleSide: true,
   },
   // 3 — TOMATO
   {
     path: "/models/burger-layers/tomato1.glb",
     name: "Tomato",
-    assembledY:  0.10,
-    revealedY:   0.34,
+    assembledY:  0.06,
+    revealedY:   0.20,
     revealedOffset:  [ 0.03,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.25,    0],
@@ -772,8 +774,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/onion%20ring.glb",
     name: "Onion Ring",
-    assembledY:  0.00,
-    revealedY:   0.00,
+    assembledY: -0.06,
+    revealedY:  -0.20,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.04,  0.15,    0],
@@ -785,8 +787,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/Cheese%20(1).glb",
     name: "Cheese",
-    assembledY: -0.10,
-    revealedY:  -0.34,
+    assembledY: -0.18,
+    revealedY:  -0.60,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.18,    0],
@@ -794,25 +796,12 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.90,
     doubleSide: true,
   },
-  // 6 — BACON
-  {
-    path: "/models/burger-layers/bacon%20(1).glb",
-    name: "Bacon",
-    assembledY: -0.20,
-    revealedY:  -0.68,
-    revealedOffset:  [ 0.00,  0.05],
-    baseRotation:    [ 0,            0, 0],
-    revealedRotation:[ 0.14,  0.40, -0.05],
-    idleYRotSpeed:  0.020,
-    scale: 0.80,
-    doubleSide: true,
-  },
-  // 7 — PATTY  (near-flat tilt; preserve grilled top via subtle X tilt + camera angle)
+  // 6 — PATTY  (near-flat tilt; preserve grilled top via subtle X tilt + camera angle)
   {
     path: "/models/burger-layers/Patty%20(1).glb",
     name: "Patty",
-    assembledY: -0.30,
-    revealedY:  -1.04,
+    assembledY: -0.28,
+    revealedY:  -1.00,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
@@ -820,11 +809,11 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.95,
     doubleSide: false,
   },
-  // 8 — BOTTOM BUN
+  // 7 — BOTTOM BUN
   {
     path: "/models/burger-layers/bottom.glb",
     name: "Bottom Bun",
-    assembledY: -0.42,
+    assembledY: -0.40,
     revealedY:  -1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
