@@ -1194,7 +1194,7 @@ function MenuBook({ open }: { open: boolean }) {
     });
   }, []);
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       open ? 1 : 0,
@@ -1202,11 +1202,21 @@ function MenuBook({ open }: { open: boolean }) {
     );
     const p = smoothStep(progressRef.current);
     const bookVisible = 1 - smoothStep(Math.min(p * 2.2, 1));
+    // Idle amount fades from 1 (book at rest, fully visible) to 0 as it begins
+    // its transition, so the breathing motion never fights the opening anim.
+    const idleAmount = 1 - p;
+    const t = clock.getElapsedTime();
 
     if (groupRef.current) {
       groupRef.current.scale.setScalar(THREE.MathUtils.lerp(1.0, 0.42, p));
-      groupRef.current.position.y = THREE.MathUtils.lerp(0, -0.55, p);
+      // Subtle Y bob (±0.035) and slow Y rotation breathing (±0.05 rad), both
+      // gated by idleAmount so they ease out as the book starts collapsing.
+      groupRef.current.position.y =
+        THREE.MathUtils.lerp(0, -0.55, p) +
+        Math.sin(t * 0.55) * 0.035 * idleAmount;
+      groupRef.current.position.x = Math.sin(t * 0.38) * 0.020 * idleAmount;
       groupRef.current.rotation.x = THREE.MathUtils.lerp(0, 0.14, p);
+      groupRef.current.rotation.y = Math.sin(t * 0.42) * 0.050 * idleAmount;
 
       groupRef.current.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
@@ -1222,7 +1232,10 @@ function MenuBook({ open }: { open: boolean }) {
     }
 
     if (bookLightRef.current) {
-      bookLightRef.current.intensity = bookVisible * 0.55;
+      // Breathing light pulse (±12 % around base) only while idle; the lerp to
+      // the static 0.55 multiplier resumes once the book is fully open/closed.
+      const breathe = 0.88 + Math.sin(t * 1.1) * 0.12 * idleAmount;
+      bookLightRef.current.intensity = bookVisible * 0.55 * breathe;
     }
   });
 
@@ -1347,10 +1360,13 @@ function SpatialMenuCarousel({
   const n = CAROUSEL_PARTS.length;
 
   useFrame(({ clock }, delta) => {
+    // Faster lerp rate (1.4 → 2.4) tightens the entrance to ~1.1–1.3 s of
+    // perceptual motion, matching the "Apple cinematic" entrance window
+    // while staying smooth via the per-item phase delays + smoothStep below.
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       exploded ? 1 : 0,
-      1 - Math.exp(-delta * 1.4)
+      1 - Math.exp(-delta * 2.4)
     );
 
     if (!groupRef.current) return;
@@ -1382,6 +1398,10 @@ function SpatialMenuCarousel({
         secondaryScale={0.66}
         inspectZFocus={1.7}
         inspectScaleMultiplier={1.54}
+        // Burger is the hero — arrives LAST on entrance (settles after the
+        // supporting cast lands), LEAVES FIRST on return (Apple ta-da feel).
+        explodeDelay={0.28}
+        assembleDelay={0.00}
         selfRotationAmount={0.12}
         motionSeed={1}
       >
@@ -1404,8 +1424,9 @@ function SpatialMenuCarousel({
         secondaryScale={0.64}
         inspectZFocus={1.5}
         inspectScaleMultiplier={1.52}
-        explodeDelay={0.022}
-        assembleDelay={0.042}
+        // Sushi — second-last to arrive, second to leave on return.
+        explodeDelay={0.21}
+        assembleDelay={0.07}
         selfRotationAmount={0.14}
         motionSeed={2}
       >
@@ -1432,8 +1453,9 @@ function SpatialMenuCarousel({
         secondaryScale={0.64}
         inspectZFocus={1.3}
         inspectScaleMultiplier={1.44}
-        explodeDelay={0.04}
-        assembleDelay={0.06}
+        // Fries — middle of the stagger, symmetric.
+        explodeDelay={0.14}
+        assembleDelay={0.14}
         selfRotationAmount={0.16}
         motionSeed={3}
       >
@@ -1459,8 +1481,9 @@ function SpatialMenuCarousel({
         secondaryScale={0.66}
         inspectZFocus={1.6}
         inspectScaleMultiplier={1.55}
-        explodeDelay={0.055}
-        assembleDelay={0.04}
+        // Coffee — earlier in entrance, lingers later on return.
+        explodeDelay={0.07}
+        assembleDelay={0.21}
         selfRotationAmount={0.18}
         motionSeed={4}
       >
@@ -1486,8 +1509,9 @@ function SpatialMenuCarousel({
         secondaryScale={0.66}
         inspectZFocus={1.4}
         inspectScaleMultiplier={1.50}
-        explodeDelay={0.07}
-        assembleDelay={0.025}
+        // Dessert — first to arrive on entrance, last to retreat on return.
+        explodeDelay={0.00}
+        assembleDelay={0.28}
         selfRotationAmount={0.2}
         motionSeed={5}
       >
@@ -2724,14 +2748,20 @@ export default function SpatialScene() {
 
   useEffect(() => {
     lastInteractionRef.current = Date.now();
-    // Intro title fades at 1.8s
-    const t1 = setTimeout(() => setIntroFading(true), 1800);
-    // Title unmounts at 2.8s; menu auto-opens at 3s
-    const t2 = setTimeout(() => setIntroVisible(false), 2800);
-    const t3 = setTimeout(() => {
+    // Three-phase cinematic intro:
+    //   Phase 1: 0–2000 ms   AURA ONE mark hold (idle breathing on title)
+    //   Phase 2: 2000–2700ms Menu transition  — title fades, book begins
+    //                        receding once landingPhase flips to "menu"
+    //   Phase 3: 2700–~3900  Carousel formation (items stagger in)
+    // The 500 ms gap between menu-open and exploded gives the book time to
+    // start collapsing before food items emerge, so the two motions don't
+    // step on each other.
+    const t1 = setTimeout(() => setIntroFading(true), 2000);
+    const t2 = setTimeout(() => {
+      setIntroVisible(false);
       setLandingPhase("menu");
-      setExploded(true);
-    }, 3000);
+    }, 2700);
+    const t3 = setTimeout(() => setExploded(true), 3200);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
@@ -2986,23 +3016,45 @@ export default function SpatialScene() {
 
   return (
     <div className="absolute inset-0">
+      {/* Intro breathing keyframes — subtle 3s loop on the wordmark + a slightly
+          slower bar-glow pulse on the amber accent rules. Lives inline so the
+          intro is self-contained in this component. */}
+      <style>{`
+        @keyframes auraIntroBreathe {
+          0%, 100% { opacity: 1; transform: translateY(0); letter-spacing: 0.30em; }
+          50%      { opacity: 0.86; transform: translateY(-1.5px); letter-spacing: 0.31em; }
+        }
+        @keyframes auraIntroBarBreathe {
+          0%, 100% { opacity: 1; transform: scaleX(1); }
+          50%      { opacity: 0.55; transform: scaleX(0.78); }
+        }
+      `}</style>
       {introVisible && (
         <div
           className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-stone-50 transition-opacity duration-1000 ${
             introFading ? "opacity-0" : "opacity-100"
           }`}
         >
-          <div className="mb-7 h-px w-10 bg-amber-500/28" />
+          <div
+            className="mb-7 h-px w-10 bg-amber-500/28"
+            style={{ animation: "auraIntroBarBreathe 4.4s ease-in-out infinite" }}
+          />
           <p className="mb-3 text-[0.48rem] tracking-[0.62em] text-amber-700/44">
             EXPERIENCE
           </p>
-          <h1 className="text-5xl font-extralight tracking-[0.30em] text-stone-700 md:text-6xl">
+          <h1
+            className="text-5xl font-extralight tracking-[0.30em] text-stone-700 md:text-6xl"
+            style={{ animation: "auraIntroBreathe 3.2s ease-in-out infinite" }}
+          >
             AURA ONE
           </h1>
           <p className="mt-4 text-[0.60rem] font-light tracking-[0.22em] text-stone-500/52">
             Spatial Dining Experience
           </p>
-          <div className="mt-7 h-px w-10 bg-amber-500/28" />
+          <div
+            className="mt-7 h-px w-10 bg-amber-500/28"
+            style={{ animation: "auraIntroBarBreathe 4.4s ease-in-out infinite 0.4s" }}
+          />
         </div>
       )}
 
