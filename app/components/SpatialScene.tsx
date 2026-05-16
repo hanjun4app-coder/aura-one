@@ -762,9 +762,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/top-bun.glb",
     name: "Top Bun",
-    // Lowered from 0.40 → 0.34 → 0.28 — bun now sits down with the upper-group
-    // shift so cheese can hug the patty without the upper stack feeling stretched.
-    assembledY:  0.28,
+    // Lowered from 0.40 → 0.34 → 0.28 → 0.24 — bun keeps coming down for a
+    // more compact crown. 0.02 above bacon (0.22) — heavy overlap with the bun's
+    // dome is intentional and reads as the bacon nestling inside the bread.
+    assembledY:  0.24,
     revealedY:   1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
@@ -792,7 +793,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
-    assembledY:  0.14,
+    // Dropped 0.14 → 0.06 so lettuce lies nearly parallel with tomato (0.00)
+    // — leaf and slice sit together as a layered pair.
+    assembledY:  0.06,
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
     baseRotation:    [ 0, 0, 0],
