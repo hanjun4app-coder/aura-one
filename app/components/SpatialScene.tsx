@@ -930,7 +930,6 @@ function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolea
 function BurgerExplodedView({ active }: { active: boolean }) {
   // Single progress: 0 = assembled (looks like one burger), 1 = fully spread.
   const progressRef = useRef(0);
-  const shadowRef = useRef<THREE.Mesh>(null);
 
   // Callback-ref array — one slot per BURGER_LAYERS entry. Scales to any
   // number of layers without per-layer useRef declarations.
@@ -981,31 +980,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         bz + rz * spreadP
       );
     });
-
-    if (shadowRef.current) {
-      // Shadow deepens slightly as layers spread.
-      const shadowP = smoothStep(Math.max(0, Math.min(1, progress)));
-      (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
-        0.18 + shadowP * 0.10;
-    }
   });
 
   return (
     <group>
       {/* Uniform framing scale — keeps stack inside viewport without camera change */}
       <group scale={EXPLODED_STACK_SCALE}>
-        {/* Contact shadow — sits just below the bottom bun local Y */}
-        <mesh ref={shadowRef} position={[0, -1.30, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[0.42, 36]} />
-          <meshStandardMaterial
-            color="#180804"
-            transparent
-            opacity={0}
-            roughness={1}
-            depthWrite={false}
-          />
-        </mesh>
-
         {BURGER_LAYERS.map((layer, i) => (
           <group
             key={layer.path}
