@@ -23,8 +23,8 @@ const CAROUSEL_PARTS = [
     description: "Double wagyu patty, truffle mayo, aged cheddar, brioche bun.",
   },
   {
-    name: "Sushi Roll Combo",
-    description: "California roll with crab, avocado, cucumber, toasted sesame.",
+    name: "Premium Steak",
+    description: "Seared cut with rich savory finish, finished in bone-marrow butter.",
   },
   {
     name: "Classic Fries Set",
@@ -53,7 +53,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 15.50, 7.90, 6.50, 12.80, 14.50];
+const ITEM_PRICES = [18.90, 26.50, 7.90, 6.50, 12.80, 14.50];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -67,12 +67,12 @@ const FOOD_INSPECT_DATA = [
   },
   {
     special: null,
-    calories: "420 kcal",
-    protein: "18g",
-    allergens: "Shellfish, soy, sesame",
-    flavorProfile: "Clean, oceanic, nutty, lightly vinegared",
-    ingredients: "Sushi rice · nori · crab · avocado · cucumber · sesame seeds",
-    chefNote: "House-rolled California with ripe avocado and toasted sesame.",
+    calories: "620 kcal",
+    protein: "48g",
+    allergens: "None",
+    flavorProfile: "Savory, smoky, juicy, robust",
+    ingredients: "Prime ribeye · sea salt · cracked pepper · bone-marrow butter · rosemary",
+    chefNote: "Dry-aged 28 days, seared in cast iron and finished with bone-marrow butter.",
   },
   {
     special: null,
@@ -1015,7 +1015,7 @@ function FoodModel({
     </group>
   );
 }
-useGLTF.preload("/models/california-roll.glb");
+useGLTF.preload("/models/steak.glb");
 useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
@@ -1464,9 +1464,9 @@ function SpatialMenuCarousel({
         motionSeed={2}
       >
         <FoodModel
-          path="/models/california-roll.glb"
-          targetSize={0.88}
-          rotationOffset={[0.18, 0, 0]}
+          path="/models/steak.glb"
+          targetSize={0.98}
+          rotationOffset={[0.12, 0, 0]}
         />
       </Part>
 
