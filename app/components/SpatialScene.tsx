@@ -723,6 +723,40 @@ type BurgerLayerConfig = {
   doubleSide: boolean;
 };
 
+// ─── ORIENTATION TEST HARNESS ──────────────────────────────────────────────
+// Some GLB assets ship with non-flat default orientations. Trial-and-error
+// table of candidate rotation corrections. Set LETTUCE_ORIENTATION_TEST or
+// ONION_ORIENTATION_TEST to a key in ORIENTATION_TESTS to try a candidate.
+// The "correct" candidate is the one that makes the broad surface horizontal:
+//   - lettuce: broad leaf face points up (±Y)
+//   - onion ring: ring hole axis points up (±Y) — ring sits like an "O" on top
+//
+// Already tried: B (−π/2 X) — only flipped vertical direction, not flat.
+//                A (+π/2 X) — also did not work in earlier passes (different asset).
+// Current guess: C (+π/2 Z) for both — different axis from what's been tested.
+//
+// If C also fails, rotate through D / E / F / G / H. Single-axis candidates
+// (A–F) handle pure-axis authoring. Two-axis candidates (G, H) handle assets
+// authored sideways (broad face at a 45° / oblique pose).
+const ORIENTATION_TESTS = {
+  A: [ Math.PI / 2, 0, 0           ] as const, // +90° X
+  B: [-Math.PI / 2, 0, 0           ] as const, // −90° X  (already tried — only flipped)
+  C: [ 0, 0,  Math.PI / 2          ] as const, // +90° Z
+  D: [ 0, 0, -Math.PI / 2          ] as const, // −90° Z
+  E: [ 0,  Math.PI / 2, 0          ] as const, // +90° Y
+  F: [ 0, -Math.PI / 2, 0          ] as const, // −90° Y
+  G: [ Math.PI / 2, 0,  Math.PI / 2] as const, // +90° X then +90° Z
+  H: [-Math.PI / 2, 0,  Math.PI / 2] as const, // −90° X then +90° Z
+} satisfies Record<string, readonly [number, number, number]>;
+
+type OrientationTestKey = keyof typeof ORIENTATION_TESTS;
+
+// Pick which candidate to try for each problem layer.
+// Change these values to test a different rotation without touching the layer
+// config below. After the right key is found we can inline the value.
+const LETTUCE_ORIENTATION_TEST: OrientationTestKey = "C";
+const ONION_ORIENTATION_TEST:   OrientationTestKey = "C";
+
 const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   // 0 — TOP BUN
   {
@@ -750,7 +784,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.78,
     doubleSide: true,
   },
-  // 2 — LETTUCE  (lettuce2.glb ships rotated 90° around X — lay it flat)
+  // 2 — LETTUCE  (lettuce2.glb still vertical — testing candidate rotations)
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
@@ -758,9 +792,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
     baseRotation:    [ 0, 0, 0],
-    // Counter-rotate the GLB's authored vertical orientation. −π/2 around X
-    // takes the leaf's standing pose to a flat-on-bun pose (broad face up).
-    modelRotationCorrection: [-Math.PI / 2, 0, 0],
+    // Driven by LETTUCE_ORIENTATION_TEST above — change that to swap candidates.
+    modelRotationCorrection: ORIENTATION_TESTS[LETTUCE_ORIENTATION_TEST],
     revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
     scale: 0.80,
@@ -779,7 +812,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     scale: 0.88,
     doubleSide: true,
   },
-  // 4 — ONION RING (anchored at center; ships rotated 90° around X — lay it flat)
+  // 4 — ONION RING (onion ring2.glb still vertical — testing candidate rotations)
   {
     path: "/models/burger-layers/onion%20ring2.glb",
     name: "Onion Ring",
@@ -787,9 +820,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedY:  -0.20,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
-    // Counter-rotate the GLB's authored vertical orientation so the ring's
-    // hole faces up (axis along world Y) like a real onion ring on a burger.
-    modelRotationCorrection: [-Math.PI / 2, 0, 0],
+    // Driven by ONION_ORIENTATION_TEST above — change that to swap candidates.
+    modelRotationCorrection: ORIENTATION_TESTS[ONION_ORIENTATION_TEST],
     revealedRotation:[ 0.04,  0.15,    0],
     idleYRotSpeed:  0.022,
     scale: 0.85,
