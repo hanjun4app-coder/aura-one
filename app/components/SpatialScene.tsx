@@ -507,7 +507,9 @@ function Part({
       inspectScale,
       inspectPresence
     );
-    const highlightTarget = activePresence * (inspectMode ? 1.0 : 0.86);
+    // Highlight peaks at 1.0 on the active slot whether or not in inspect —
+    // pre-inspect spotlight needs the full presence to actually read on stage.
+    const highlightTarget = activePresence * 1.0;
 
     if (!assembling && localProgress > dockThreshold * 2) {
       dockedRef.current = false;
@@ -585,10 +587,14 @@ function Part({
     if (activeLightRef.current) {
       // Cinematic top spotlight. Two intensity tiers driven by highlightRef
       // (which fades in as the item arrives at the active slot):
-      //   carousel front: 1.4× — hero feel before inspect
-      //   inspect mode:   3.4× — full key on the hero
+      //   carousel front: 2.4× — clearly visible product spotlight pre-inspect
+      //   inspect mode:   4.6× — full key on the hero during inspect
+      // Plus a brief dock-pulse boost (~300–500 ms decaying sinusoid) that
+      // adds a "reveal moment" intensity bump as the item lands in slot 0.
+      const baseMul = isInspectActive ? 4.6 : 2.4;
+      const dockBoost = Math.abs(dockPulse) * 1.6 * activePresence;
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 3.4 : 1.4);
+        highlightRef.current * baseMul + dockBoost;
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -696,17 +702,19 @@ function Part({
   return (
     <group ref={groupRef}>
       {children}
-      {/* Cinematic top spotlight. Positioned high and slightly forward, aimed
-          down at the item center. Soft penumbra + warm food-commercial color
-          for a luxury product-spotlight feel. Fades up via activeLightRef. */}
+      {/* Cinematic top spotlight. Sits closer above the item (was at y=3.8,
+          now y=2.6) with much lower decay (1.4 → 0.8) so the cone actually
+          lands on the product instead of falling off in the 3-unit gap.
+          Tighter angle + slightly crisper penumbra reads as a true product
+          spotlight rather than a soft fill. */}
       <spotLight
         ref={activeLightRef}
-        color="#ffd8a8"
-        position={[0, 3.8, 0.6]}
-        angle={0.62}
-        penumbra={0.75}
-        distance={9}
-        decay={1.4}
+        color="#ffe6c2"
+        position={[0, 2.6, 0.4]}
+        angle={0.55}
+        penumbra={0.65}
+        distance={6.5}
+        decay={0.8}
         intensity={0}
       />
     </group>
