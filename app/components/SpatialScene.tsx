@@ -768,7 +768,8 @@ useGLTF.preload("/models/ice-cream.glb");
 //   patty (idx 3), bacon (idx 2), lettuce (idx 6), bottom (idx 0).
 // Arrays below are indexed by GLB index — each entry is the Y for that GLB.
 // Assembled Y — tight overlap so layers read as one burger during hero crossfade.
-const BURGER_ASSEMBLED_Y = [-0.38, 0.24, -0.15, -0.05, 0.05, 0.15, -0.26, 0.35] as const;
+// Lettuce (idx 6) bumped up from −0.26 → −0.22 to avoid clipping into the bottom bun.
+const BURGER_ASSEMBLED_Y = [-0.38, 0.24, -0.15, -0.05, 0.05, 0.15, -0.22, 0.35] as const;
 // Exploded Y — evenly spaced across ~2.48 unit range. Patty (idx 3) anchors near
 // center, sauce (idx 1) sits just below top-bun (idx 7), lettuce (idx 6) sits
 // just above bottom-bun (idx 0).
@@ -790,18 +791,35 @@ const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
 const BURGER_LAYER_SCALES = [0.82, 0.90, 0.80, 0.95, 0.90, 0.88, 0.82, 0.82] as const;
 // Uniform scale applied to the whole exploded stack group so it fits the viewport.
 const EXPLODED_STACK_SCALE = 0.72;
-// Per-layer fixed [x, y, z] rotation offset (radians). Composes with idle Y spin.
-// Positive X tilts the top of the layer forward toward the camera, exposing the
-// appetizing top surface (sesame crown, grilled patty top, etc.).
+// Per-layer fixed [x, y, z] rotation offset (radians) applied ONLY during the
+// exploded state (gated by spreadP in useFrame). Positive X tilts the top of
+// the layer forward toward the camera.
+// Patty (idx 3) and lettuce (idx 6) X/Z tilts reduced near zero so they
+// stay flat/horizontal instead of tipping forward in the exploded diagram.
 const BURGER_LAYER_ROT_OFFSETS: ReadonlyArray<[number, number, number]> = [
   [ 0.08,  0.00,  0.00],  // 0 bottom-bun — slight forward tilt
   [ 0.06,  0.20,  0.00],  // 1 sauce      — slight rotation, expose top
   [ 0.14,  0.40, -0.05],  // 2 bacon      — angled to show wavy strips
-  [ 0.14,  0.10,  0.00],  // 3 patty      — show flame-grilled top
+  [ 0.02,  0.08,  0.00],  // 3 patty      — near-flat, minimal natural imperfection
   [ 0.10,  0.18,  0.00],  // 4 cheese     — gentle tilt for readability
   [ 0.10,  0.25,  0.00],  // 5 tomato     — slight tilt, slice face visible
-  [ 0.07, -0.20,  0.05],  // 6 lettuce    — organic tilt
+  [ 0.01, -0.12,  0.01],  // 6 lettuce    — lies flat, only subtle Y rotation
   [ 0.16,  0.00,  0.00],  // 7 top-bun    — forward tilt to show sesame crown
+];
+// Per-layer base orientation correction in radians. Applied at ALL times
+// (independent of spreadP) to compensate for the GLB's baked-in orientation
+// when it doesn't match the visual stack convention (Y-up, normal facing up).
+// Most layers ship correctly and stay at [0, 0, 0]. Lettuce ships standing
+// vertically, so we rotate by +π/2 around X to lay the leaf flat on the bun.
+const BURGER_LAYER_BASE_ROTATION: ReadonlyArray<[number, number, number]> = [
+  [ 0,             0, 0],  // 0 bottom-bun
+  [ 0,             0, 0],  // 1 sauce
+  [ 0,             0, 0],  // 2 bacon
+  [ 0,             0, 0],  // 3 patty
+  [ 0,             0, 0],  // 4 cheese
+  [ 0,             0, 0],  // 5 tomato
+  [ Math.PI / 2,   0, 0],  // 6 lettuce — rotate from vertical leaf to flat
+  [ 0,             0, 0],  // 7 top-bun
 ];
 // DoubleSide only for thin ingredients where back-face culling causes holes.
 // Thick layers stay FrontSide for proper depth and to avoid z-fighting on overlap.
@@ -916,14 +934,17 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       // Per-layer scale — bacon and lettuce slightly reduced.
       group.scale.setScalar(BURGER_LAYER_SCALES[i]);
 
-      // Idle Y rotation and per-layer tilt offsets, both gated by spreadP so
-      // assembled layers stack flat with no rotation drift.
+      // Base rotation is always applied (corrects GLB orientation — e.g. lettuce
+      // ships standing vertically and needs +π/2 X to lay flat).
+      // Idle Y rotation and per-layer tilt offsets are gated by spreadP so
+      // assembled layers stack flat with no extra rotation drift.
       layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * spreadP;
+      const [bx, byBase, bz] = BURGER_LAYER_BASE_ROTATION[i];
       const [rx, ryBase, rz] = BURGER_LAYER_ROT_OFFSETS[i];
       group.rotation.set(
-        rx * spreadP,
-        ryBase * spreadP + layerRot.current[i],
-        rz * spreadP
+        bx + rx * spreadP,
+        byBase + ryBase * spreadP + layerRot.current[i],
+        bz + rz * spreadP
       );
     });
 
