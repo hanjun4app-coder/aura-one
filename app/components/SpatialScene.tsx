@@ -2677,6 +2677,9 @@ export default function SpatialScene() {
     x: number; y: number; opacity: number; scale: number;
   } | null>(null);
   const [trayGlow, setTrayGlow] = useState(false);
+  const [orderToastVisible, setOrderToastVisible] = useState(false);
+  const orderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevTotalItemCountRef = useRef(0);
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
   const landingPhaseRef = useRef<LandingPhase>("intro");
@@ -2699,6 +2702,23 @@ export default function SpatialScene() {
   const orderTax = orderSubtotal * 0.10;
   const orderTotal = orderSubtotal + orderTax;
   const totalItemCount = orderItems.reduce((s, { qty }) => s + qty, 0);
+
+  // "Added to order" toast — fires for ~1.8s whenever the total item count
+  // goes UP (so increments via single-add, voice, or gesture all surface).
+  // Decrement (remove / clear) doesn't trigger the toast.
+  useEffect(() => {
+    const prev = prevTotalItemCountRef.current;
+    prevTotalItemCountRef.current = totalItemCount;
+    if (totalItemCount <= prev) return;
+    setOrderToastVisible(true);
+    if (orderToastTimerRef.current) clearTimeout(orderToastTimerRef.current);
+    orderToastTimerRef.current = setTimeout(() => {
+      setOrderToastVisible(false);
+    }, 1800);
+    return () => {
+      // No-op cleanup; clearing on every render would cancel an in-flight toast.
+    };
+  }, [totalItemCount]);
 
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
@@ -3028,6 +3048,39 @@ export default function SpatialScene() {
         activePartIndex={activePartIndex}
       />
 
+      {/* ── Mode label (top-center) — minimal Apple-style state badge ── */}
+      {/* Burger-specific label appears only while inspecting the burger;
+          generic "INSPECT" hides when burger label takes over.            */}
+      <div
+        className={`pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 transition-opacity duration-700 ${
+          inspectMode && exploded ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <p className="text-[0.50rem] tracking-[0.62em] text-stone-400/55">
+          {inspectMode && activePartIndex === 0 && burgerExploded
+            ? "INGREDIENT REVEAL"
+            : inspectMode && activePartIndex === 0
+              ? "BURGER DETAIL"
+              : "INSPECT"}
+        </p>
+      </div>
+
+      {/* ── Added-to-order toast (top-center, below mode label) ── */}
+      <div
+        className={`pointer-events-none absolute left-1/2 top-[3.2rem] -translate-x-1/2 transition-all duration-500 ${
+          orderToastVisible
+            ? "translate-y-0 opacity-100"
+            : "-translate-y-1 opacity-0"
+        }`}
+      >
+        <div className="flex items-center gap-2 border border-amber-300/26 bg-white/55 px-3 py-1.5 shadow-md shadow-amber-200/20 backdrop-blur-xl">
+          <span className="h-[1.5px] w-2 bg-amber-500/60" />
+          <span className="text-[0.50rem] tracking-[0.36em] text-amber-800/80">
+            ADDED TO ORDER
+          </span>
+        </div>
+      </div>
+
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
         className={`pointer-events-none absolute bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-white/18 bg-white/26 p-5 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 md:p-6 ${
@@ -3036,13 +3089,6 @@ export default function SpatialScene() {
             : "translate-y-4 opacity-0"
         }`}
       >
-        {/* Context label — only shown in inspect */}
-        {inspectMode && (
-          <p className="mb-3 text-[0.46rem] tracking-[0.46em] text-stone-400/42">
-            INSPECT
-          </p>
-        )}
-
         {/* Special tag — refined, minimal */}
         {FOOD_INSPECT_DATA[activePartIndex].special && (
           <div className="mb-3 inline-flex items-center gap-2">
@@ -3172,8 +3218,8 @@ export default function SpatialScene() {
         <p className={`whitespace-nowrap text-[0.44rem] tracking-[0.28em] text-stone-400/28 transition-opacity duration-700 ${landingPhase === "menu" && exploded ? "opacity-100" : "opacity-0"}`}>
           {inspectMode && activePartIndex === 0
             ? burgerExploded
-              ? "Hold open hand · E to assemble"
-              : "Hold open hand · E to reveal layers"
+              ? "Fist → open palm to assemble  ·  E"
+              : "Fist → open palm to reveal layers  ·  E"
             : inspectMode
               ? "Open hand to add  ·  Swipe to return"
               : "Swipe to explore  ·  Open hand to inspect"}
