@@ -1815,6 +1815,138 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
   );
 }
 
+// Subtle food-commercial ambient details for the assembled burger:
+//   - 10 wisps of warm steam rising slowly from above the bun
+//   - 8 tiny crumb / sesame particles drifting near the upper burger area
+// Group visibility is gated by `active`; all per-frame work skips when faded out.
+// Atmospheric scene-wide depth is handled by the existing AmbientParticles (700
+// background points) — we deliberately don't duplicate that here.
+function BurgerAmbientFX({ active }: { active: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const blendRef = useRef(0);
+
+  // Steam particle seed data — phase offset staggers each wisp's lifecycle so
+  // they don't all fade in/out together; jitter randomises lateral position.
+  const STEAM_COUNT = 10;
+  const steamSeeds = useMemo(
+    () =>
+      Array.from({ length: STEAM_COUNT }, (_, i) => ({
+        phaseOffset: seededUnit(i * 7 + 1),
+        xJitter: (seededUnit(i * 7 + 2) - 0.5) * 0.45,
+        zJitter: (seededUnit(i * 7 + 3) - 0.5) * 0.40,
+        driftFreq: 0.4 + seededUnit(i * 7 + 4) * 0.5,
+        driftAmp: 0.04 + seededUnit(i * 7 + 5) * 0.05,
+        size: 0.026 + seededUnit(i * 7 + 6) * 0.022,
+      })),
+    []
+  );
+
+  // Crumb seed data — fixed-ish positions near the upper burger area
+  // (bun/bacon level), with slow per-axis drift.
+  const CRUMB_COUNT = 8;
+  const crumbSeeds = useMemo(
+    () =>
+      Array.from({ length: CRUMB_COUNT }, (_, i) => ({
+        baseX: (seededUnit(i * 11 + 1) - 0.5) * 0.85,
+        baseY: 0.12 + seededUnit(i * 11 + 2) * 0.30,
+        baseZ: (seededUnit(i * 11 + 3) - 0.5) * 0.55,
+        driftFreq: 0.28 + seededUnit(i * 11 + 4) * 0.22,
+        size: 0.008 + seededUnit(i * 11 + 5) * 0.010,
+      })),
+    []
+  );
+
+  const steamRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const crumbRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  useFrame(({ clock }, delta) => {
+    blendRef.current = THREE.MathUtils.lerp(
+      blendRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 2.0)
+    );
+    const b = blendRef.current;
+    if (!groupRef.current) return;
+    // Hard-cull when faded out — skip all per-frame updates.
+    groupRef.current.visible = b > 0.01;
+    if (!groupRef.current.visible) return;
+
+    const t = clock.getElapsedTime();
+
+    // Steam: 4.0s loop. Particle rises from y≈0.4 to y≈1.7, fades in over
+    // first 20% of the cycle, fades out over the last 30%.
+    for (let i = 0; i < STEAM_COUNT; i++) {
+      const mesh = steamRefs.current[i];
+      if (!mesh) continue;
+      const s = steamSeeds[i];
+      const cycle = ((t * 0.25) + s.phaseOffset) % 1; // 0..1
+      const y = 0.42 + cycle * 1.28;
+      mesh.position.set(
+        s.xJitter + Math.sin(t * s.driftFreq + i) * s.driftAmp,
+        y,
+        s.zJitter + Math.cos(t * s.driftFreq * 1.1 + i) * s.driftAmp
+      );
+      // Scale grows slightly as wisp rises — reads as steam dispersing.
+      const grow = 1 + cycle * 0.6;
+      mesh.scale.setScalar(grow);
+      let opacity = 1;
+      if (cycle < 0.20) opacity = cycle / 0.20;
+      else if (cycle > 0.70) opacity = (1 - cycle) / 0.30;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = opacity * 0.20 * b;
+    }
+
+    // Crumbs: gentle 3-axis drift around their base position.
+    for (let i = 0; i < CRUMB_COUNT; i++) {
+      const mesh = crumbRefs.current[i];
+      if (!mesh) continue;
+      const c = crumbSeeds[i];
+      mesh.position.set(
+        c.baseX + Math.sin(t * c.driftFreq + i * 1.7) * 0.05,
+        c.baseY + Math.cos(t * c.driftFreq * 0.7 + i * 2.1) * 0.03,
+        c.baseZ + Math.sin(t * c.driftFreq * 1.3 + i * 0.9) * 0.05
+      );
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.32 * b;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      {steamSeeds.map((s, i) => (
+        <mesh
+          key={`steam-${i}`}
+          ref={(el) => {
+            steamRefs.current[i] = el;
+          }}
+        >
+          <sphereGeometry args={[s.size, 6, 6]} />
+          <meshBasicMaterial
+            color="#fff5ec"
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+      {crumbSeeds.map((c, i) => (
+        <mesh
+          key={`crumb-${i}`}
+          ref={(el) => {
+            crumbRefs.current[i] = el;
+          }}
+        >
+          <sphereGeometry args={[c.size, 5, 5]} />
+          <meshBasicMaterial
+            color="#c2a474"
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 // Retry up to 10 animation frames waiting for the video element to mount.
 // Required because getUserMedia is async and may resolve before React has
 // committed the <video> element to the DOM.
@@ -2864,6 +2996,7 @@ export default function SpatialScene() {
         <InspectSceneLighting inspectMode={inspectMode} />
         <BurgerInspectLighting active={inspectMode && activePartIndex === 0 && !burgerExploded} />
         <BurgerExplodedLighting active={burgerExploded && inspectMode && activePartIndex === 0} />
+        <BurgerAmbientFX active={inspectMode && activePartIndex === 0 && !burgerExploded} />
 
         <AmbientParticles />
         <AuraLogoParticles exploded={exploded} />
