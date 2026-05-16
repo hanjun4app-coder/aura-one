@@ -695,25 +695,147 @@ function Part({
   );
 }
 
-const BURGER_LAYER_PATHS = [
-  "/models/burger-layers/bottom.glb",
-  "/models/burger-layers/sauce.glb",
-  "/models/burger-layers/bacon.glb",
-  "/models/burger-layers/patty.glb",
-  "/models/burger-layers/cheese.glb",
-  "/models/burger-layers/tomato.glb",
-  "/models/burger-layers/lettuce.glb",
-  "/models/burger-layers/top-bun.glb",
-] as const;
+// Single declarative config for the 9 ingredient layers. Indexed top → bottom
+// (idx 0 = top-bun, idx 8 = bottom-bun) so the index doubles as the
+// stack-position-from-top stagger key (top lifts first, bottom settles first).
+type BurgerLayerConfig = {
+  path: string;
+  name: string;
+  assembledY: number;
+  revealedY: number;
+  // Reveal-only X/Z drift (gated by spreadP).
+  revealedOffset: readonly [number, number];
+  // Always-applied corrective rotation (compensates for GLB orientation).
+  baseRotation: readonly [number, number, number];
+  // Reveal-only extra rotation tilt (gated by spreadP).
+  revealedRotation: readonly [number, number, number];
+  // Idle Y-axis spin speed (rad/sec), active only in revealed state.
+  idleYRotSpeed: number;
+  scale: number;
+  doubleSide: boolean;
+};
 
-// Position of each GLB in the vertical stack, counting from the top (0 = top).
-// Used to stagger the assemble → reveal animation so the top bun lifts first
-// on reveal and lands last on reassemble (cinematic "open / close" feel).
-//   Stack:  top-bun(7)=0, sauce(1)=1, tomato(5)=2, cheese(4)=3,
-//           patty(3)=4, bacon(2)=5, lettuce(6)=6, bottom(0)=7
-const BURGER_LAYER_STACK_POS = [7, 1, 5, 4, 3, 2, 6, 0] as const;
+const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
+  // 0 — TOP BUN
+  {
+    path: "/models/burger-layers/top-bun.glb",
+    name: "Top Bun",
+    assembledY:  0.42,
+    revealedY:   1.40,
+    revealedOffset:  [ 0.00, -0.03],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.16,         0, 0],
+    idleYRotSpeed: -0.018,
+    scale: 0.82,
+    doubleSide: false,
+  },
+  // 1 — SAUCE
+  {
+    path: "/models/burger-layers/sauce1.glb",
+    name: "Sauce",
+    assembledY:  0.30,
+    revealedY:   1.04,
+    revealedOffset:  [-0.02,  0.03],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.06,  0.20,    0],
+    idleYRotSpeed:  0.020,
+    scale: 0.88,
+    doubleSide: true,
+  },
+  // 2 — LETTUCE  (ships standing vertical — +π/2 X lays the leaf flat)
+  {
+    path: "/models/burger-layers/lettuce%20(1).glb",
+    name: "Lettuce",
+    assembledY:  0.20,
+    revealedY:   0.68,
+    revealedOffset:  [-0.03,  0.00],
+    baseRotation:    [ Math.PI / 2,  0, 0],
+    revealedRotation:[ 0.01, -0.12,  0.01],
+    idleYRotSpeed:  0.016,
+    scale: 0.82,
+    doubleSide: true,
+  },
+  // 3 — TOMATO
+  {
+    path: "/models/burger-layers/tomato1.glb",
+    name: "Tomato",
+    assembledY:  0.10,
+    revealedY:   0.34,
+    revealedOffset:  [ 0.03,  0.00],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.10,  0.25,    0],
+    idleYRotSpeed: -0.018,
+    scale: 0.88,
+    doubleSide: true,
+  },
+  // 4 — ONION RING (anchored at center)
+  {
+    path: "/models/burger-layers/onion%20ring.glb",
+    name: "Onion Ring",
+    assembledY:  0.00,
+    revealedY:   0.00,
+    revealedOffset:  [ 0.00,  0.00],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.04,  0.15,    0],
+    idleYRotSpeed:  0.022,
+    scale: 0.85,
+    doubleSide: true,
+  },
+  // 5 — CHEESE
+  {
+    path: "/models/burger-layers/Cheese%20(1).glb",
+    name: "Cheese",
+    assembledY: -0.10,
+    revealedY:  -0.34,
+    revealedOffset:  [ 0.00,  0.00],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.10,  0.18,    0],
+    idleYRotSpeed: -0.014,
+    scale: 0.90,
+    doubleSide: true,
+  },
+  // 6 — BACON
+  {
+    path: "/models/burger-layers/bacon%20(1).glb",
+    name: "Bacon",
+    assembledY: -0.20,
+    revealedY:  -0.68,
+    revealedOffset:  [ 0.00,  0.05],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.14,  0.40, -0.05],
+    idleYRotSpeed:  0.020,
+    scale: 0.80,
+    doubleSide: true,
+  },
+  // 7 — PATTY  (near-flat tilt; preserve grilled top via subtle X tilt + camera angle)
+  {
+    path: "/models/burger-layers/Patty%20(1).glb",
+    name: "Patty",
+    assembledY: -0.30,
+    revealedY:  -1.04,
+    revealedOffset:  [ 0.00,  0.00],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.02,  0.08,    0],
+    idleYRotSpeed: -0.026,
+    scale: 0.95,
+    doubleSide: false,
+  },
+  // 8 — BOTTOM BUN
+  {
+    path: "/models/burger-layers/bottom.glb",
+    name: "Bottom Bun",
+    assembledY: -0.42,
+    revealedY:  -1.40,
+    revealedOffset:  [ 0.00, -0.03],
+    baseRotation:    [ 0,            0, 0],
+    revealedRotation:[ 0.08,         0, 0],
+    idleYRotSpeed:  0.018,
+    scale: 0.82,
+    doubleSide: false,
+  },
+];
 
-BURGER_LAYER_PATHS.forEach((layerPath) => useGLTF.preload(layerPath));
+BURGER_LAYERS.forEach((layer) => useGLTF.preload(layer.path));
 
 function FoodModel({
   path,
@@ -763,76 +885,8 @@ useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
 
-// Visual stack order, top → bottom:
-//   top-bun (idx 7), sauce (idx 1), tomato (idx 5), cheese (idx 4),
-//   patty (idx 3), bacon (idx 2), lettuce (idx 6), bottom (idx 0).
-// Arrays below are indexed by GLB index — each entry is the Y for that GLB.
-// Assembled Y — tight overlap so layers read as one burger during hero crossfade.
-// Lettuce (idx 6) bumped up from −0.26 → −0.22 to avoid clipping into the bottom bun.
-const BURGER_ASSEMBLED_Y = [-0.38, 0.24, -0.15, -0.05, 0.05, 0.15, -0.22, 0.35] as const;
-// Exploded Y — evenly spaced across ~2.48 unit range. Patty (idx 3) anchors near
-// center, sauce (idx 1) sits just below top-bun (idx 7), lettuce (idx 6) sits
-// just above bottom-bun (idx 0).
-const BURGER_EXPLODED_Y  = [-1.14, 0.99, -0.42, -0.07, 0.28, 0.63, -0.78, 1.34] as const;
-// Very slow Y-only rotation — luxury restraint, alternating direction per layer.
-const BURGER_LAYER_ROT_SPEED = [0.018, -0.026, 0.020, -0.014, 0.022, -0.018, 0.016, -0.018] as const;
-// Per-layer [x, z] offsets in exploded state. Patty (i=3) anchors at center.
-const BURGER_LAYER_OFFSETS: ReadonlyArray<[number, number]> = [
-  [ 0.00, -0.03],  // 0 bottom-bun  — centered, slightly back
-  [-0.02,  0.03],  // 1 sauce       — slightly left, front
-  [ 0.00,  0.05],  // 2 bacon       — slightly front (toward camera)
-  [ 0.00,  0.00],  // 3 patty       — anchor
-  [ 0.00,  0.00],  // 4 cheese      — centered
-  [ 0.03,  0.00],  // 5 tomato      — slightly right
-  [-0.03,  0.00],  // 6 lettuce     — slightly left
-  [ 0.00, -0.03],  // 7 top-bun     — centered, slightly back
-];
-// Per-layer scale multipliers. Buns, bacon, lettuce reduced so no layer dominates.
-const BURGER_LAYER_SCALES = [0.82, 0.90, 0.80, 0.95, 0.90, 0.88, 0.82, 0.82] as const;
-// Uniform scale applied to the whole exploded stack group so it fits the viewport.
+// Uniform scale applied to the whole burger group so it fits the viewport.
 const EXPLODED_STACK_SCALE = 0.72;
-// Per-layer fixed [x, y, z] rotation offset (radians) applied ONLY during the
-// exploded state (gated by spreadP in useFrame). Positive X tilts the top of
-// the layer forward toward the camera.
-// Patty (idx 3) and lettuce (idx 6) X/Z tilts reduced near zero so they
-// stay flat/horizontal instead of tipping forward in the exploded diagram.
-const BURGER_LAYER_ROT_OFFSETS: ReadonlyArray<[number, number, number]> = [
-  [ 0.08,  0.00,  0.00],  // 0 bottom-bun — slight forward tilt
-  [ 0.06,  0.20,  0.00],  // 1 sauce      — slight rotation, expose top
-  [ 0.14,  0.40, -0.05],  // 2 bacon      — angled to show wavy strips
-  [ 0.02,  0.08,  0.00],  // 3 patty      — near-flat, minimal natural imperfection
-  [ 0.10,  0.18,  0.00],  // 4 cheese     — gentle tilt for readability
-  [ 0.10,  0.25,  0.00],  // 5 tomato     — slight tilt, slice face visible
-  [ 0.01, -0.12,  0.01],  // 6 lettuce    — lies flat, only subtle Y rotation
-  [ 0.16,  0.00,  0.00],  // 7 top-bun    — forward tilt to show sesame crown
-];
-// Per-layer base orientation correction in radians. Applied at ALL times
-// (independent of spreadP) to compensate for the GLB's baked-in orientation
-// when it doesn't match the visual stack convention (Y-up, normal facing up).
-// Most layers ship correctly and stay at [0, 0, 0]. Lettuce ships standing
-// vertically, so we rotate by +π/2 around X to lay the leaf flat on the bun.
-const BURGER_LAYER_BASE_ROTATION: ReadonlyArray<[number, number, number]> = [
-  [ 0,             0, 0],  // 0 bottom-bun
-  [ 0,             0, 0],  // 1 sauce
-  [ 0,             0, 0],  // 2 bacon
-  [ 0,             0, 0],  // 3 patty
-  [ 0,             0, 0],  // 4 cheese
-  [ 0,             0, 0],  // 5 tomato
-  [ Math.PI / 2,   0, 0],  // 6 lettuce — rotate from vertical leaf to flat
-  [ 0,             0, 0],  // 7 top-bun
-];
-// DoubleSide only for thin ingredients where back-face culling causes holes.
-// Thick layers stay FrontSide for proper depth and to avoid z-fighting on overlap.
-const BURGER_LAYER_DOUBLE_SIDE = [
-  false,  // 0 bottom-bun — thick
-  true,   // 1 sauce      — thin layer
-  true,   // 2 bacon      — thin strips
-  false,  // 3 patty      — thick
-  true,   // 4 cheese     — thin slice
-  true,   // 5 tomato     — thin slice
-  true,   // 6 lettuce    — thin leaves
-  false,  // 7 top-bun    — thick
-] as const;
 
 // Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
 // Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
@@ -889,16 +943,12 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const progressRef = useRef(0);
   const shadowRef = useRef<THREE.Mesh>(null);
 
-  // 8 stable individual group refs — one per layer GLB.
-  const g0 = useRef<THREE.Group>(null);
-  const g1 = useRef<THREE.Group>(null);
-  const g2 = useRef<THREE.Group>(null);
-  const g3 = useRef<THREE.Group>(null);
-  const g4 = useRef<THREE.Group>(null);
-  const g5 = useRef<THREE.Group>(null);
-  const g6 = useRef<THREE.Group>(null);
-  const g7 = useRef<THREE.Group>(null);
-  const layerRot = useRef([0, 0, 0, 0, 0, 0, 0, 0]);
+  // Callback-ref array — one slot per BURGER_LAYERS entry. Scales to any
+  // number of layers without per-layer useRef declarations.
+  const groupRefs = useRef<(THREE.Group | null)[]>(
+    new Array(BURGER_LAYERS.length).fill(null)
+  );
+  const layerRot = useRef<number[]>(new Array(BURGER_LAYERS.length).fill(0));
 
   useFrame(({ clock }, delta) => {
     progressRef.current = THREE.MathUtils.lerp(
@@ -908,39 +958,34 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     );
     const progress = progressRef.current;
     const t = clock.getElapsedTime();
-    const gRefs = [g0, g1, g2, g3, g4, g5, g6, g7];
 
-    gRefs.forEach((ref, i) => {
-      const group = ref.current;
+    BURGER_LAYERS.forEach((layer, i) => {
+      const group = groupRefs.current[i];
       if (!group) return;
 
       // Per-layer staggered spread band keyed by stack position from top.
-      // Top of stack starts moving at progress=0 (lifts first on reveal),
-      // bottom of stack starts at 0.21 (settles first on reassemble).
-      // All layers finish by progress=0.92 so the exploded state is fully formed.
-      const stackPos = BURGER_LAYER_STACK_POS[i];
-      const spreadP = smoothBand(progress, stackPos * 0.03, 0.92);
+      // Index already orders top → bottom, so idx 0 (top-bun) lifts first.
+      const spreadP = smoothBand(progress, i * 0.025, 0.92);
 
-      // Y position — lerp assembled (tightly clustered, reads as one burger)
-      // → exploded (clear ingredient diagram).
+      // Y position — lerp assembled → revealed by spread progress.
       group.position.y =
-        THREE.MathUtils.lerp(BURGER_ASSEMBLED_Y[i], BURGER_EXPLODED_Y[i], spreadP) +
+        THREE.MathUtils.lerp(layer.assembledY, layer.revealedY, spreadP) +
         Math.sin(t * 0.26 + i * 0.80) * 0.005 * spreadP;
 
       // X/Z drift — zero when assembled; only applies during spread.
-      group.position.x = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][0], spreadP);
-      group.position.z = THREE.MathUtils.lerp(0, BURGER_LAYER_OFFSETS[i][1], spreadP);
+      group.position.x = THREE.MathUtils.lerp(0, layer.revealedOffset[0], spreadP);
+      group.position.z = THREE.MathUtils.lerp(0, layer.revealedOffset[1], spreadP);
 
-      // Per-layer scale — bacon and lettuce slightly reduced.
-      group.scale.setScalar(BURGER_LAYER_SCALES[i]);
+      // Per-layer scale.
+      group.scale.setScalar(layer.scale);
 
-      // Base rotation is always applied (corrects GLB orientation — e.g. lettuce
+      // Base rotation always applied (corrects GLB orientation — e.g. lettuce
       // ships standing vertically and needs +π/2 X to lay flat).
-      // Idle Y rotation and per-layer tilt offsets are gated by spreadP so
-      // assembled layers stack flat with no extra rotation drift.
-      layerRot.current[i] += delta * BURGER_LAYER_ROT_SPEED[i] * spreadP;
-      const [bx, byBase, bz] = BURGER_LAYER_BASE_ROTATION[i];
-      const [rx, ryBase, rz] = BURGER_LAYER_ROT_OFFSETS[i];
+      // Idle Y spin and reveal tilt are both gated by spreadP so assembled
+      // layers stack flat with no rotation drift.
+      layerRot.current[i] += delta * layer.idleYRotSpeed * spreadP;
+      const [bx, byBase, bz] = layer.baseRotation;
+      const [rx, ryBase, rz] = layer.revealedRotation;
       group.rotation.set(
         bx + rx * spreadP,
         byBase + ryBase * spreadP + layerRot.current[i],
@@ -949,8 +994,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     });
 
     if (shadowRef.current) {
-      // Shadow deepens slightly as layers spread (the cluster shadow is more
-      // diffuse; the separated stack casts a darker pool underneath).
+      // Shadow deepens slightly as layers spread.
       const shadowP = smoothStep(Math.max(0, Math.min(1, progress)));
       (shadowRef.current.material as THREE.MeshStandardMaterial).opacity =
         0.18 + shadowP * 0.10;
@@ -973,14 +1017,16 @@ function BurgerExplodedView({ active }: { active: boolean }) {
           />
         </mesh>
 
-        <group ref={g0}><BurgerLayerGLB path={BURGER_LAYER_PATHS[0]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[0]} /></group>
-        <group ref={g1}><BurgerLayerGLB path={BURGER_LAYER_PATHS[1]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[1]} /></group>
-        <group ref={g2}><BurgerLayerGLB path={BURGER_LAYER_PATHS[2]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[2]} /></group>
-        <group ref={g3}><BurgerLayerGLB path={BURGER_LAYER_PATHS[3]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[3]} /></group>
-        <group ref={g4}><BurgerLayerGLB path={BURGER_LAYER_PATHS[4]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[4]} /></group>
-        <group ref={g5}><BurgerLayerGLB path={BURGER_LAYER_PATHS[5]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[5]} /></group>
-        <group ref={g6}><BurgerLayerGLB path={BURGER_LAYER_PATHS[6]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[6]} /></group>
-        <group ref={g7}><BurgerLayerGLB path={BURGER_LAYER_PATHS[7]} doubleSide={BURGER_LAYER_DOUBLE_SIDE[7]} /></group>
+        {BURGER_LAYERS.map((layer, i) => (
+          <group
+            key={layer.path}
+            ref={(el) => {
+              groupRefs.current[i] = el;
+            }}
+          >
+            <BurgerLayerGLB path={layer.path} doubleSide={layer.doubleSide} />
+          </group>
+        ))}
       </group>
     </group>
   );
