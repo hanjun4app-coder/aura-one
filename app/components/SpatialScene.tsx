@@ -38,6 +38,10 @@ const CAROUSEL_PARTS = [
     name: "Chef's Dessert Combo",
     description: "Warm chocolate fondant with vanilla bean ice cream.",
   },
+  {
+    name: "Crispy Fried Chicken",
+    description: "Buttermilk-brined chicken, house spice crust, honey-thyme drizzle.",
+  },
 ] as const;
 
 const BURGER_INGREDIENTS = [
@@ -49,7 +53,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 15.50, 7.90, 6.50, 12.80];
+const ITEM_PRICES = [18.90, 15.50, 7.90, 6.50, 12.80, 14.50];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -96,6 +100,15 @@ const FOOD_INSPECT_DATA = [
     flavorProfile: "Warm, chocolatey, rich, cooling",
     ingredients: "Dark chocolate · butter · egg · flour · vanilla bean ice cream",
     chefNote: "Warm fondant paired with housemade vanilla bean ice cream.",
+  },
+  {
+    special: null,
+    calories: "560 kcal",
+    protein: "32g",
+    allergens: "Wheat, dairy, egg",
+    flavorProfile: "Crispy, savory, herbal, lightly sweet",
+    ingredients: "Buttermilk-brined chicken · seasoned flour · fresh herbs · honey-thyme glaze",
+    chefNote: "Brined overnight and double-coated in our house spice flour for an audible crust.",
   },
 ] as const;
 
@@ -1006,6 +1019,7 @@ useGLTF.preload("/models/california-roll.glb");
 useGLTF.preload("/models/fries.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/ice-cream.glb");
+useGLTF.preload("/models/fried%20chicken.glb");
 
 // Uniform scale applied to the whole burger group so it fits the viewport.
 const EXPLODED_STACK_SCALE = 0.72;
@@ -1537,6 +1551,36 @@ function SpatialMenuCarousel({
         <FoodModel
           path="/models/ice-cream.glb"
           targetSize={0.92}
+        />
+      </Part>
+
+      {/* ── Item 5: Crispy Fried Chicken ── */}
+      <Part
+        partIndex={5}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        midPosition={[0.08, 0.86, 1.00]}
+        explodedPosition={[0, 0.18, 0]}
+        focusScale={1.26}
+        secondaryScale={0.65}
+        inspectZFocus={1.55}
+        inspectScaleMultiplier={1.48}
+        // Slots between coffee (0.07/0.21) and dessert (0.00/0.28) in the
+        // entrance stagger — arrives early-middle, leaves late-middle.
+        explodeDelay={0.035}
+        assembleDelay={0.245}
+        selfRotationAmount={0.17}
+        motionSeed={6}
+      >
+        <FoodModel
+          path="/models/fried%20chicken.glb"
+          targetSize={0.95}
+          rotationOffset={[0.10, 0, 0]}
         />
       </Part>
 
