@@ -711,6 +711,15 @@ type BurgerLayerConfig = {
   // Idle Y-axis spin speed (rad/sec), active only in revealed state.
   idleYRotSpeed: number;
   scale: number;
+  // Optional per-axis Y-scale multiplier (on top of uniform `scale`). Used to
+  // vertically squish ingredients whose GLB ships as a tall 3D shape — e.g.
+  // a lettuce head — so they read as a flat layer inside the burger.
+  scaleY?: number;
+  // Optional model-level rotation correction, applied INSIDE BurgerLayerGLB
+  // on the innermost wrapper (before any animation rotation composes on top).
+  // Mathematically equivalent to baseRotation, but kept separate so it can
+  // be reasoned about as a "fix the GLB's authoring orientation" knob.
+  modelRotationCorrection?: readonly [number, number, number];
   doubleSide: boolean;
 };
 
@@ -742,19 +751,30 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     doubleSide: true,
   },
   // 2 — LETTUCE  (lies fully flat — broad leaf surface faces up)
+  // The GLB ships as a 3D lettuce head whose dominant axis didn't align with
+  // any pure-axis rotation tried so far. We now apply the correction inside
+  // BurgerLayerGLB (as modelRotationCorrection) AND aggressively squish the
+  // local Y dimension so the result reads as a thin layer regardless of which
+  // axis was "tall" in the source asset.
   {
     path: "/models/burger-layers/lettuce%20(1).glb",
     name: "Lettuce",
-    assembledY:  0.18,
+    assembledY:  0.20,
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
-    // GLB ships oriented with leaf standing vertical — −π/2 X lays it flat
-    // with the broad surface facing upward (normal +Y).
-    baseRotation:    [-Math.PI / 2, 0, 0],
-    // Zero X/Z tilt: leaf stays parallel to the bun, no side lean.
-    revealedRotation:[ 0,            0, 0],
+    // baseRotation kept zero — let the corrected geometry be the rest pose.
+    baseRotation:    [ 0, 0, 0],
+    // Combined X + Z rotation (90° each). After both, any of the original
+    // ±X / ±Y / ±Z normal directions ends up mapped to ±Y or ±X — combined
+    // with the heavy local-Y squish below, the leaf reads as a thin pad.
+    modelRotationCorrection: [Math.PI / 2, 0, Math.PI / 2],
+    revealedRotation:[ 0, 0, 0],
     idleYRotSpeed:  0.016,
-    scale: 0.78,
+    scale: 0.80,
+    // Heavy local-Y squish (40% of uniform scale). Whatever axis the GLB's
+    // "tall" dimension is, the squish guarantees the visible height is small
+    // — the leaf cannot remain visually upright.
+    scaleY: 0.40,
     doubleSide: true,
   },
   // 3 — TOMATO
@@ -880,16 +900,36 @@ const EXPLODED_STACK_SCALE = 0.72;
 // Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
 // Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
 // a layer is fading. This prevents see-through artifacts on fully-revealed ingredients.
-function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolean }) {
+function BurgerLayerGLB({
+  path,
+  doubleSide,
+  modelRotationCorrection,
+}: {
+  path: string;
+  doubleSide: boolean;
+  modelRotationCorrection?: readonly [number, number, number];
+}) {
   const { scene } = useGLTF(path);
 
+  // Box3 must be measured AFTER applying any rotation correction so the
+  // center offset still centers the visible geometry (a rotated leaf has a
+  // different bounding center than its unrotated form).
   const { center, normalizedScale } = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(scene);
+    // Apply the correction temporarily on a math object — we don't mutate
+    // the scene itself; the correction is applied via a wrapper <group> in
+    // the JSX below. But we DO want the bounds to be measured at world
+    // orientation so centering is correct.
+    const tmp = scene.clone(true);
+    if (modelRotationCorrection) {
+      tmp.rotation.set(...modelRotationCorrection);
+      tmp.updateMatrixWorld(true);
+    }
+    const box = new THREE.Box3().setFromObject(tmp);
     const size = box.getSize(new THREE.Vector3());
     const c = box.getCenter(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     return { center: c, normalizedScale: maxDim > 0 ? 0.85 / maxDim : 1 };
-  }, [scene]);
+  }, [scene, modelRotationCorrection]);
 
   useEffect(() => {
     scene.traverse((obj) => {
@@ -921,7 +961,12 @@ function BurgerLayerGLB({ path, doubleSide }: { path: string; doubleSide: boolea
   return (
     <group scale={normalizedScale}>
       <group position={[-center.x, -center.y, -center.z]}>
-        <primitive object={scene} />
+        {/* Model-level rotation correction. Applied INSIDE the centering
+            wrapper so the corrected geometry stays centered on origin and
+            the outer animation rotation composes on top of this correction. */}
+        <group rotation={modelRotationCorrection ?? [0, 0, 0]}>
+          <primitive object={scene} />
+        </group>
       </group>
     </group>
   );
@@ -965,7 +1010,13 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       group.position.z = THREE.MathUtils.lerp(0, layer.revealedOffset[1], spreadP);
 
       // Per-layer scale.
-      group.scale.setScalar(layer.scale);
+      // Per-layer uniform scale, with optional Y-axis squish for ingredients
+      // that ship as a tall 3D shape (e.g. lettuce head).
+      group.scale.set(
+        layer.scale,
+        layer.scale * (layer.scaleY ?? 1),
+        layer.scale
+      );
 
       // Base rotation always applied (corrects GLB orientation — e.g. lettuce
       // ships standing vertically and needs +π/2 X to lay flat).
@@ -993,7 +1044,11 @@ function BurgerExplodedView({ active }: { active: boolean }) {
               groupRefs.current[i] = el;
             }}
           >
-            <BurgerLayerGLB path={layer.path} doubleSide={layer.doubleSide} />
+            <BurgerLayerGLB
+              path={layer.path}
+              doubleSide={layer.doubleSide}
+              modelRotationCorrection={layer.modelRotationCorrection}
+            />
           </group>
         ))}
       </group>
