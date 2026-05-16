@@ -732,6 +732,13 @@ type BurgerLayerConfig = {
   // <1 = lighter (faster). Used to give buns / patty a slight heft while
   // bacon / lettuce / onion ring read as lighter. Defaults to 1.0.
   weight?: number;
+  // Optional per-layer PBR tuning. All three default to the BurgerLayerGLB
+  // baseline (metalness 0 / roughness capped at 0.88 / envMap 0.72) and only
+  // override when a value is explicitly set. Textures (baseColor, normal,
+  // ORM) are always preserved — no color tinting here.
+  materialMetalness?: number;
+  materialRoughness?: number;
+  materialEnvMapIntensity?: number;
   doubleSide: boolean;
 };
 
@@ -786,6 +793,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // +12% from 0.82 — bun frames the burger more prominently
     scale: 0.92,
     weight: 1.10,  // heavier bun — lifts first on reveal, settles last on reassemble
+    // Matte bread — no plastic shine. Higher roughness, lower env reflection.
+    materialMetalness: 0,
+    materialRoughness: 0.88,
+    materialEnvMapIntensity: 0.50,
     doubleSide: false,
   },
   // 1 — BACON  (moved up into the old sauce slot, sits directly under top bun)
@@ -803,6 +814,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // +15% from 0.78 — bacon reads more clearly across the burger
     scale: 0.90,
     weight: 0.85,  // light strips — quick to spread
+    // Subtle fat sheen — slightly glossier than bun, still not plastic.
+    materialMetalness: 0.05,
+    materialRoughness: 0.55,
+    materialEnvMapIntensity: 0.85,
     doubleSide: true,
   },
   // 2 — LETTUCE  (lettuce2.glb — orientation corrected via test harness)
@@ -822,6 +837,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // +10% from 1.00 — leaf extends further past inner layers
     scale: 1.10,
     weight: 0.85,  // light leaf
+    // Soft sheen from moisture; not glossy enough to read as plastic.
+    materialMetalness: 0,
+    materialRoughness: 0.65,
+    materialEnvMapIntensity: 0.75,
     doubleSide: true,
   },
   // 3 — TOMATO
@@ -836,6 +855,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed: -0.018,
     scale: 0.88,
     weight: 0.95,  // medium slice
+    // Wet slice — glossy but not glass. Low roughness + high env reflection.
+    materialMetalness: 0.02,
+    materialRoughness: 0.35,
+    materialEnvMapIntensity: 0.95,
     doubleSide: true,
   },
   // 4 — ONION RING (onion ring2.glb still vertical — testing candidate rotations)
@@ -852,6 +875,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed:  0.022,
     scale: 0.85,
     weight: 0.90,  // light ring
+    // Light fried surface — slight sheen, not glossy.
+    materialMetalness: 0,
+    materialRoughness: 0.55,
+    materialEnvMapIntensity: 0.80,
     doubleSide: true,
   },
   // 5 — CHEESE
@@ -866,6 +893,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed: -0.014,
     scale: 0.90,
     weight: 0.95,  // medium slice
+    // Soft matte cheese with slight sheen — never metallic.
+    materialMetalness: 0,
+    materialRoughness: 0.50,
+    materialEnvMapIntensity: 0.65,
     doubleSide: true,
   },
   // 6 — PATTY  (near-flat tilt; preserve grilled top via subtle X tilt + camera angle)
@@ -880,6 +911,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     idleYRotSpeed: -0.026,
     scale: 0.95,
     weight: 1.15,  // heaviest — patty as the anchor
+    // Rough grilled surface — high roughness, modest env so it doesn't go dead black.
+    materialMetalness: 0,
+    materialRoughness: 0.78,
+    materialEnvMapIntensity: 0.55,
     doubleSide: false,
   },
   // 7 — BOTTOM BUN
@@ -895,6 +930,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // +10% from 0.82 — bottom bun supports the burger more visually
     scale: 0.90,
     weight: 1.10,  // heavy bun
+    // Matte bread — matches top bun.
+    materialMetalness: 0,
+    materialRoughness: 0.88,
+    materialEnvMapIntensity: 0.50,
     doubleSide: false,
   },
 ];
@@ -959,10 +998,16 @@ function BurgerLayerGLB({
   path,
   doubleSide,
   modelRotationCorrection,
+  materialMetalness,
+  materialRoughness,
+  materialEnvMapIntensity,
 }: {
   path: string;
   doubleSide: boolean;
   modelRotationCorrection?: readonly [number, number, number];
+  materialMetalness?: number;
+  materialRoughness?: number;
+  materialEnvMapIntensity?: number;
 }) {
   const { scene } = useGLTF(path);
 
@@ -999,19 +1044,25 @@ function BurgerLayerGLB({
         m.transparent = false;
         m.depthWrite = true;
         m.opacity = 1;
-        m.envMapIntensity = 0.72;
-        // Tripo GLBs omit metallicFactor/roughnessFactor — Three.js GLTF defaults to
-        // metalness=1, roughness=1, which renders black without an env map.
-        // Force metalness to 0 to restore warm food color from texture.
-        m.metalness = 0;
-        // Only cap the roughness ceiling; preserve per-texture relative differences.
-        m.roughness = Math.min(m.roughness, 0.88);
+        // PBR tuning: prefer the per-layer override when supplied; otherwise
+        // fall back to a safe baseline that compensates for Tripo GLBs
+        // (which omit metallicFactor / roughnessFactor and would default to
+        // metalness=1 / roughness=1 — dead black without an env map).
+        m.metalness = materialMetalness ?? 0;
+        m.roughness = materialRoughness ?? Math.min(m.roughness, 0.88);
+        m.envMapIntensity = materialEnvMapIntensity ?? 0.72;
         // DoubleSide only for thin ingredients where the back face would otherwise be culled.
         m.side = doubleSide ? THREE.DoubleSide : THREE.FrontSide;
         m.needsUpdate = true;
       });
     });
-  }, [scene, doubleSide]);
+  }, [
+    scene,
+    doubleSide,
+    materialMetalness,
+    materialRoughness,
+    materialEnvMapIntensity,
+  ]);
 
   return (
     <group scale={normalizedScale}>
@@ -1118,6 +1169,9 @@ function BurgerExplodedView({ active }: { active: boolean }) {
               path={layer.path}
               doubleSide={layer.doubleSide}
               modelRotationCorrection={layer.modelRotationCorrection}
+              materialMetalness={layer.materialMetalness}
+              materialRoughness={layer.materialRoughness}
+              materialEnvMapIntensity={layer.materialEnvMapIntensity}
             />
           </group>
         ))}
