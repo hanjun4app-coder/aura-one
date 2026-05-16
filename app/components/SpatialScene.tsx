@@ -149,6 +149,13 @@ const EXIT_INSPECT_COOLDOWN_MS = 2500;          // post-exit lockout prevents do
 const PALM_HOLD_DURATION_MS = 900;
 const PALM_HOLD_STABLE_THRESHOLD = 0.012;
 const BURGER_EXPLODE_COOLDOWN_MS = 2000;
+// Fist → open-palm reveal gesture (Burger Inspect only).
+// Armed on a fist pulse; fires when the hand stays open & not-fist for
+// FIST_OPEN_PALM_STABLE_MS, as long as the armed state hasn't timed out.
+// The stability window lets the double-fist add-to-order gesture take
+// precedence when the user does fist → quick open → fist within ~250ms.
+const FIST_OPEN_PALM_WINDOW_MS = 1500;
+const FIST_OPEN_PALM_STABLE_MS = 280;
 
 const LOGO_TEXT = "AURA ONE";
 const LOGO_LETTERS: Record<string, string[]> = {
@@ -205,6 +212,7 @@ type CameraGestureStatus =
   | "EXIT INSPECT"
   | "REVEALING LAYERS"
   | "ASSEMBLING BURGER"
+  | "OPEN PALM TO REVEAL"
   | "CAMERA ERROR";
 
 
@@ -779,7 +787,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/bacon%20(1).glb",
     name: "Bacon",
-    assembledY:  0.22,
+    // Lowered 0.22 → 0.16 so bacon integrates more into the stack and isn't
+    // peeking too high against the top bun (0.24).
+    assembledY:  0.16,
     revealedY:   1.00,
     revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
@@ -1685,10 +1695,12 @@ function CameraGestureLayer({
   onGesture,
   inspectMode,
   burgerExploded,
+  activePartIndex,
 }: {
   onGesture: (action: GestureAction) => void;
   inspectMode: boolean;
   burgerExploded: boolean;
+  activePartIndex: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
@@ -1714,6 +1726,13 @@ function CameraGestureLayer({
   const palmHoldStartRef = useRef<number | null>(null);
   const lastBurgerExplodeTimeRef = useRef(0);
   const burgerExplodedRef = useRef(burgerExploded);
+  const activePartIndexRef = useRef(activePartIndex);
+  // Fist → open-palm reveal gesture state.
+  //   armedAtRef = timestamp the gesture armed (on a fist pulse), or null.
+  //   palmStableStartRef = first frame the post-fist open palm became stable,
+  //                        used to wait FIST_OPEN_PALM_STABLE_MS before firing.
+  const fistOpenArmedAtRef = useRef<number | null>(null);
+  const fistOpenPalmStableStartRef = useRef<number | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStatus, setCameraStatus] =
     useState<CameraGestureStatus>("CAMERA OFF");
@@ -1738,6 +1757,14 @@ function CameraGestureLayer({
   );
 
   useEffect(() => { burgerExplodedRef.current = burgerExploded; }, [burgerExploded]);
+  useEffect(() => { activePartIndexRef.current = activePartIndex; }, [activePartIndex]);
+  // Reset the fist→open arm whenever we exit inspect or switch off the burger.
+  useEffect(() => {
+    if (!inspectMode || activePartIndex !== 0) {
+      fistOpenArmedAtRef.current = null;
+      fistOpenPalmStableStartRef.current = null;
+    }
+  }, [inspectMode, activePartIndex]);
 
   const releaseCameraResources = useCallback(() => {
     if (frameRef.current !== null) {
@@ -1760,6 +1787,8 @@ function CameraGestureLayer({
     openFramesSinceLastFistRef.current = 255;
     palmHoldStartRef.current = null;
     lastBurgerExplodeTimeRef.current = 0;
+    fistOpenArmedAtRef.current = null;
+    fistOpenPalmStableStartRef.current = null;
     handLandmarkerRef.current?.close?.();
     handLandmarkerRef.current = null;
 
@@ -1862,6 +1891,69 @@ function CameraGestureLayer({
         }
         const isFistPulse = isFist && !prevIsFistRef.current; // rising edge only
         prevIsFistRef.current = isFist;
+
+        // ── Burger reveal: fist → open palm gesture ────────────────────────────
+        // Active only in Burger Inspect Mode. State machine:
+        //   1. Fist pulse → arm state, show "OPEN PALM TO REVEAL" hint.
+        //   2. Hand released to open palm, held stable for FIST_OPEN_PALM_STABLE_MS
+        //      → fire TOGGLE_BURGER_EXPLODE.
+        //   3. If the window expires (FIST_OPEN_PALM_WINDOW_MS) → reset silently.
+        // The stability requirement gives double-fist add-to-order priority when
+        // the user does fist → quick-open → fist within ~250ms (the second fist
+        // closes the hand before the open palm stabilises, so reveal cancels).
+        const inBurgerInspect =
+          inspectMode && activePartIndexRef.current === 0;
+        if (inBurgerInspect) {
+          // Arm on fist pulse (respect the standard burger-explode cooldown so
+          // we don't accidentally chain a reveal with an E-key or palm-hold one).
+          if (
+            isFistPulse &&
+            fistOpenArmedAtRef.current === null &&
+            now - lastBurgerExplodeTimeRef.current > BURGER_EXPLODE_COOLDOWN_MS
+          ) {
+            fistOpenArmedAtRef.current = now;
+            fistOpenPalmStableStartRef.current = null;
+            statusHoldUntilRef.current = now + FIST_OPEN_PALM_WINDOW_MS;
+            updateStatus("OPEN PALM TO REVEAL");
+          }
+
+          // Tick the armed state.
+          if (fistOpenArmedAtRef.current !== null) {
+            const armedElapsed = now - fistOpenArmedAtRef.current;
+            if (armedElapsed > FIST_OPEN_PALM_WINDOW_MS) {
+              // Timeout — reset silently.
+              fistOpenArmedAtRef.current = null;
+              fistOpenPalmStableStartRef.current = null;
+            } else if (!isFist && isHandOpen) {
+              // Hand is open and not a fist — start / continue stability timer.
+              if (fistOpenPalmStableStartRef.current === null) {
+                fistOpenPalmStableStartRef.current = now;
+              } else if (
+                now - fistOpenPalmStableStartRef.current >= FIST_OPEN_PALM_STABLE_MS
+              ) {
+                // Stable open palm long enough — fire.
+                fistOpenArmedAtRef.current = null;
+                fistOpenPalmStableStartRef.current = null;
+                lastBurgerExplodeTimeRef.current = now;
+                statusHoldUntilRef.current = now + 1400;
+                // Clear any armed double-fist so a stray second fist now
+                // doesn't accidentally add-to-order.
+                fistPulseCountRef.current = 0;
+                updateStatus(
+                  burgerExplodedRef.current ? "ASSEMBLING BURGER" : "REVEALING LAYERS"
+                );
+                onGesture("TOGGLE_BURGER_EXPLODE");
+              }
+            } else {
+              // Either still in a fist or hand isn't open enough — reset stability.
+              fistOpenPalmStableStartRef.current = null;
+            }
+          }
+        } else if (fistOpenArmedAtRef.current !== null) {
+          // We left burger inspect while armed — clear the gesture.
+          fistOpenArmedAtRef.current = null;
+          fistOpenPalmStableStartRef.current = null;
+        }
 
         // ── Inspect gesture: open palm approaching / retreating ───────────────
         // Accumulate palm-size samples only when hand is genuinely open and not a fist.
@@ -2659,7 +2751,12 @@ export default function SpatialScene() {
         className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
         style={{ background: "linear-gradient(to top, rgba(14,9,3,0.26) 0%, transparent 42%)" }}
       />
-      <CameraGestureLayer onGesture={applyGestureAction} inspectMode={inspectMode} burgerExploded={burgerExploded} />
+      <CameraGestureLayer
+        onGesture={applyGestureAction}
+        inspectMode={inspectMode}
+        burgerExploded={burgerExploded}
+        activePartIndex={activePartIndex}
+      />
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
