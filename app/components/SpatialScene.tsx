@@ -411,7 +411,7 @@ function Part({
   inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
-  const activeLightRef = useRef<THREE.PointLight>(null);
+  const activeLightRef = useRef<THREE.SpotLight>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
   const manualRotationRef = useRef(new THREE.Vector2());
   const manualRotationTargetRef = useRef(new THREE.Vector2());
@@ -583,9 +583,12 @@ function Part({
       1 - Math.exp(-delta * 3.8)
     );
     if (activeLightRef.current) {
-      // Warm premium overhead spotlight — significantly stronger in inspect.
+      // Cinematic top spotlight. Two intensity tiers driven by highlightRef
+      // (which fades in as the item arrives at the active slot):
+      //   carousel front: 1.4× — hero feel before inspect
+      //   inspect mode:   3.4× — full key on the hero
       activeLightRef.current.intensity =
-        highlightRef.current * (isInspectActive ? 2.6 : 0.28);
+        highlightRef.current * (isInspectActive ? 3.4 : 1.4);
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -614,8 +617,10 @@ function Part({
     // Inactive items pushed wider and deeper for strong spatial separation.
     const inspectX = slot === 0 ? 0 : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
+    // Y is lifted +0.25 toward screen center so the hero sits closer to the
+    // optical center under inspect (better balance against the bottom HUD).
     const inspectY = slot === 0
-      ? Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
+      ? 0.25 + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
       : -0.18 - slotDistance * 0.14;
     const inspectZ = slot === 0 ? inspectZFocus : -5.8 - slotDistance * 2.2;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
@@ -691,12 +696,18 @@ function Part({
   return (
     <group ref={groupRef}>
       {children}
-      <pointLight
+      {/* Cinematic top spotlight. Positioned high and slightly forward, aimed
+          down at the item center. Soft penumbra + warm food-commercial color
+          for a luxury product-spotlight feel. Fades up via activeLightRef. */}
+      <spotLight
         ref={activeLightRef}
-        color="#fff8ec"
-        distance={5.2}
+        color="#ffd8a8"
+        position={[0, 3.8, 0.6]}
+        angle={0.62}
+        penumbra={0.75}
+        distance={9}
+        decay={1.4}
         intensity={0}
-        position={[0, 1.9, 0.9]}
       />
     </group>
   );
@@ -2703,6 +2714,11 @@ export default function SpatialScene() {
   const [trayGlow, setTrayGlow] = useState(false);
   const [orderToastVisible, setOrderToastVisible] = useState(false);
   const orderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Hero-pause timer — ENTER_INSPECT defers setInspectMode(true) by 220ms so
+  // the active spotlight gets a brief settle moment on screen before the
+  // inspect transition takes over. Kept in a ref so we can cancel cleanly
+  // if the user exits / re-fires before it lands.
+  const inspectEnterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevTotalItemCountRef = useRef(0);
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
@@ -2914,6 +2930,12 @@ export default function SpatialScene() {
 
     if (action === "EXIT_INSPECT") {
       resetInspectRotation();
+      // Cancel any pending hero-pause inspect entry so a fast enter→exit
+      // doesn't get flipped back on by the trailing setTimeout.
+      if (inspectEnterTimerRef.current) {
+        clearTimeout(inspectEnterTimerRef.current);
+        inspectEnterTimerRef.current = null;
+      }
       if (inspectModeRef.current) {
         setBurgerExploded(false);
         setInspectMode(false);
@@ -2924,7 +2946,17 @@ export default function SpatialScene() {
     }
 
     if (action === "ENTER_INSPECT") {
-      if (explodedRef.current) setInspectMode(true);
+      if (!explodedRef.current) return;
+      // Cinematic 220ms hero pause: the spotlight fades up on the active item
+      // for a beat before the inspect transition begins. Subsequent ENTER
+      // triggers within the window collapse onto the same pending flip.
+      if (inspectEnterTimerRef.current) {
+        clearTimeout(inspectEnterTimerRef.current);
+      }
+      inspectEnterTimerRef.current = setTimeout(() => {
+        inspectEnterTimerRef.current = null;
+        if (explodedRef.current) setInspectMode(true);
+      }, 220);
       return;
     }
 
