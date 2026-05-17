@@ -301,7 +301,7 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     productInfoClassName: isPhone
       ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[30vh] p-4"
       : isTabletPortrait
-        ? "bottom-[4.25rem] left-1/2 w-[min(17rem,calc(100vw-2rem))] max-h-[29vh] -translate-x-1/2 p-4"
+        ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)] left-[6vw] w-[78vw] max-h-[21vh] p-3"
         : isTabletLandscape
           ? "bottom-[4.75rem] right-4 w-[min(16rem,calc(38vw-1rem))] max-h-[39vh] p-4"
           : "bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] p-5 md:p-6",
@@ -323,12 +323,12 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.revealY = -0.02;
     layout.revealZ = -0.18;
   } else if (mode === "ipad-portrait") {
-    layout.inspectX = -0.04;
-    layout.inspectY = 0.24;
+    layout.inspectX = 0.02;
+    layout.inspectY = 0.30;
     layout.inspectZOffset = -0.24;
-    layout.revealScale = 0.50;
-    layout.revealX = -0.02;
-    layout.revealY = -0.06;
+    layout.revealScale = 0.48;
+    layout.revealX = 0;
+    layout.revealY = -0.03;
     layout.revealZ = -0.18;
   } else if (mode === "ipad-landscape") {
     layout.inspectX = -0.36;
@@ -3890,6 +3890,12 @@ export default function SpatialScene() {
     openMenu();
   }, [logIntroDev, openMenu]);
 
+  const burgerRevealOpen = burgerExploded && inspectMode && activePartIndex === 0;
+  const productInfoClassName =
+    burgerRevealOpen && sceneLayout.mode === "ipad-portrait"
+      ? "top-[calc(env(safe-area-inset-top)+4.5rem)] left-[5vw] w-[min(14rem,42vw)] max-h-[20vh] p-3"
+      : sceneLayout.productInfoClassName;
+
   return (
     <div className="absolute inset-0 overflow-hidden" onPointerDownCapture={requestImmersiveFullscreen}>
       {/* Intro breathing keyframes — subtle 3s loop on the wordmark + a slightly
@@ -4030,7 +4036,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute ${sceneLayout.productInfoClassName} overflow-y-auto border border-white/18 bg-white/26 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/18 bg-white/26 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
