@@ -764,6 +764,13 @@ type BurgerLayerConfig = {
   // <1 = lighter (faster). Used to give buns / patty a slight heft while
   // bacon / lettuce / onion ring read as lighter. Defaults to 1.0.
   weight?: number;
+  // Post-normalization width tuning. `scale` alone can't fix mismatched
+  // rendered diameters because BurgerLayerGLB normalises the *max* bbox
+  // axis, not specifically the horizontal extent — a tall bun and a flat
+  // patty at the same `scale` produce different visible widths. Use this
+  // multiplier to dial each ingredient's final rendered diameter against
+  // the top-bun as the reference. Defaults to 1.0.
+  visualScaleMultiplier?: number;
   // Optional per-layer PBR tuning. All three default to the BurgerLayerGLB
   // baseline (metalness 0 / roughness capped at 0.88 / envMap 0.72) and only
   // override when a value is explicitly set. Textures (baseColor, normal,
@@ -946,11 +953,12 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
     idleYRotSpeed: -0.026,
-    // Pulled back 1.10 → 1.02. Still ~+7 % over the 0.95 baseline so the
-    // grilled edge peeks past cheese (0.78) by ~0.24 — clearly visible —
-    // without the patty becoming visually oversized. Visibility comes
-    // primarily from the cheese being smaller, not the patty being bigger.
-    scale: 1.02,
+    // `scale` was already pulled back to top-bun parity, but the patty GLB's
+    // bbox is wider on the horizontal axis than the top-bun's, so even at
+    // the same `scale` the rendered diameter is larger. `visualScaleMultiplier`
+    // applies AFTER the bbox normalisation to dial the *rendered* width.
+    scale: 0.92,
+    visualScaleMultiplier: 0.85,  // ~15 % rendered width reduction
     weight: 1.15,  // heaviest — patty as the anchor
     // Rough grilled surface — high roughness, modest env so it doesn't go dead black.
     materialMetalness: 0,
@@ -968,10 +976,12 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
     idleYRotSpeed:  0.018,
-    // Pulled back 1.10 → 0.98 — bottom bun sits just slightly wider than the
-    // top bun (0.92) so it reads as a steady foundation without becoming an
-    // oversized plate that draws attention away from the body of the burger.
+    // bottom.glb's authored bbox is wider on the horizontal axis than
+    // top-bun.glb's, so even at parity `scale` it renders larger. Use the
+    // post-normalisation multiplier to dial rendered diameter to match the
+    // top-bun reference.
     scale: 0.98,
+    visualScaleMultiplier: 0.88,  // ~12 % rendered width reduction
     weight: 1.10,  // heavy bun
     // Matte bread — matches top bun.
     materialMetalness: 0,
@@ -1086,8 +1096,22 @@ function BurgerLayerGLB({
     const size = box.getSize(new THREE.Vector3());
     const c = box.getCenter(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
-    return { center: c, normalizedScale: maxDim > 0 ? 0.85 / maxDim : 1 };
-  }, [scene, modelRotationCorrection]);
+    const norm = maxDim > 0 ? 0.85 / maxDim : 1;
+    // Diagnostic: print the GLB's raw bbox + its normalised post-scale width
+    // (X axis) so we can confirm which layers come out wider than expected
+    // after the maxDim normalisation. Logs ONCE per GLB on mount.
+    if (typeof window !== "undefined") {
+      const widthAfterNorm = size.x * norm;
+      const heightAfterNorm = size.y * norm;
+      const depthAfterNorm = size.z * norm;
+      console.info(
+        `[BurgerLayerGLB] ${path}  raw=(${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})  ` +
+        `maxDim=${maxDim.toFixed(2)}  norm=${norm.toFixed(3)}  ` +
+        `post-norm width=${widthAfterNorm.toFixed(2)}  height=${heightAfterNorm.toFixed(2)}  depth=${depthAfterNorm.toFixed(2)}`
+      );
+    }
+    return { center: c, normalizedScale: norm };
+  }, [scene, modelRotationCorrection, path]);
 
   useEffect(() => {
     scene.traverse((obj) => {
@@ -1189,13 +1213,15 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       group.position.z = THREE.MathUtils.lerp(0, layer.revealedOffset[1], spreadP);
 
       // Per-layer scale.
-      // Per-layer uniform scale, with optional Y-axis squish for ingredients
-      // that ship as a tall 3D shape (e.g. lettuce head).
-      group.scale.set(
-        layer.scale,
-        layer.scale * (layer.scaleY ?? 1),
-        layer.scale
-      );
+      // Per-layer uniform scale. Three factors compose:
+      //   1. layer.scale                — author intent
+      //   2. layer.visualScaleMultiplier — post-normalization width fix
+      //   3. layer.scaleY (optional)    — Y-only squish for tall 3D shapes
+      // Multiplier (2) lets us dial individual GLBs to a target rendered
+      // width without changing the conceptual `scale` value.
+      const vm = layer.visualScaleMultiplier ?? 1;
+      const s = layer.scale * vm;
+      group.scale.set(s, s * (layer.scaleY ?? 1), s);
 
       // Base rotation always applied (corrects GLB orientation — e.g. lettuce
       // ships standing vertically and needs +π/2 X to lay flat).
