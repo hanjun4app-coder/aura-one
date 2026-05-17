@@ -236,6 +236,8 @@ type SceneLayout = {
   inspectX: number;
   inspectY: number;
   inspectZOffset: number;
+  carouselXOffset: number;
+  carouselYOffset: number;
   revealScale: number;
   revealX: number;
   revealY: number;
@@ -294,6 +296,8 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     inspectX: -0.60,
     inspectY: 0.42,
     inspectZOffset: 0,
+    carouselXOffset: 0,
+    carouselYOffset: 0,
     revealScale: BURGER_REVEAL_SCALE,
     revealX: 0,
     revealY: BURGER_REVEAL_Y_OFFSET,
@@ -323,9 +327,11 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.revealY = -0.02;
     layout.revealZ = -0.18;
   } else if (mode === "ipad-portrait") {
-    layout.inspectX = 0.02;
+    layout.inspectX = -0.28;
     layout.inspectY = 0.30;
     layout.inspectZOffset = -0.24;
+    layout.carouselXOffset = -0.48;
+    layout.carouselYOffset = 0.42;
     layout.revealScale = 0.54;
     layout.revealX = 0;
     layout.revealY = -0.03;
@@ -900,10 +906,14 @@ function Part({
       pathPosition.z +
       Math.sin(floatPhase * 0.8) * motion.driftAmount * separatedProgress +
       motion.dockDirection.z * motion.dockAmplitude * dockPulse;
+    const normalCarouselOffset = layout.mode === "ipad-portrait" ? 1 : 0;
+    const activeCarouselXOffset = normalCarouselOffset && slot === 0 ? 1 : 0;
     const neighborSpread = slotDistance === 1 ? 0.85 : slotDistance === 2 ? 0.35 : 0;
     const neighborDepthOffset = slotDistance === 1 ? 0.55 : 0;
-    const carouselX = Math.sin(angle) * (3.8 + neighborSpread);
-    const carouselY = 0.1 - depth * 0.52;
+    const carouselX =
+      Math.sin(angle) * (3.8 + neighborSpread) +
+      layout.carouselXOffset * activeCarouselXOffset;
+    const carouselY = 0.1 - depth * 0.52 + layout.carouselYOffset * normalCarouselOffset;
     const carouselZ = depth * 2.1 - side * 0.65 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     // Inactive items pushed wider and deeper for strong spatial separation.
