@@ -142,8 +142,9 @@ if (
 
 const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
+// Localized for kiosk/demo reliability; avoids runtime Google Storage model fetches.
 const HAND_LANDMARKER_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  "/mediapipe/models/hand_landmarker.task";
 
 // Swipe detection tuning — all distances are normalized palm-X (0.0–1.0).
 const SWIPE_WINDOW_MS = 350;              // rolling sample buffer
