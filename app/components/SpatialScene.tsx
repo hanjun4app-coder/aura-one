@@ -893,6 +893,12 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedRotation:[ 0.10,  0.25,    0],
     idleYRotSpeed: -0.018,
     scale: 0.88,
+    // Overall ~12 % rendered width reduction so the slice doesn't dominate
+    // the burger silhouette (X/Z dial-down via the post-norm multiplier).
+    visualScaleMultiplier: 0.88,
+    // Strong Y squish — tomato is a thin slice and should read that way.
+    // 0.65 of its post-norm height ≈ inside the spec's 0.55–0.75 range.
+    scaleY: 0.65,
     weight: 0.95,  // medium slice
     // Wet slice — glossy but not glass. Low roughness + high env reflection.
     materialMetalness: 0.02,
@@ -982,6 +988,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // top-bun reference.
     scale: 0.98,
     visualScaleMultiplier: 0.88,  // ~12 % rendered width reduction
+    // Y-only squish — bottom bun is too tall relative to its width; flatten
+    // to 0.72 of its post-norm height. Width/depth stay at the multiplier
+    // above so it still supports the stack at the correct diameter.
+    scaleY: 0.72,
     weight: 1.10,  // heavy bun
     // Matte bread — matches top bun.
     materialMetalness: 0,
