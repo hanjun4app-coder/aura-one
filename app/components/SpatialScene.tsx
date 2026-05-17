@@ -647,7 +647,10 @@ function Part({
     const carouselZ = depth * 2.1 - side * 0.65 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     // Inactive items pushed wider and deeper for strong spatial separation.
-    const inspectX = slot === 0 ? 0 : rearDirection * (5.0 + slotDistance * 1.0);
+    // Inspected hero nudged slightly left (−0.30) to put more breathing room
+    // between the product and the right-side info card. Off-slot items
+    // unchanged (still pushed to the rear edges).
+    const inspectX = slot === 0 ? -0.30 : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
     // Y lifted 0.25 → 0.42 (+0.17) so the inspected hero sits at "screen
     // center, slightly below" — closer to the optical center against the
@@ -2944,59 +2947,54 @@ function CameraGestureLayer({
   const isLoading = !isReady && !isError && cameraEnabled;
 
   return (
-    <>
-      {/* Top-right video pill — kept here while the camera is enabled.
-          Card + video always mounted so videoRef.current is never null when
-          enableCamera's async getUserMedia resolves. Hidden via sr-only when off. */}
-      <div className="absolute right-4 top-4 md:right-6 md:top-6">
-        <div className={cameraEnabled
-          ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
-          : "sr-only"
-        }>
-          <div className="relative aspect-video overflow-hidden bg-stone-100/60">
-            <video
-              ref={videoRef}
-              autoPlay
-              className="h-full w-full scale-x-[-1] object-cover"
-              muted
-              playsInline
-            />
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
-                <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between px-2.5 py-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
-                isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
-              }`} />
-              <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
-                {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
-              </p>
+    <div className="absolute right-4 top-4 flex flex-col items-end gap-2 md:right-6 md:top-6">
+      {/* Video pill — visible while camera is enabled. Mount kept always so
+          videoRef.current is never null when getUserMedia resolves. */}
+      <div className={cameraEnabled
+        ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
+        : "sr-only"
+      }>
+        <div className="relative aspect-video overflow-hidden bg-stone-100/60">
+          <video
+            ref={videoRef}
+            autoPlay
+            className="h-full w-full scale-x-[-1] object-cover"
+            muted
+            playsInline
+          />
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
+              <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
             </div>
-            <button
-              onClick={stopCamera}
-              className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
-            >
-              OFF
-            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
+              isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
+            }`} />
+            <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
+              {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
+            </p>
           </div>
+          <button
+            onClick={stopCamera}
+            className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
+          >
+            OFF
+          </button>
         </div>
       </div>
 
-      {/* Floating spatial hint — bottom-center, small rounded pill. Visible
-          only while the camera is off. Soft fade in/out via opacity transition
-          so the appearance never feels modal. Two display modes:
+      {/* Spatial hint — small rounded pill at the top-right. Visible only
+          while the camera is off; soft fade in/out via opacity transition so
+          the appearance never feels modal. Two display modes:
             - normal:      "Enable camera to interact"
-            - unavailable: "Camera unavailable" + tap-to-retry
-          The pill sits above the bottom AURA ONE wordmark / gesture hint
-          stack and does not block any product in the scene. */}
+            - unavailable: "Camera unavailable" + tap-to-retry */}
       <div
-        className={`absolute left-1/2 -translate-x-1/2 transition-opacity duration-700 bottom-[4.5rem] ${
-          cameraEnabled ? "pointer-events-none opacity-0" : "opacity-100"
+        className={`transition-opacity duration-700 ${
+          cameraEnabled ? "pointer-events-none h-0 opacity-0" : "opacity-100"
         }`}
       >
         <button
@@ -3013,7 +3011,7 @@ function CameraGestureLayer({
           </span>
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
