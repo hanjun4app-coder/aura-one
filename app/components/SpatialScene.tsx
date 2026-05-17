@@ -1918,6 +1918,62 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
   );
 }
 
+// Stationary stage spotlight at the front-center of the carousel. Items
+// rotate into the cone as they reach slot 0; this is distinct from the
+// per-Part `activeLightRef` spotlight that follows individual items.
+// Active when the menu is open AND we are not in inspect mode — fades out
+// cleanly as soon as inspect engages so the inspect lighting takes over.
+function CarouselCenterSpotlight({ active }: { active: boolean }) {
+  const mainRef = useRef<THREE.SpotLight>(null);
+  const fillRef = useRef<THREE.PointLight>(null);
+  const blendRef = useRef(0);
+
+  useFrame((_, delta) => {
+    blendRef.current = THREE.MathUtils.lerp(
+      blendRef.current,
+      active ? 1 : 0,
+      1 - Math.exp(-delta * 2.6)
+    );
+    const b = blendRef.current;
+    // Main top/front cinematic spotlight on the centered item.
+    if (mainRef.current) mainRef.current.intensity = b * 1.6;
+    // Soft front-warm fill below — extremely subtle pool that lifts the food
+    // underside without producing a visible disc on the stage.
+    if (fillRef.current) fillRef.current.intensity = b * 0.32;
+  });
+
+  return (
+    <>
+      {/* Main top-front spotlight — wide cone, soft penumbra, warm amber.
+          Sits above and forward of the active slot 0 dock position. Decay
+          is restrained so the cone actually lands on the food at the stage. */}
+      <spotLight
+        ref={mainRef}
+        position={[0, 4.2, 2.6]}
+        // Default target is (0,0,0) — exactly where slot 0 sits, so the cone
+        // points straight at the centered food item.
+        color="#ffd8a8"
+        angle={0.60}
+        penumbra={0.78}
+        distance={11}
+        decay={0.9}
+        intensity={0}
+      />
+      {/* Subtle warm fill from below-front — lifts shadowed undersides on
+          the centered item. Very tight distance keeps it from bleeding into
+          the carousel's rear items. No visible disc, no fake floor light. */}
+      <pointLight
+        ref={fillRef}
+        position={[0, -0.6, 2.4]}
+        color="#ffd6a0"
+        distance={3.8}
+        decay={1.4}
+        intensity={0}
+      />
+    </>
+  );
+}
+
 // Warm cinematic hero lighting for the assembled burger in inspect mode.
 // Distinct from InspectSceneLighting (which serves all items generically).
 // Six-light setup mirroring a food-commercial stage:
@@ -3322,6 +3378,11 @@ export default function SpatialScene() {
         <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
         <pointLight position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
         <InspectSceneLighting inspectMode={inspectMode} />
+        {/* Stationary front-center stage spotlight — active whenever the menu
+            is open AND we're not yet in inspect mode. Items rotate into its
+            cone as they arrive at slot 0; it fades out cleanly the moment
+            inspect engages so InspectSceneLighting can take over. */}
+        <CarouselCenterSpotlight active={exploded && !inspectMode} />
         <BurgerInspectLighting active={inspectMode && activePartIndex === 0 && !burgerExploded} />
         <BurgerExplodedLighting active={burgerExploded && inspectMode && activePartIndex === 0} />
         <BurgerAmbientFX active={inspectMode && activePartIndex === 0 && !burgerExploded} />
