@@ -1507,7 +1507,11 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.92, 1.05]}
         explodedPosition={[0, 0.18, 0]}
-        focusScale={1.22}
+        // Bumped 1.22 → 1.34 for carousel parity with the other premium items
+        // (1.34–1.48 band). Burger has an internal EXPLODED_STACK_SCALE = 0.78
+        // wrapper so its perceived size was running smaller than peers — this
+        // brings the hero in line with the rest of the showroom.
+        focusScale={1.34}
         secondaryScale={0.66}
         inspectZFocus={1.7}
         inspectScaleMultiplier={1.54}
@@ -1547,6 +1551,12 @@ function SpatialMenuCarousel({
           path="/models/steak.glb"
           targetSize={0.98}
           rotationOffset={[0.12, 0, 0]}
+          // Seared meat: subtle juice sheen on the surface but not glossy.
+          // Lower roughness + higher env catches warm spotlight on the
+          // grilled crust without making the steak look plastic-coated.
+          materialMetalness={0}
+          materialRoughness={0.48}
+          materialEnvMapIntensity={0.85}
         />
       </Part>
 
@@ -1620,6 +1630,11 @@ function SpatialMenuCarousel({
         <FoodModel
           path="/models/coffee.glb"
           targetSize={0.88}
+          // Coffee: matte ceramic-style cup with a hint of liquid sheen on
+          // the foam top. Restrained env so it doesn't read as glossy plastic.
+          materialMetalness={0}
+          materialRoughness={0.55}
+          materialEnvMapIntensity={0.68}
         />
       </Part>
 
@@ -1652,6 +1667,11 @@ function SpatialMenuCarousel({
           path="/models/dessert.glb"
           targetSize={0.90}
           rotationOffset={[0.06, 0, 0]}
+          // Dessert: cream/pastry — slightly glossy cream-top sheen with the
+          // env-map kicking in subtly along the topmost layer. No metalness.
+          materialMetalness={0}
+          materialRoughness={0.45}
+          materialEnvMapIntensity={0.80}
         />
       </Part>
 
@@ -1684,6 +1704,12 @@ function SpatialMenuCarousel({
           path="/models/fried%20chicken.glb"
           targetSize={0.95}
           rotationOffset={[0.10, 0, 0]}
+          // Crispy fried: roughness sits just over the food baseline so the
+          // breaded crust reads as textured-not-greasy. Modest env so the
+          // spotlight catches highlights along the crust ridges.
+          materialMetalness={0}
+          materialRoughness={0.58}
+          materialEnvMapIntensity={0.75}
         />
       </Part>
 
