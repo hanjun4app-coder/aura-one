@@ -1,8 +1,9 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
+import { useGLTF, useProgress } from "@react-three/drei";
 import {
+  Suspense,
   type MutableRefObject,
   type ReactNode,
   useCallback,
@@ -222,6 +223,97 @@ const AMBIENT_PARTICLE_COUNT = PERFORMANCE_MODE ? 260 : 700;
 const MAX_CANVAS_DPR = PERFORMANCE_MODE ? 1.5 : 2;
 const MATERIAL_OPACITY_EPSILON = 0.003;
 const CAROUSEL_VISIBLE_SLOT_DISTANCE = 2;
+const EXPLODED_STACK_SCALE = 0.78;
+const BURGER_REVEAL_SCALE = 0.62;
+const BURGER_REVEAL_Z_OFFSET = -0.55;
+const BURGER_REVEAL_Y_OFFSET = 0;
+
+type SceneLayout = {
+  isPhone: boolean;
+  isTablet: boolean;
+  isPortrait: boolean;
+  inspectPosition: [number, number, number];
+  burgerRevealScale: number;
+  burgerRevealOffset: [number, number, number];
+  productInfoClassName: string;
+  ingredientCardClassName: string;
+};
+
+function resolveSceneLayout(width: number, height: number): SceneLayout {
+  const isPortrait = height > width;
+  const isPhone = width < 700;
+  const isTablet = width >= 700 && width <= 1180;
+  const isTabletPortrait = isTablet && isPortrait;
+  const isTabletLandscape = isTablet && !isPortrait;
+
+  return {
+    isPhone,
+    isTablet,
+    isPortrait,
+    inspectPosition: isPhone
+      ? [0, 0.20, -0.32]
+      : isTabletPortrait
+        ? [-0.08, 0.28, -0.22]
+        : isTabletLandscape
+          ? [-0.34, 0.34, -0.12]
+          : [-0.60, 0.42, 0],
+    burgerRevealScale: isPhone
+      ? 0.48
+      : isTabletPortrait
+        ? 0.52
+        : isTabletLandscape
+          ? 0.56
+          : BURGER_REVEAL_SCALE,
+    burgerRevealOffset: isPhone
+      ? [0.02, -0.02, -0.18]
+      : isTabletPortrait
+        ? [0.06, -0.04, -0.14]
+        : isTabletLandscape
+          ? [0.18, -0.03, -0.10]
+          : [0, BURGER_REVEAL_Y_OFFSET, BURGER_REVEAL_Z_OFFSET],
+    productInfoClassName: isPhone
+      ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[30vh] p-4"
+      : isTabletPortrait
+        ? "bottom-[4.5rem] left-1/2 w-[min(18rem,calc(100vw-2rem))] max-h-[31vh] -translate-x-1/2 p-4"
+        : isTabletLandscape
+          ? "bottom-[5rem] right-4 w-[min(17rem,calc(42vw-1rem))] max-h-[40vh] p-4"
+          : "bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] p-5 md:p-6",
+    ingredientCardClassName: isPhone
+      ? "bottom-[4.25rem] left-4 w-[min(15rem,calc(100vw-2rem))] max-h-[34vh] translate-y-0"
+      : isTabletPortrait
+        ? "bottom-[4.5rem] left-1/2 w-[min(16rem,calc(100vw-2rem))] max-h-[32vh] -translate-x-1/2 translate-y-0"
+        : isTabletLandscape
+          ? "bottom-[4.75rem] left-4 w-[min(15rem,34vw)] max-h-[42vh] translate-y-0"
+          : "left-4 top-1/2 w-[min(17rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
+  };
+}
+
+function getSceneLayoutSnapshot() {
+  if (typeof window === "undefined") {
+    return resolveSceneLayout(1440, 900);
+  }
+
+  return resolveSceneLayout(window.innerWidth, window.innerHeight);
+}
+
+function useSceneLayout() {
+  const [layout, setLayout] = useState<SceneLayout>(getSceneLayoutSnapshot);
+
+  useEffect(() => {
+    const updateLayout = () => setLayout(getSceneLayoutSnapshot());
+
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+    window.addEventListener("orientationchange", updateLayout);
+
+    return () => {
+      window.removeEventListener("resize", updateLayout);
+      window.removeEventListener("orientationchange", updateLayout);
+    };
+  }, []);
+
+  return layout;
+}
 
 type GestureAction =
   | "EXPLODE"
@@ -442,6 +534,7 @@ function Part({
   carouselEnabled,
   inspectMode,
   inspectRotationRef,
+  layout,
 }: {
   partIndex: number;
   basePosition: [number, number, number];
@@ -466,6 +559,7 @@ function Part({
   carouselEnabled: boolean;
   inspectMode: boolean;
   inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
+  layout: SceneLayout;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const activeLightRef = useRef<THREE.SpotLight>(null);
@@ -489,6 +583,7 @@ function Part({
   const inspectBlendRef = useRef(0);
   const dimRef = useRef(0);
   const cullVisibilityRef = useRef(1);
+  const [contentMounted, setContentMounted] = useState(false);
   const inspectIdleYRef = useRef(0);
   const prevIsInspectActiveRef = useRef(false);
   const frozenParentRotationRef = useRef(new THREE.Euler());
@@ -550,6 +645,23 @@ function Part({
       });
     });
   }, []);
+
+  const renderSlot = wrappedSlot(partIndex, activePartIndex, totalParts);
+  const shouldMountContent =
+    carouselEnabled &&
+    (inspectMode
+      ? renderSlot === 0
+      : Math.abs(renderSlot) <= CAROUSEL_VISIBLE_SLOT_DISTANCE);
+
+  useEffect(() => {
+    const id = setTimeout(
+      () => setContentMounted(shouldMountContent),
+      shouldMountContent ? 0 : 420
+    );
+
+    return () => clearTimeout(id);
+  }, [shouldMountContent]);
+
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
@@ -737,15 +849,17 @@ function Part({
     // Stays well inside the visible X range (~±2.11 at the inspect plane)
     // so no product silhouette — including burger reveal — clips on the
     // left edge. Off-slot items unchanged.
-    const inspectX = slot === 0 ? -0.60 : rearDirection * (5.0 + slotDistance * 1.0);
+    const [inspectActiveX, inspectActiveY, inspectActiveZOffset] =
+      layout.inspectPosition;
+    const inspectX = slot === 0 ? inspectActiveX : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
     // Y lifted 0.25 → 0.42 (+0.17) so the inspected hero sits at "screen
     // center, slightly below" — closer to the optical center against the
     // bottom HUD while still leaving room above for the larger inspect scale.
     const inspectY = slot === 0
-      ? 0.42 + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
+      ? inspectActiveY + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
       : -0.18 - slotDistance * 0.14;
-    const inspectZ = slot === 0 ? inspectZFocus : -5.8 - slotDistance * 2.2;
+    const inspectZ = slot === 0 ? inspectZFocus + inspectActiveZOffset : -5.8 - slotDistance * 2.2;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     const dimTarget = inspectMode && slot !== 0 ? 1 : 0;
@@ -840,7 +954,7 @@ function Part({
 
   return (
     <group ref={setGroupRef}>
-      {children}
+      {contentMounted && <Suspense fallback={null}>{children}</Suspense>}
       {/* Cinematic top spotlight. Sits closer above the item (was at y=3.8,
           now y=2.6) with much lower decay (1.4 → 0.8) so the cone actually
           lands on the product instead of falling off in the 3-unit gap.
@@ -1131,8 +1245,6 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   },
 ];
 
-BURGER_LAYERS.forEach((layer) => useGLTF.preload(layer.path));
-
 function FoodModel({
   path,
   targetSize = 0.92,
@@ -1190,24 +1302,13 @@ function FoodModel({
     </group>
   );
 }
-useGLTF.preload("/models/steak.glb");
-useGLTF.preload("/models/oyster.glb");
-useGLTF.preload("/models/coffee.glb");
-useGLTF.preload("/models/dessert.glb");
-useGLTF.preload("/models/fried%20chicken.glb");
-useGLTF.preload("/models/crawfish.glb");
-
 // Uniform scale applied to the whole burger group so it fits the viewport.
 // Bumped 0.72 → 0.78 (+8.3 %) — the burger product as a whole reads larger
 // in both carousel and inspect without individually enlarging ingredients.
 // Conservative end of the spec's +8–15 % range so the revealed stack still
 // fits the inspect framing without clipping at extremes.
-const EXPLODED_STACK_SCALE = 0.78;
 // Reveal-only framing: the closed burger keeps the larger product scale, while
 // the opened layer stack backs away and shrinks enough to stay fully in frame.
-const BURGER_REVEAL_SCALE = 0.62;
-const BURGER_REVEAL_Z_OFFSET = -0.55;
-const BURGER_REVEAL_Y_OFFSET = 0;
 
 // Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
 // Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
@@ -1310,7 +1411,13 @@ function BurgerLayerGLB({
   );
 }
 
-function BurgerExplodedView({ active }: { active: boolean }) {
+function BurgerExplodedView({
+  active,
+  layout,
+}: {
+  active: boolean;
+  layout: SceneLayout;
+}) {
   // Single progress: 0 = assembled (looks like one burger), 1 = fully spread.
   const progressRef = useRef(0);
   const stackRef = useRef<THREE.Group>(null);
@@ -1345,18 +1452,24 @@ function BurgerExplodedView({ active }: { active: boolean }) {
     if (stackRef.current) {
       const stackScale = THREE.MathUtils.lerp(
         EXPLODED_STACK_SCALE,
-        BURGER_REVEAL_SCALE,
+        layout.burgerRevealScale,
         revealFrameP
       );
+      const [revealX, revealY, revealZ] = layout.burgerRevealOffset;
       stackRef.current.scale.setScalar(stackScale);
+      stackRef.current.position.x = THREE.MathUtils.lerp(
+        0,
+        revealX,
+        revealFrameP
+      );
       stackRef.current.position.y = THREE.MathUtils.lerp(
         0,
-        BURGER_REVEAL_Y_OFFSET,
+        revealY,
         revealFrameP
       );
       stackRef.current.position.z = THREE.MathUtils.lerp(
         0,
-        BURGER_REVEAL_Z_OFFSET,
+        revealZ,
         revealFrameP
       );
     }
@@ -1640,12 +1753,14 @@ function SpatialMenuCarousel({
   inspectMode,
   inspectRotationRef,
   burgerExploded,
+  layout,
 }: {
   exploded: boolean;
   activePartIndex: number;
   inspectMode: boolean;
   inspectRotationRef: MutableRefObject<{ x: number; y: number }>;
   burgerExploded: boolean;
+  layout: SceneLayout;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const progressRef = useRef(0);
@@ -1683,6 +1798,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.92, 1.05]}
         explodedPosition={[0, 0.18, 0]}
@@ -1703,7 +1819,10 @@ function SpatialMenuCarousel({
         freezeParentRotation={burgerExploded && inspectMode && activePartIndex === 0}
         motionSeed={1}
       >
-        <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
+        <BurgerExplodedView
+          active={burgerExploded && inspectMode && activePartIndex === 0}
+          layout={layout}
+        />
       </Part>
 
       {/* ── Item 1: Sushi Roll Combo ── */}
@@ -1715,6 +1834,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[-0.12, 0.86, 0.98]}
         explodedPosition={[0, 0.22, 0]}
@@ -1751,6 +1871,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.80, 1.08]}
         // Slightly elevated rest position so the oyster sits proud on stage.
@@ -1796,6 +1917,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[0.14, 0.88, 0.92]}
         explodedPosition={[0, 0.2, 0]}
@@ -1830,6 +1952,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.84, 1.02]}
         explodedPosition={[0, 0.16, 0]}
@@ -1867,6 +1990,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[0.08, 0.86, 1.00]}
         explodedPosition={[0, 0.18, 0]}
@@ -1905,6 +2029,7 @@ function SpatialMenuCarousel({
         carouselEnabled={exploded}
         inspectMode={inspectMode}
         inspectRotationRef={inspectRotationRef}
+        layout={layout}
         basePosition={[0, 0, 0]}
         midPosition={[-0.06, 0.84, 1.04]}
         // Slightly elevated rest position so the crawfish sits proud on stage.
@@ -3201,7 +3326,27 @@ function CameraGestureLayer({
   );
 }
 
+function MenuLoadingHint({ enabled }: { enabled: boolean }) {
+  const { active, progress } = useProgress();
+  const visible = enabled && active && progress < 100;
+
+  return (
+    <div
+      className={`pointer-events-none absolute left-1/2 top-[4.75rem] z-10 -translate-x-1/2 transition-opacity duration-500 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div className="border border-stone-200/24 bg-white/34 px-3 py-1.5 shadow-sm shadow-stone-300/12 backdrop-blur-md">
+        <p className="text-[0.46rem] tracking-[0.30em] text-stone-500/55">
+          Preparing menu
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function SpatialScene() {
+  const sceneLayout = useSceneLayout();
   const [exploded, setExploded] = useState(false);
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [inspectMode, setInspectMode] = useState(false);
@@ -3762,8 +3907,10 @@ export default function SpatialScene() {
           inspectMode={inspectMode}
           inspectRotationRef={inspectRotationRef}
           burgerExploded={burgerExploded}
+          layout={sceneLayout}
         />
       </Canvas>
+      <MenuLoadingHint enabled={landingPhase === "menu"} />
 
       {/* ── Inspect mode vignette — cinematic depth haze ── */}
       <div
@@ -3817,7 +3964,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] overflow-y-auto border border-white/18 bg-white/26 p-5 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 md:p-6 ${
+        className={`pointer-events-none absolute ${sceneLayout.productInfoClassName} overflow-y-auto border border-white/18 bg-white/26 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
@@ -3904,7 +4051,7 @@ export default function SpatialScene() {
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute left-4 top-1/2 w-[min(17rem,calc(100vw-2rem))] -translate-y-1/2 overflow-hidden border border-amber-200/22 bg-white/28 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl transition-all duration-700 md:left-6 ${
+        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/22 bg-white/28 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl transition-all duration-700 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "opacity-0"
