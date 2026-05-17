@@ -221,6 +221,7 @@ const PERFORMANCE_MODE = true;
 const AMBIENT_PARTICLE_COUNT = PERFORMANCE_MODE ? 260 : 700;
 const MAX_CANVAS_DPR = PERFORMANCE_MODE ? 1.5 : 2;
 const MATERIAL_OPACITY_EPSILON = 0.003;
+const CAROUSEL_VISIBLE_SLOT_DISTANCE = 2;
 
 type GestureAction =
   | "EXPLODE"
@@ -487,6 +488,7 @@ function Part({
   const positionInitializedRef = useRef(false);
   const inspectBlendRef = useRef(0);
   const dimRef = useRef(0);
+  const cullVisibilityRef = useRef(1);
   const inspectIdleYRef = useRef(0);
   const prevIsInspectActiveRef = useRef(false);
   const frozenParentRotationRef = useRef(new THREE.Euler());
@@ -584,6 +586,21 @@ function Part({
     const depth = Math.cos(angle);
     const side = Math.abs(Math.sin(angle));
     const slotDistance = Math.abs(slot);
+    const cullTarget = carouselEnabled
+      ? inspectMode
+        ? slot === 0
+          ? 1
+          : 0
+        : slotDistance <= CAROUSEL_VISIBLE_SLOT_DISTANCE
+          ? 1
+          : 0
+      : 1;
+    cullVisibilityRef.current = THREE.MathUtils.lerp(
+      cullVisibilityRef.current,
+      cullTarget,
+      1 - Math.exp(-delta * 8)
+    );
+    const cullVisibility = cullVisibilityRef.current;
     const carouselScale =
       slot === 0
         ? focusScale
@@ -759,7 +776,8 @@ function Part({
       1 - Math.exp(-delta * 2.9)
     );
     groupRef.current.position.copy(renderPositionRef.current);
-    groupRef.current.visible = partScaleRef.current > 0.02;
+    groupRef.current.visible =
+      partScaleRef.current > 0.02 && cullVisibility > 0.02;
     manualRotationTargetRef.current.set(
       0,
       inspectMode && activePresence && !parentRotationFrozen
@@ -793,9 +811,14 @@ function Part({
     // Food surfaces keep their natural colors; only brand accent rings carry emissive.
     const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
     const targetTransparent =
-      meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
+      meshOpacity < 1 ||
+      dimRef.current > 0.005 ||
+      emergeFade < 1 ||
+      cullVisibility < 0.995;
     const targetOpacity =
-      THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) * emergeFade;
+      THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) *
+      emergeFade *
+      cullVisibility;
     const shouldUpdateMaterials =
       lastMaterialTransparentRef.current !== targetTransparent ||
       lastMaterialOpacityRef.current === null ||
