@@ -438,6 +438,7 @@ function Part({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const activeLightRef = useRef<THREE.SpotLight>(null);
+  const materialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
   const manualRotationRef = useRef(new THREE.Vector2());
   const manualRotationTargetRef = useRef(new THREE.Vector2());
@@ -489,6 +490,28 @@ function Part({
       ),
     };
   }, [basePosition, explodedPosition, midPosition, motionSeed, selfRotationAmount]);
+
+  const setGroupRef = useCallback((group: THREE.Group | null) => {
+    groupRef.current = group;
+    materialsRef.current = [];
+
+    if (!group) return;
+
+    group.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      const material = mesh.material;
+      const materials = Array.isArray(material) ? material : [material];
+
+      materials.forEach((entry) => {
+        if (
+          entry instanceof THREE.MeshStandardMaterial &&
+          "emissiveIntensity" in entry
+        ) {
+          materialsRef.current.push(entry);
+        }
+      });
+    });
+  }, []);
 
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
@@ -647,10 +670,12 @@ function Part({
     const carouselZ = depth * 2.1 - side * 0.65 - neighborDepthOffset;
     const rearDirection = slot === 0 ? 0 : Math.sign(slot) || 1;
     // Inactive items pushed wider and deeper for strong spatial separation.
-    // Inspected hero nudged slightly left (−0.30) to put more breathing room
-    // between the product and the right-side info card. Off-slot items
-    // unchanged (still pushed to the rear edges).
-    const inspectX = slot === 0 ? -0.30 : rearDirection * (5.0 + slotDistance * 1.0);
+    // Inspected hero shifted further left (−0.30 → −0.60) for clearer
+    // breathing room between the product and the right-side info card.
+    // Stays well inside the visible X range (~±2.11 at the inspect plane)
+    // so no product silhouette — including burger reveal — clips on the
+    // left edge. Off-slot items unchanged.
+    const inspectX = slot === 0 ? -0.60 : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
     // Y lifted 0.25 → 0.42 (+0.17) so the inspected hero sits at "screen
     // center, slightly below" — closer to the optical center against the
@@ -712,15 +737,10 @@ function Part({
     );
     groupRef.current.scale.setScalar(partScaleRef.current);
 
-    groupRef.current.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      const material = mesh.material as THREE.MeshStandardMaterial | undefined;
-
-      if (!material || !("emissiveIntensity" in material)) return;
-
-      // Only manage dim/opacity — never override each material's own emissive color.
-      // Food surfaces keep their natural colors; only brand accent rings carry emissive.
-      const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
+    // Only manage dim/opacity — never override each material's own emissive color.
+    // Food surfaces keep their natural colors; only brand accent rings carry emissive.
+    const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
+    materialsRef.current.forEach((material) => {
       material.transparent = meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
       material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) * emergeFade;
     });
@@ -730,7 +750,7 @@ function Part({
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={setGroupRef}>
       {children}
       {/* Cinematic top spotlight. Sits closer above the item (was at y=3.8,
           now y=2.6) with much lower decay (1.4 → 0.8) so the cone actually
