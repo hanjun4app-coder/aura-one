@@ -32,8 +32,8 @@ const CAROUSEL_PARTS = [
     description: "Chilled ocean delicacy, served on cracked ice with citrus mignonette.",
   },
   {
-    name: "Artisan Coffee Set",
-    description: "Single-origin espresso, oat milk foam, seasonal flavor notes.",
+    name: "Louisiana Po' Boy",
+    description: "Toasted roll with crisp seafood, remoulade, lettuce, and tomato.",
   },
   {
     name: "Premium Dessert",
@@ -58,7 +58,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 26.50, 22.00, 6.50, 12.80, 14.50, 24.00];
+const ITEM_PRICES = [18.90, 26.50, 22.00, 16.90, 12.80, 14.50, 24.00];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -90,12 +90,12 @@ const FOOD_INSPECT_DATA = [
   },
   {
     special: null,
-    calories: "120 kcal",
-    protein: "4g",
-    allergens: "Dairy (oat milk)",
-    flavorProfile: "Rich, floral, creamy, subtly sweet",
-    ingredients: "Single-origin espresso · oat milk · seasonal syrup",
-    chefNote: "Pulled from single-origin beans with precision-steamed oat milk.",
+    calories: "640 kcal",
+    protein: "31g",
+    allergens: "Wheat, egg, shellfish",
+    flavorProfile: "Crisp, creamy, briny, lightly spicy",
+    ingredients: "French roll · fried seafood · remoulade · lettuce · tomato · pickles",
+    chefNote: "A coastal Louisiana sandwich with a crisp bite and cool remoulade finish.",
   },
   {
     special: null,
@@ -1987,7 +1987,7 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 3: Artisan Coffee Set ── */}
+      {/* ── Item 3: Louisiana Po' Boy ── */}
       <Part
         partIndex={3}
         progressRef={progressRef}
@@ -2005,20 +2005,20 @@ function SpatialMenuCarousel({
         inspectZFocus={1.6}
         // Inspect multiplier 1.55 → 1.75 (+13 %).
         inspectScaleMultiplier={1.75}
-        // Coffee — earlier in entrance, lingers later on return.
+        // Po' Boy — earlier in entrance, lingers later on return.
         explodeDelay={0.07}
         assembleDelay={0.21}
         selfRotationAmount={0.18}
         motionSeed={4}
       >
         <FoodModel
-          path="/models/coffee.glb"
-          targetSize={0.88}
-          // Coffee: matte ceramic-style cup with a hint of liquid sheen on
-          // the foam top. Restrained env so it doesn't read as glossy plastic.
+          path="/models/poboy.glb"
+          targetSize={1.06}
+          // Po' Boy: mostly matte breading and roll, with restrained highlights
+          // on sauce/vegetables so the sandwich stays premium rather than glossy.
           materialMetalness={0}
-          materialRoughness={0.55}
-          materialEnvMapIntensity={0.68}
+          materialRoughness={0.68}
+          materialEnvMapIntensity={0.62}
         />
       </Part>
 
