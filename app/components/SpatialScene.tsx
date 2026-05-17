@@ -2944,71 +2944,76 @@ function CameraGestureLayer({
   const isLoading = !isReady && !isError && cameraEnabled;
 
   return (
-    <div className="absolute right-4 top-4 md:right-6 md:top-6">
-      {/* Card + video always mounted so videoRef.current is never null when
+    <>
+      {/* Top-right video pill — kept here while the camera is enabled.
+          Card + video always mounted so videoRef.current is never null when
           enableCamera's async getUserMedia resolves. Hidden via sr-only when off. */}
-      <div className={cameraEnabled
-        ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
-        : "sr-only"
-      }>
-        <div className="relative aspect-video overflow-hidden bg-stone-100/60">
-          <video
-            ref={videoRef}
-            autoPlay
-            className="h-full w-full scale-x-[-1] object-cover"
-            muted
-            playsInline
-          />
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
-              <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between px-2.5 py-1.5">
-          <div className="flex items-center gap-1.5">
-            <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
-              isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
-            }`} />
-            <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
-              {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
-            </p>
+      <div className="absolute right-4 top-4 md:right-6 md:top-6">
+        <div className={cameraEnabled
+          ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
+          : "sr-only"
+        }>
+          <div className="relative aspect-video overflow-hidden bg-stone-100/60">
+            <video
+              ref={videoRef}
+              autoPlay
+              className="h-full w-full scale-x-[-1] object-cover"
+              muted
+              playsInline
+            />
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-stone-50/40">
+                <span className="text-[0.48rem] tracking-[0.22em] text-stone-400/65">LOADING</span>
+              </div>
+            )}
           </div>
-          <button
-            onClick={stopCamera}
-            className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
-          >
-            OFF
-          </button>
+
+          <div className="flex items-center justify-between px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-700 ${
+                isReady ? "bg-emerald-400/75" : isError ? "bg-rose-400/75" : "bg-amber-400/65"
+              }`} />
+              <p className="text-[0.46rem] tracking-[0.16em] text-stone-500/60">
+                {isReady ? "GESTURE READY" : isError ? "UNAVAILABLE" : "CONNECTING"}
+              </p>
+            </div>
+            <button
+              onClick={stopCamera}
+              className="text-[0.44rem] tracking-[0.12em] text-stone-400/45 transition hover:text-stone-600/65"
+            >
+              OFF
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Customer-facing camera prompt shown only when the camera is off.
-          Two display modes:
-            - normal:        "ENABLE CAMERA TO INTERACT"
-            - unavailable:   "CAMERA UNAVAILABLE" (after a failed attempt)
-          Both surface a keyboard-demo fallback line so the experience never
-          feels broken if Safari permissions are blocked. */}
-      {!cameraEnabled && (
+      {/* Floating spatial hint — bottom-center, small rounded pill. Visible
+          only while the camera is off. Soft fade in/out via opacity transition
+          so the appearance never feels modal. Two display modes:
+            - normal:      "Enable camera to interact"
+            - unavailable: "Camera unavailable" + tap-to-retry
+          The pill sits above the bottom AURA ONE wordmark / gesture hint
+          stack and does not block any product in the scene. */}
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 transition-opacity duration-700 bottom-[4.5rem] ${
+          cameraEnabled ? "pointer-events-none opacity-0" : "opacity-100"
+        }`}
+      >
         <button
           onClick={enableCamera}
-          className="flex flex-col items-start gap-1 border border-stone-300/32 bg-white/48 px-4 py-2.5 text-left shadow-sm shadow-stone-200/18 backdrop-blur-md transition hover:bg-white/68"
+          className="flex items-center gap-2.5 rounded-full border border-stone-300/22 bg-white/38 px-3.5 py-1.5 shadow-sm shadow-stone-200/14 backdrop-blur-md transition hover:bg-white/55"
         >
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-stone-400/45" />
-            <span className="text-[0.50rem] tracking-[0.26em] text-stone-500/75 transition hover:text-stone-700/85">
-              {cameraUnavailable ? "CAMERA UNAVAILABLE" : "ENABLE CAMERA TO INTERACT"}
-            </span>
-          </div>
-          <span className="ml-3.5 text-[0.44rem] tracking-[0.18em] text-stone-400/55">
-            {cameraUnavailable
-              ? "Keyboard demo available  ·  Tap to retry"
-              : "Or browse with the keyboard demo"}
+          <span className="h-1 w-1 rounded-full bg-stone-400/45" />
+          <span className="text-[0.50rem] tracking-[0.20em] text-stone-500/70 transition hover:text-stone-700/85">
+            {cameraUnavailable ? "Camera unavailable" : "Enable camera to interact"}
+          </span>
+          <span className="text-[0.42rem] tracking-[0.18em] text-stone-400/50">·</span>
+          <span className="text-[0.42rem] tracking-[0.18em] text-stone-400/55">
+            {cameraUnavailable ? "Tap to retry" : "Keyboard demo"}
           </span>
         </button>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
