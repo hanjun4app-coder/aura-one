@@ -431,6 +431,7 @@ function Part({
   baseRotation = [0, 0, 0],
   explodedRotation = [0, 0, 0],
   selfRotationAmount = 1,
+  freezeParentRotation = false,
   motionSeed = 0,
   meshOpacity = 1,
   children,
@@ -454,6 +455,7 @@ function Part({
   baseRotation?: [number, number, number];
   explodedRotation?: [number, number, number];
   selfRotationAmount?: number;
+  freezeParentRotation?: boolean;
   motionSeed?: number;
   meshOpacity?: number;
   children: ReactNode;
@@ -487,6 +489,8 @@ function Part({
   const dimRef = useRef(0);
   const inspectIdleYRef = useRef(0);
   const prevIsInspectActiveRef = useRef(false);
+  const frozenParentRotationRef = useRef(new THREE.Euler());
+  const prevFreezeParentRotationRef = useRef(false);
   const motion = useMemo(() => {
     const direction = motionSeed % 2 === 0 ? 1 : -1;
     const dockStart = midPosition ?? explodedPosition;
@@ -571,6 +575,8 @@ function Part({
     const dockThreshold = 0.045;
     const slot = wrappedSlot(partIndex, activePartIndex, totalParts);
     const isInspectActive = inspectMode && slot === 0;
+    const parentRotationFrozen =
+      freezeParentRotation && isInspectActive && separatedProgress > 0.1;
     const angle = (slot / totalParts) * Math.PI * 2;
     const activePresence = carouselEnabled && slot === 0 ? separatedProgress : 0;
     const carouselPresence = carouselEnabled ? separatedProgress : 0;
@@ -649,7 +655,12 @@ function Part({
       );
     }
 
-    if (isInspectActive && separatedProgress > 0.1) {
+    if (parentRotationFrozen && !prevFreezeParentRotationRef.current) {
+      frozenParentRotationRef.current.copy(groupRef.current.rotation);
+    }
+    prevFreezeParentRotationRef.current = parentRotationFrozen;
+
+    if (isInspectActive && separatedProgress > 0.1 && !parentRotationFrozen) {
       // Slow deliberate yaw — cinematic idle rotation.
       inspectIdleYRef.current += delta * 0.15;
     }
@@ -751,25 +762,31 @@ function Part({
     groupRef.current.visible = partScaleRef.current > 0.02;
     manualRotationTargetRef.current.set(
       0,
-      inspectMode && activePresence ? inspectRotationRef.current.y : 0
+      inspectMode && activePresence && !parentRotationFrozen
+        ? inspectRotationRef.current.y
+        : 0
     );
     manualRotationRef.current.lerp(
       manualRotationTargetRef.current,
       1 - Math.exp(-delta * 4.5)
     );
 
-    groupRef.current.rotation.set(
-      THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
-        motion.dockRotation.x * dockPulse,
-      THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
-        (isInspectActive
-          ? inspectIdleYRef.current
-          : selfRotationRef.current.y * separatedProgress) +
-        manualRotationRef.current.y +
-        motion.dockRotation.y * dockPulse,
-      THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
-        motion.dockRotation.z * dockPulse
-    );
+    if (parentRotationFrozen) {
+      groupRef.current.rotation.copy(frozenParentRotationRef.current);
+    } else {
+      groupRef.current.rotation.set(
+        THREE.MathUtils.lerp(baseRotation[0], explodedRotation[0], separatedProgress) +
+          motion.dockRotation.x * dockPulse,
+        THREE.MathUtils.lerp(baseRotation[1], explodedRotation[1], separatedProgress) +
+          (isInspectActive
+            ? inspectIdleYRef.current
+            : selfRotationRef.current.y * separatedProgress) +
+          manualRotationRef.current.y +
+          motion.dockRotation.y * dockPulse,
+        THREE.MathUtils.lerp(baseRotation[2], explodedRotation[2], separatedProgress) +
+          motion.dockRotation.z * dockPulse
+      );
+    }
     groupRef.current.scale.setScalar(partScaleRef.current);
 
     // Only manage dim/opacity — never override each material's own emissive color.
@@ -1660,6 +1677,7 @@ function SpatialMenuCarousel({
         explodeDelay={0.28}
         assembleDelay={0.00}
         selfRotationAmount={0.12}
+        freezeParentRotation={burgerExploded && inspectMode && activePartIndex === 0}
         motionSeed={1}
       >
         <BurgerExplodedView active={burgerExploded && inspectMode && activePartIndex === 0} />
