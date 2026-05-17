@@ -244,6 +244,34 @@ type SceneLayout = {
   ingredientCardClassName: string;
 };
 
+type FullscreenRootElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+};
+
+function requestSpatialFullscreenOnce(requestedRef: MutableRefObject<boolean>) {
+  if (typeof document === "undefined" || requestedRef.current) return;
+
+  const doc = document as FullscreenDocument;
+  if (document.fullscreenElement || doc.webkitFullscreenElement) return;
+
+  const root = document.documentElement as FullscreenRootElement;
+  const requestFullscreen =
+    root.requestFullscreen?.bind(root) ?? root.webkitRequestFullscreen?.bind(root);
+
+  // iPhone/iPad Safari usually relies on Add to Home Screen / standalone mode
+  // instead of the Fullscreen API. In that case this quietly becomes a no-op.
+  if (!requestFullscreen) return;
+
+  requestedRef.current = true;
+  Promise.resolve(requestFullscreen()).catch(() => {
+    requestedRef.current = false;
+  });
+}
+
 function resolveSceneLayout(width: number, height: number): SceneLayout {
   const isPortrait = height > width;
   const isPhone = width < 700;
@@ -3413,6 +3441,7 @@ export default function SpatialScene() {
   const introFallbackLoggedRef = useRef(false);
   const introManualClickLoggedRef = useRef(false);
   const introMenuOpenLoggedRef = useRef(false);
+  const fullscreenRequestedRef = useRef(false);
 
   // Auto-demo mode — all stable refs, no extra re-renders
   const lastInteractionRef = useRef(0);
@@ -3435,6 +3464,10 @@ export default function SpatialScene() {
     if (process.env.NODE_ENV === "development") {
       console.info(`[AURA INTRO] ${message}`);
     }
+  }, []);
+
+  const requestImmersiveFullscreen = useCallback(() => {
+    requestSpatialFullscreenOnce(fullscreenRequestedRef);
   }, []);
 
   const openMenu = useCallback(() => {
@@ -3794,6 +3827,7 @@ export default function SpatialScene() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      requestImmersiveFullscreen();
 
       // Any key press interrupts demo and resets idle timer
       lastInteractionRef.current = Date.now();
@@ -3846,7 +3880,7 @@ export default function SpatialScene() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [applyGestureAction, inspectMode, logIntroDev, openMenu, reviewMode]);
+  }, [applyGestureAction, inspectMode, logIntroDev, openMenu, requestImmersiveFullscreen, reviewMode]);
 
   const handleEnterMenuClick = useCallback(() => {
     if (!introManualClickLoggedRef.current) {
@@ -3857,7 +3891,7 @@ export default function SpatialScene() {
   }, [logIntroDev, openMenu]);
 
   return (
-    <div className="absolute inset-0">
+    <div className="absolute inset-0 overflow-hidden" onPointerDownCapture={requestImmersiveFullscreen}>
       {/* Intro breathing keyframes — subtle 3s loop on the wordmark + a slightly
           slower bar-glow pulse on the amber accent rules. Lives inline so the
           intro is self-contained in this component. */}

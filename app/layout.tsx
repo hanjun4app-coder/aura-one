@@ -13,9 +13,27 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  applicationName: "AURA ONE",
   title: "AURA ONE — Spatial Dining Experience",
   description:
     "Gesture-controlled spatial restaurant experience powered by hand tracking and cinematic product presentation.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "AURA ONE",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icons/aura-icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/aura-apple-icon.svg", type: "image/svg+xml" },
+    ],
+  },
 };
 
 // Safari iPad demo readiness:
@@ -40,9 +58,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full overflow-hidden overscroll-none antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="h-full overflow-hidden overscroll-none bg-black">{children}</body>
     </html>
   );
 }

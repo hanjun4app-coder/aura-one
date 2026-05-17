@@ -1,0 +1,26 @@
+{
+  "name": "AURA ONE Spatial Dining Experience",
+  "short_name": "AURA ONE",
+  "description": "A fullscreen spatial dining experience for AURA ONE.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f6f2ea",
+  "theme_color": "#0a0908",
+  "icons": [
+    {
+      "src": "/icons/aura-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/aura-apple-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

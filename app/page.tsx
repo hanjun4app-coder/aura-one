@@ -11,8 +11,9 @@ import SpatialScene from "./components/SpatialScene";
 export default function Home() {
   return (
     <main
-      className="relative h-[100dvh] w-[100dvw] overflow-hidden bg-black text-white"
+      className="aura-app-shell relative bg-black text-white"
       style={{
+        overscrollBehavior: "none",
         touchAction: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
