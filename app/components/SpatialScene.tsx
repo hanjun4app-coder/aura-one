@@ -923,7 +923,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.18,    0],
     idleYRotSpeed: -0.014,
-    scale: 0.90,
+    // Bumped 0.90 → 1.02 so the cheese slice spans the burger width like the
+    // upper layers instead of looking like a smaller insert.
+    scale: 1.02,
     weight: 0.95,  // medium slice
     // Soft matte cheese with slight sheen — never metallic.
     materialMetalness: 0,
@@ -941,7 +943,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
     idleYRotSpeed: -0.026,
-    scale: 0.95,
+    // Bumped 0.95 → 1.06 — patty is the anchor and should read at least as
+    // wide as the top bun. Slightly larger than buns reads as "patty peeks out".
+    scale: 1.06,
     weight: 1.15,  // heaviest — patty as the anchor
     // Rough grilled surface — high roughness, modest env so it doesn't go dead black.
     materialMetalness: 0,
@@ -959,8 +963,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
     idleYRotSpeed:  0.018,
-    // +10% from 0.82 — bottom bun supports the burger more visually
-    scale: 0.90,
+    // Bumped 0.90 → 1.00 to match the top-bun span. Bottom bun supports the
+    // burger more visually and now reads as the same loaf as the top.
+    scale: 1.00,
     weight: 1.10,  // heavy bun
     // Matte bread — matches top bun.
     materialMetalness: 0,
