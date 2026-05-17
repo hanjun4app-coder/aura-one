@@ -217,6 +217,11 @@ type LogoParticle = {
 
 type LandingPhase = "intro" | "menu";
 
+const PERFORMANCE_MODE = true;
+const AMBIENT_PARTICLE_COUNT = PERFORMANCE_MODE ? 260 : 700;
+const MAX_CANVAS_DPR = PERFORMANCE_MODE ? 1.5 : 2;
+const MATERIAL_OPACITY_EPSILON = 0.003;
+
 type GestureAction =
   | "EXPLODE"
   | "ASSEMBLE"
@@ -462,6 +467,8 @@ function Part({
   const groupRef = useRef<THREE.Group>(null);
   const activeLightRef = useRef<THREE.SpotLight>(null);
   const materialsRef = useRef<THREE.MeshStandardMaterial[]>([]);
+  const lastMaterialOpacityRef = useRef<number | null>(null);
+  const lastMaterialTransparentRef = useRef<boolean | null>(null);
   const selfRotationRef = useRef(new THREE.Euler(0, 0, 0));
   const manualRotationRef = useRef(new THREE.Vector2());
   const manualRotationTargetRef = useRef(new THREE.Vector2());
@@ -517,6 +524,8 @@ function Part({
   const setGroupRef = useCallback((group: THREE.Group | null) => {
     groupRef.current = group;
     materialsRef.current = [];
+    lastMaterialOpacityRef.current = null;
+    lastMaterialTransparentRef.current = null;
 
     if (!group) return;
 
@@ -739,6 +748,7 @@ function Part({
       1 - Math.exp(-delta * 2.9)
     );
     groupRef.current.position.copy(renderPositionRef.current);
+    groupRef.current.visible = partScaleRef.current > 0.02;
     manualRotationTargetRef.current.set(
       0,
       inspectMode && activePresence ? inspectRotationRef.current.y : 0
@@ -765,10 +775,24 @@ function Part({
     // Only manage dim/opacity — never override each material's own emissive color.
     // Food surfaces keep their natural colors; only brand accent rings carry emissive.
     const emergeFade = smoothStep(THREE.MathUtils.clamp(carouselPresence * 2.5, 0, 1));
-    materialsRef.current.forEach((material) => {
-      material.transparent = meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
-      material.opacity = THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) * emergeFade;
-    });
+    const targetTransparent =
+      meshOpacity < 1 || dimRef.current > 0.005 || emergeFade < 1;
+    const targetOpacity =
+      THREE.MathUtils.lerp(meshOpacity, 0.07, dimRef.current) * emergeFade;
+    const shouldUpdateMaterials =
+      lastMaterialTransparentRef.current !== targetTransparent ||
+      lastMaterialOpacityRef.current === null ||
+      Math.abs(lastMaterialOpacityRef.current - targetOpacity) >
+        MATERIAL_OPACITY_EPSILON;
+
+    if (shouldUpdateMaterials) {
+      materialsRef.current.forEach((material) => {
+        material.transparent = targetTransparent;
+        material.opacity = targetOpacity;
+      });
+      lastMaterialTransparentRef.current = targetTransparent;
+      lastMaterialOpacityRef.current = targetOpacity;
+    }
 
     previousProgressRef.current = localProgress;
     previousRawProgressRef.current = rawProgress;
@@ -1383,17 +1407,32 @@ function MenuBook({ open }: { open: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
   const coverRef = useRef<THREE.Group>(null);
   const bookLightRef = useRef<THREE.PointLight>(null);
+  const bookMaterialsRef = useRef<
+    Array<{ material: THREE.MeshStandardMaterial; baseOpacity: number }>
+  >([]);
   const progressRef = useRef(0);
+  const settledOpenRef = useRef(false);
 
   useEffect(() => {
+    bookMaterialsRef.current = [];
     groupRef.current?.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
-      if (mat && "opacity" in mat) mesh.userData.baseOp = mat.opacity;
+      if (mat && "opacity" in mat) {
+        bookMaterialsRef.current.push({
+          material: mat,
+          baseOpacity: mat.opacity,
+        });
+      }
     });
   }, []);
 
   useFrame(({ clock }, delta) => {
+    if (settledOpenRef.current && open && progressRef.current > 0.999) {
+      if (groupRef.current) groupRef.current.visible = false;
+      return;
+    }
+
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       open ? 1 : 0,
@@ -1407,6 +1446,7 @@ function MenuBook({ open }: { open: boolean }) {
     const t = clock.getElapsedTime();
 
     if (groupRef.current) {
+      groupRef.current.visible = true;
       groupRef.current.scale.setScalar(THREE.MathUtils.lerp(1.0, 0.42, p));
       // Subtle Y bob (±0.035) and slow Y rotation breathing (±0.05 rad), both
       // gated by idleAmount so they ease out as the book starts collapsing.
@@ -1417,12 +1457,9 @@ function MenuBook({ open }: { open: boolean }) {
       groupRef.current.rotation.x = THREE.MathUtils.lerp(0, 0.14, p);
       groupRef.current.rotation.y = Math.sin(t * 0.42) * 0.050 * idleAmount;
 
-      groupRef.current.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
-        if (!mat || !("opacity" in mat)) return;
-        mat.transparent = true;
-        mat.opacity = ((mesh.userData.baseOp as number) ?? 1) * bookVisible;
+      bookMaterialsRef.current.forEach(({ material, baseOpacity }) => {
+        material.transparent = true;
+        material.opacity = baseOpacity * bookVisible;
       });
     }
 
@@ -1436,6 +1473,8 @@ function MenuBook({ open }: { open: boolean }) {
       const breathe = 0.88 + Math.sin(t * 1.1) * 0.12 * idleAmount;
       bookLightRef.current.intensity = bookVisible * 0.55 * breathe;
     }
+
+    settledOpenRef.current = open && progressRef.current > 0.999;
   });
 
   return (
@@ -1854,7 +1893,7 @@ function AmbientParticles() {
   const pointsRef = useRef<THREE.Points>(null);
 
   const positions = useMemo(() => {
-    const count = 700;
+    const count = AMBIENT_PARTICLE_COUNT;
     const array = new Float32Array(count * 3);
 
     for (let i = 0; i < count; i++) {
@@ -3638,7 +3677,10 @@ export default function SpatialScene() {
         </button>
       )}
 
-      <Canvas camera={{ position: [0, 2.4, 7.2], fov: 40 }}>
+      <Canvas
+        camera={{ position: [0, 2.4, 7.2], fov: 40 }}
+        dpr={[1, MAX_CANVAS_DPR]}
+      >
         <color attach="background" args={["#f6f2ea"]} />
 
         <ambientLight intensity={0.92} color="#fff8f0" />
