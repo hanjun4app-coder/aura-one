@@ -649,10 +649,11 @@ function Part({
     // Inactive items pushed wider and deeper for strong spatial separation.
     const inspectX = slot === 0 ? 0 : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
-    // Y is lifted +0.25 toward screen center so the hero sits closer to the
-    // optical center under inspect (better balance against the bottom HUD).
+    // Y lifted 0.25 → 0.42 (+0.17) so the inspected hero sits at "screen
+    // center, slightly below" — closer to the optical center against the
+    // bottom HUD while still leaving room above for the larger inspect scale.
     const inspectY = slot === 0
-      ? 0.25 + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
+      ? 0.42 + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
       : -0.18 - slotDistance * 0.14;
     const inspectZ = slot === 0 ? inspectZFocus : -5.8 - slotDistance * 2.2;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
@@ -1514,7 +1515,8 @@ function SpatialMenuCarousel({
         focusScale={1.34}
         secondaryScale={0.66}
         inspectZFocus={1.7}
-        inspectScaleMultiplier={1.54}
+        // Inspect multiplier 1.54 → 1.74 (+13 %) — hero presence in inspect.
+        inspectScaleMultiplier={1.74}
         // Burger is the hero — arrives LAST on entrance (settles after the
         // supporting cast lands), LEAVES FIRST on return (Apple ta-da feel).
         explodeDelay={0.28}
@@ -1540,7 +1542,8 @@ function SpatialMenuCarousel({
         focusScale={1.32}
         secondaryScale={0.64}
         inspectZFocus={1.5}
-        inspectScaleMultiplier={1.52}
+        // Inspect multiplier 1.52 → 1.72 (+13 %).
+        inspectScaleMultiplier={1.72}
         // Sushi — second-last to arrive, second to leave on return.
         explodeDelay={0.21}
         assembleDelay={0.07}
@@ -1578,9 +1581,9 @@ function SpatialMenuCarousel({
         focusScale={1.48}
         secondaryScale={0.66}
         // Pulled forward and scaled up in inspect for hero framing.
-        // Inspect multiplier 1.62 → 1.88 (+16 %).
+        // Inspect multiplier 1.88 → 2.12 (+13 %).
         inspectZFocus={1.65}
-        inspectScaleMultiplier={1.88}
+        inspectScaleMultiplier={2.12}
         // Stagger unchanged — middle of entrance order.
         explodeDelay={0.14}
         assembleDelay={0.14}
@@ -1620,7 +1623,8 @@ function SpatialMenuCarousel({
         focusScale={1.38}
         secondaryScale={0.66}
         inspectZFocus={1.6}
-        inspectScaleMultiplier={1.55}
+        // Inspect multiplier 1.55 → 1.75 (+13 %).
+        inspectScaleMultiplier={1.75}
         // Coffee — earlier in entrance, lingers later on return.
         explodeDelay={0.07}
         assembleDelay={0.21}
@@ -1654,9 +1658,9 @@ function SpatialMenuCarousel({
         focusScale={1.42}
         secondaryScale={0.66}
         // Inspect framing pulled slightly forward (1.40 → 1.70) and scaled up
-        // (1.70 → 1.96, +15 %) so the layered dessert reads as a luxury hero.
+        // (1.96 → 2.21, +13 %) so the layered dessert reads as a luxury hero.
         inspectZFocus={1.70}
-        inspectScaleMultiplier={1.96}
+        inspectScaleMultiplier={2.21}
         // Dessert — first to arrive on entrance, last to retreat on return.
         explodeDelay={0.00}
         assembleDelay={0.28}
@@ -1690,9 +1694,9 @@ function SpatialMenuCarousel({
         // Carousel focus 1.26 → 1.40 (+11 %).
         focusScale={1.40}
         secondaryScale={0.65}
-        // Inspect multiplier 1.48 → 1.72 (+16 %).
+        // Inspect multiplier 1.72 → 1.94 (+13 %).
         inspectZFocus={1.55}
-        inspectScaleMultiplier={1.72}
+        inspectScaleMultiplier={1.94}
         // Slots between coffee (0.07/0.21) and dessert (0.00/0.28) in the
         // entrance stagger — arrives early-middle, leaves late-middle.
         explodeDelay={0.035}
@@ -1730,8 +1734,9 @@ function SpatialMenuCarousel({
         focusScale={1.42}
         secondaryScale={0.66}
         // Hero framing in inspect: pulled forward, scaled up.
+        // Inspect multiplier 1.80 → 2.03 (+13 %).
         inspectZFocus={1.65}
-        inspectScaleMultiplier={1.80}
+        inspectScaleMultiplier={2.03}
         // Slots between coffee (0.07 / 0.21) and chicken (0.035 / 0.245)
         // in the entrance stagger — arrives mid, leaves mid-late.
         explodeDelay={0.105}
