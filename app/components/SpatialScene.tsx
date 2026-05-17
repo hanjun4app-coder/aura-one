@@ -3135,9 +3135,13 @@ export default function SpatialScene() {
   const prevTotalItemCountRef = useRef(0);
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
+  const [showEnterMenuFallback, setShowEnterMenuFallback] = useState(false);
   const landingPhaseRef = useRef<LandingPhase>("intro");
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const trayRef = useRef<HTMLDivElement>(null);
+  const introFallbackLoggedRef = useRef(false);
+  const introManualClickLoggedRef = useRef(false);
+  const introMenuOpenLoggedRef = useRef(false);
 
   // Auto-demo mode — all stable refs, no extra re-renders
   const lastInteractionRef = useRef(0);
@@ -3156,14 +3160,26 @@ export default function SpatialScene() {
   const orderTotal = orderSubtotal + orderTax;
   const totalItemCount = orderItems.reduce((s, { qty }) => s + qty, 0);
 
+  const logIntroDev = useCallback((message: string) => {
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[AURA INTRO] ${message}`);
+    }
+  }, []);
+
   const openMenu = useCallback(() => {
     landingPhaseRef.current = "menu";
     explodedRef.current = true;
     setIntroFading(true);
     setIntroVisible(false);
+    setShowEnterMenuFallback(false);
     setLandingPhase("menu");
     setExploded(true);
-  }, []);
+
+    if (!introMenuOpenLoggedRef.current) {
+      introMenuOpenLoggedRef.current = true;
+      logIntroDev("menu opened");
+    }
+  }, [logIntroDev]);
 
   // "Added to order" toast — fires for ~1.8s whenever the total item count
   // goes UP (so increments via single-add, voice, or gesture all surface).
@@ -3185,6 +3201,7 @@ export default function SpatialScene() {
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
   useEffect(() => {
+    logIntroDev("mounted");
     lastInteractionRef.current = Date.now();
     // Three-phase cinematic intro:
     //   Phase 1: 0–2000 ms   AURA ONE mark hold (idle breathing on title)
@@ -3204,14 +3221,35 @@ export default function SpatialScene() {
       explodedRef.current = true;
       setExploded(true);
     }, 3200);
-    const fallback = setTimeout(openMenu, 3800);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(t3);
+    };
+  }, [logIntroDev]);
+
+  useEffect(() => {
+    const showFallback = setTimeout(() => {
+      if (landingPhaseRef.current !== "menu") {
+        setShowEnterMenuFallback(true);
+      }
+    }, 3000);
+
+    const fallback = setTimeout(() => {
+      if (landingPhaseRef.current !== "menu" || !explodedRef.current) {
+        if (!introFallbackLoggedRef.current) {
+          introFallbackLoggedRef.current = true;
+          logIntroDev("fallback openMenu fired");
+        }
+        openMenu();
+      }
+    }, 4000);
+
+    return () => {
+      clearTimeout(showFallback);
       clearTimeout(fallback);
     };
-  }, [openMenu]);
+  }, [logIntroDev, openMenu]);
 
   // Stability hardening — on unmount, clear every outstanding mutable timer
   // ref so React doesn't get a setState landed on an unmounted component.
@@ -3484,6 +3522,8 @@ export default function SpatialScene() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
       // Any key press interrupts demo and resets idle timer
       lastInteractionRef.current = Date.now();
       demoActiveRef.current = false;
@@ -3532,8 +3572,18 @@ export default function SpatialScene() {
 
     window.addEventListener("keydown", handleKeyDown);
 
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [applyGestureAction, inspectMode, openMenu, reviewMode]);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [applyGestureAction, inspectMode, logIntroDev, openMenu, reviewMode]);
+
+  const handleEnterMenuClick = useCallback(() => {
+    if (!introManualClickLoggedRef.current) {
+      introManualClickLoggedRef.current = true;
+      logIntroDev("manual Enter Menu clicked");
+    }
+    openMenu();
+  }, [logIntroDev, openMenu]);
 
   return (
     <div className="absolute inset-0">
@@ -3577,6 +3627,15 @@ export default function SpatialScene() {
             style={{ animation: "auraIntroBarBreathe 4.4s ease-in-out infinite 0.4s" }}
           />
         </div>
+      )}
+
+      {landingPhase !== "menu" && showEnterMenuFallback && (
+        <button
+          onClick={handleEnterMenuClick}
+          className="absolute bottom-8 left-1/2 z-30 -translate-x-1/2 border-0 bg-transparent text-[0.56rem] font-light tracking-[0.28em] text-stone-500/55 transition-colors duration-500 hover:text-stone-700/80"
+        >
+          Enter Menu
+        </button>
       )}
 
       <Canvas camera={{ position: [0, 2.4, 7.2], fov: 40 }}>
