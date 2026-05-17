@@ -42,6 +42,10 @@ const CAROUSEL_PARTS = [
     name: "Crispy Fried Chicken",
     description: "Buttermilk-brined chicken, house spice crust, honey-thyme drizzle.",
   },
+  {
+    name: "Louisiana Crawfish",
+    description: "Spiced shellfish with bold coastal flavor, dusted with cajun seasoning.",
+  },
 ] as const;
 
 const BURGER_INGREDIENTS = [
@@ -53,7 +57,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 26.50, 22.00, 6.50, 12.80, 14.50];
+const ITEM_PRICES = [18.90, 26.50, 22.00, 6.50, 12.80, 14.50, 24.00];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -109,6 +113,15 @@ const FOOD_INSPECT_DATA = [
     flavorProfile: "Crispy, savory, herbal, lightly sweet",
     ingredients: "Buttermilk-brined chicken · seasoned flour · fresh herbs · honey-thyme glaze",
     chefNote: "Brined overnight and double-coated in our house spice flour for an audible crust.",
+  },
+  {
+    special: null,
+    calories: "320 kcal",
+    protein: "28g",
+    allergens: "Shellfish",
+    flavorProfile: "Spicy, savory, briny, aromatic",
+    ingredients: "Live crawfish · cajun spice · garlic · lemon · butter · fresh herbs",
+    chefNote: "Boiled in a coastal Louisiana spice broth and finished with garlic-herb butter.",
   },
 ] as const;
 
@@ -1066,6 +1079,7 @@ useGLTF.preload("/models/oyster.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/dessert.glb");
 useGLTF.preload("/models/fried%20chicken.glb");
+useGLTF.preload("/models/crawfish.glb");
 
 // Uniform scale applied to the whole burger group so it fits the viewport.
 // Bumped 0.72 → 0.78 (+8.3 %) — the burger product as a whole reads larger
@@ -1670,6 +1684,49 @@ function SpatialMenuCarousel({
           path="/models/fried%20chicken.glb"
           targetSize={0.95}
           rotationOffset={[0.10, 0, 0]}
+        />
+      </Part>
+
+      {/* ── Item 6: Louisiana Crawfish — premium coastal showcase ── */}
+      <Part
+        partIndex={6}
+        progressRef={progressRef}
+        activePartIndex={activePartIndex}
+        totalParts={n}
+        carouselEnabled={exploded}
+        inspectMode={inspectMode}
+        inspectRotationRef={inspectRotationRef}
+        basePosition={[0, 0, 0]}
+        midPosition={[-0.06, 0.84, 1.04]}
+        // Slightly elevated rest position so the crawfish sits proud on stage.
+        explodedPosition={[0, 0.22, 0]}
+        // Premium scale — matches the oyster / dessert / chicken band.
+        focusScale={1.42}
+        secondaryScale={0.66}
+        // Hero framing in inspect: pulled forward, scaled up.
+        inspectZFocus={1.65}
+        inspectScaleMultiplier={1.80}
+        // Slots between coffee (0.07 / 0.21) and chicken (0.035 / 0.245)
+        // in the entrance stagger — arrives mid, leaves mid-late.
+        explodeDelay={0.105}
+        assembleDelay={0.175}
+        selfRotationAmount={0.18}
+        motionSeed={7}
+      >
+        <FoodModel
+          path="/models/crawfish.glb"
+          // Substantial footprint — crawfish silhouette (body + claws) reads
+          // larger than a sushi-roll or single shell.
+          targetSize={1.00}
+          // Forward tilt opens the shell top toward the spotlight cone.
+          rotationOffset={[0.15, 0, 0]}
+          // Wet-shell PBR: slight metalness for natural shellfish gloss,
+          // moderate roughness so the cajun-dusted shell still reads as
+          // textured (not chrome). High env-map response catches the warm
+          // active spotlight as clean specular along the carapace.
+          materialMetalness={0.03}
+          materialRoughness={0.50}
+          materialEnvMapIntensity={0.85}
         />
       </Part>
 
