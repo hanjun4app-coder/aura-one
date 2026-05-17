@@ -303,19 +303,19 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     revealY: BURGER_REVEAL_Y_OFFSET,
     revealZ: BURGER_REVEAL_Z_OFFSET,
     productInfoClassName: isPhone
-      ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[30vh] p-4"
+      ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[26vh] p-3.5"
       : isTabletPortrait
-        ? "bottom-[calc(env(safe-area-inset-bottom)+3.75rem)] left-[6vw] w-[78vw] max-h-[21vh] p-3"
+        ? "bottom-[calc(env(safe-area-inset-bottom)+3.65rem)] left-[6vw] w-[72vw] max-h-[18vh] p-3"
         : isTabletLandscape
-          ? "bottom-[4.75rem] right-4 w-[min(16rem,calc(38vw-1rem))] max-h-[39vh] p-4"
-          : "bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] p-5 md:p-6",
+          ? "bottom-[5rem] right-5 w-[min(14.5rem,34vw)] max-h-[34vh] p-3.5"
+          : "bottom-[6.75rem] right-5 md:right-8 w-[min(17.5rem,calc(42vw-1rem))] max-h-[min(38vh,20rem)] p-4 md:p-5",
     ingredientCardClassName: isPhone
-      ? "bottom-[4.25rem] left-4 w-[min(15rem,calc(100vw-2rem))] max-h-[34vh] translate-y-0"
+      ? "bottom-[4.25rem] left-4 w-[min(14rem,calc(100vw-2rem))] max-h-[30vh] translate-y-0"
       : isTabletPortrait
-        ? "bottom-[4.25rem] right-4 w-[min(15rem,calc(100vw-2rem))] max-h-[30vh] translate-y-0"
+        ? "bottom-[4rem] right-4 w-[min(13.5rem,calc(100vw-2rem))] max-h-[26vh] translate-y-0"
         : isTabletLandscape
-          ? "bottom-[4.5rem] left-4 w-[min(14rem,31vw)] max-h-[40vh] translate-y-0"
-          : "left-4 top-1/2 w-[min(17rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
+          ? "bottom-[4.75rem] left-5 w-[min(12.5rem,28vw)] max-h-[34vh] translate-y-0"
+          : "left-5 top-1/2 w-[min(14.5rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
   };
 
   if (mode === "phone-portrait") {
@@ -3921,7 +3921,7 @@ export default function SpatialScene() {
   const burgerRevealOpen = burgerExploded && inspectMode && activePartIndex === 0;
   const productInfoClassName =
     burgerRevealOpen && sceneLayout.mode === "ipad-portrait"
-      ? "top-[calc(env(safe-area-inset-top)+4.5rem)] left-[5vw] w-[min(14rem,42vw)] max-h-[20vh] p-3"
+      ? "top-[calc(env(safe-area-inset-top)+4.25rem)] left-[5vw] w-[min(12.5rem,38vw)] max-h-[17vh] p-2.5"
       : sceneLayout.productInfoClassName;
 
   return (
@@ -4064,7 +4064,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/12 bg-white/18 text-left text-stone-800 shadow-xl shadow-stone-900/4 backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/8 bg-white/13 text-left text-stone-800 shadow-lg shadow-stone-900/[0.03] backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
@@ -4151,7 +4151,7 @@ export default function SpatialScene() {
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/14 bg-white/18 shadow-xl shadow-stone-900/5 backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/10 bg-white/13 shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-700 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "opacity-0"
@@ -4159,7 +4159,7 @@ export default function SpatialScene() {
       >
         {/* Warm amber top accent bar */}
         <div className="h-[2px] w-full bg-gradient-to-r from-amber-500/0 via-amber-500/40 to-amber-500/0" />
-        <div className="p-5 md:p-6">
+        <div className="p-4 md:p-5">
           <p className="mb-1 text-[0.40rem] tracking-[0.50em] text-amber-700/50">
             TASTING NOTES
           </p>
