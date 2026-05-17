@@ -272,6 +272,13 @@ function smoothBand(value: number, a: number, b: number) {
   return smoothStep(Math.max(0, Math.min(1, t)));
 }
 
+function setAnimatedLightIntensity(light: THREE.Light | null, intensity: number) {
+  if (!light) return;
+
+  light.intensity = intensity;
+  light.visible = intensity > 0.001;
+}
+
 function seededUnit(index: number) {
   const value = Math.sin(index * 12.9898) * 43758.5453;
 
@@ -658,8 +665,10 @@ function Part({
       // adds a "reveal moment" intensity bump as the item lands in slot 0.
       const baseMul = isInspectActive ? 4.6 : 2.4;
       const dockBoost = Math.abs(dockPulse) * 1.6 * activePresence;
-      activeLightRef.current.intensity =
-        highlightRef.current * baseMul + dockBoost;
+      setAnimatedLightIntensity(
+        activeLightRef.current,
+        highlightRef.current * baseMul + dockBoost
+      );
     }
     inspectBlendRef.current = THREE.MathUtils.lerp(
       inspectBlendRef.current,
@@ -782,6 +791,7 @@ function Part({
         distance={6.5}
         decay={0.8}
         intensity={0}
+        visible={false}
       />
     </group>
   );
@@ -1129,6 +1139,11 @@ useGLTF.preload("/models/crawfish.glb");
 // Conservative end of the spec's +8–15 % range so the revealed stack still
 // fits the inspect framing without clipping at extremes.
 const EXPLODED_STACK_SCALE = 0.78;
+// Reveal-only framing: the closed burger keeps the larger product scale, while
+// the opened layer stack backs away and shrinks enough to stay fully in frame.
+const BURGER_REVEAL_SCALE = 0.62;
+const BURGER_REVEAL_Z_OFFSET = -0.55;
+const BURGER_REVEAL_Y_OFFSET = 0;
 
 // Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
 // Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
@@ -1234,6 +1249,8 @@ function BurgerLayerGLB({
 function BurgerExplodedView({ active }: { active: boolean }) {
   // Single progress: 0 = assembled (looks like one burger), 1 = fully spread.
   const progressRef = useRef(0);
+  const stackRef = useRef<THREE.Group>(null);
+  const settledClosedRef = useRef(false);
 
   // Callback-ref array — one slot per BURGER_LAYERS entry. Scales to any
   // number of layers without per-layer useRef declarations.
@@ -1255,7 +1272,32 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       1 - Math.exp(-delta * lerpRate)
     );
     const progress = progressRef.current;
+    const revealFrameP = smoothStep(progress);
     const t = clock.getElapsedTime();
+
+    if (stackRef.current) {
+      const stackScale = THREE.MathUtils.lerp(
+        EXPLODED_STACK_SCALE,
+        BURGER_REVEAL_SCALE,
+        revealFrameP
+      );
+      stackRef.current.scale.setScalar(stackScale);
+      stackRef.current.position.y = THREE.MathUtils.lerp(
+        0,
+        BURGER_REVEAL_Y_OFFSET,
+        revealFrameP
+      );
+      stackRef.current.position.z = THREE.MathUtils.lerp(
+        0,
+        BURGER_REVEAL_Z_OFFSET,
+        revealFrameP
+      );
+    }
+
+    if (settledClosedRef.current && !active && progress < 0.001) {
+      progressRef.current = 0;
+      return;
+    }
 
     BURGER_LAYERS.forEach((layer, i) => {
       const group = groupRefs.current[i];
@@ -1307,12 +1349,14 @@ function BurgerExplodedView({ active }: { active: boolean }) {
         bz + rz * spreadP
       );
     });
+
+    settledClosedRef.current = !active && progress < 0.001;
   });
 
   return (
     <group>
       {/* Uniform framing scale — keeps stack inside viewport without camera change */}
-      <group scale={EXPLODED_STACK_SCALE}>
+      <group ref={stackRef} scale={EXPLODED_STACK_SCALE}>
         {BURGER_LAYERS.map((layer, i) => (
           <group
             key={layer.path}
@@ -1925,17 +1969,11 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
       1 - Math.exp(-delta * 2.4)
     );
 
-    if (keyLightRef.current) {
-      // Slightly stronger so the hero item feels lifted from the background
-      // when inspect engages (food-commercial focus emphasis).
-      keyLightRef.current.intensity = blendRef.current * 1.70;
-    }
-    if (rimLightRef.current) {
-      rimLightRef.current.intensity = blendRef.current * 0.90;
-    }
-    if (floorPoolRef.current) {
-      floorPoolRef.current.intensity = blendRef.current * 0.58;
-    }
+    // Slightly stronger so the hero item feels lifted from the background
+    // when inspect engages (food-commercial focus emphasis).
+    setAnimatedLightIntensity(keyLightRef.current, blendRef.current * 1.70);
+    setAnimatedLightIntensity(rimLightRef.current, blendRef.current * 0.90);
+    setAnimatedLightIntensity(floorPoolRef.current, blendRef.current * 0.58);
   });
 
   return (
@@ -1945,6 +1983,7 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
         position={[-1.4, 5.2, 3.4]}
         color="#fff6e4"
         intensity={0}
+        visible={false}
       />
       <pointLight
         ref={rimLightRef}
@@ -1952,6 +1991,7 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
         color="#ffd070"
         distance={16}
         intensity={0}
+        visible={false}
       />
       <pointLight
         ref={floorPoolRef}
@@ -1959,6 +1999,7 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
         position={[0, -1.4, 2.0]}
         distance={7}
         intensity={0}
+        visible={false}
       />
     </>
   );
@@ -1982,10 +2023,10 @@ function CarouselCenterSpotlight({ active }: { active: boolean }) {
     );
     const b = blendRef.current;
     // Main top/front cinematic spotlight on the centered item.
-    if (mainRef.current) mainRef.current.intensity = b * 1.6;
+    setAnimatedLightIntensity(mainRef.current, b * 1.6);
     // Soft front-warm fill below — extremely subtle pool that lifts the food
     // underside without producing a visible disc on the stage.
-    if (fillRef.current) fillRef.current.intensity = b * 0.32;
+    setAnimatedLightIntensity(fillRef.current, b * 0.32);
   });
 
   return (
@@ -2004,6 +2045,7 @@ function CarouselCenterSpotlight({ active }: { active: boolean }) {
         distance={11}
         decay={0.9}
         intensity={0}
+        visible={false}
       />
       {/* Subtle warm fill from below-front — lifts shadowed undersides on
           the centered item. Very tight distance keeps it from bleeding into
@@ -2015,6 +2057,7 @@ function CarouselCenterSpotlight({ active }: { active: boolean }) {
         distance={3.8}
         decay={1.4}
         intensity={0}
+        visible={false}
       />
     </>
   );
@@ -2046,19 +2089,19 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
     );
     const b = blendRef.current;
     // Cinematic key: dominant light, warm, rakes the top of the stack.
-    if (cinemaKeyRef.current)    cinemaKeyRef.current.intensity    = b * 1.30;
+    setAnimatedLightIntensity(cinemaKeyRef.current, b * 1.30);
     // Side fill: prevents the un-keyed side from going flat / dead.
-    if (sideFillRef.current)     sideFillRef.current.intensity     = b * 0.55;
+    setAnimatedLightIntensity(sideFillRef.current, b * 0.55);
     // Hero front fill: catches sesame seeds + bun upper crust.
-    if (heroFillRef.current)     heroFillRef.current.intensity     = b * 0.92;
+    setAnimatedLightIntensity(heroFillRef.current, b * 0.92);
     // Bottom bounce: simulated table reflection; lifts cheese / patty / bottom bun
     // without an orange glow puddle. Distance is short so it's localised to the
     // burger and doesn't bleed into the carousel rear.
-    if (bottomBounceRef.current) bottomBounceRef.current.intensity = b * 0.55;
+    setAnimatedLightIntensity(bottomBounceRef.current, b * 0.55);
     // Back rim: separates silhouette from background.
-    if (backRimRef.current)      backRimRef.current.intensity      = b * 0.62;
+    setAnimatedLightIntensity(backRimRef.current, b * 0.62);
     // Edge rim: catches the top of the bun crown.
-    if (edgeRimRef.current)      edgeRimRef.current.intensity      = b * 0.45;
+    setAnimatedLightIntensity(edgeRimRef.current, b * 0.45);
   });
 
   return (
@@ -2069,6 +2112,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         position={[-2.0, 4.6, 3.2]}
         color="#ffd6a0"
         intensity={0}
+        visible={false}
       />
       {/* 2. Soft side fill — upper-right, gentle warm, fills the key shadow */}
       <pointLight
@@ -2077,6 +2121,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         color="#ffe0b0"
         distance={11}
         intensity={0}
+        visible={false}
       />
       {/* 3. Hero front fill — low-front, warm, catches sesame + bun upper crust */}
       <pointLight
@@ -2085,6 +2130,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         color="#ffcc80"
         distance={9}
         intensity={0}
+        visible={false}
       />
       {/* 4. Warm bottom bounce — simulates table reflection lifting lower layers */}
       <pointLight
@@ -2093,6 +2139,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         color="#ffc890"
         distance={5.5}
         intensity={0}
+        visible={false}
       />
       {/* 5. Back rim — wide warm separation from rear */}
       <directionalLight
@@ -2100,6 +2147,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         position={[1.4, 2.8, -3.2]}
         color="#ffe4c0"
         intensity={0}
+        visible={false}
       />
       {/* 6. Edge rim — tighter cooler-warm rim catching bun crown edges */}
       <directionalLight
@@ -2107,6 +2155,7 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
         position={[-1.6, 3.4, -2.6]}
         color="#fff0d8"
         intensity={0}
+        visible={false}
       />
     </>
   );
@@ -2128,11 +2177,11 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
       active ? 1 : 0,
       1 - Math.exp(-delta * 1.8)
     );
-    if (topKeyRef.current)    topKeyRef.current.intensity    = blendRef.current * 1.2;
-    if (warmFillRef.current)  warmFillRef.current.intensity  = blendRef.current * 0.80;
-    if (underlightRef.current) underlightRef.current.intensity = blendRef.current * 1.10;
-    if (backRimRef.current)   backRimRef.current.intensity   = blendRef.current * 0.40;
-    if (ambientFillRef.current) ambientFillRef.current.intensity = blendRef.current * 0.28;
+    setAnimatedLightIntensity(topKeyRef.current, blendRef.current * 1.2);
+    setAnimatedLightIntensity(warmFillRef.current, blendRef.current * 0.80);
+    setAnimatedLightIntensity(underlightRef.current, blendRef.current * 1.10);
+    setAnimatedLightIntensity(backRimRef.current, blendRef.current * 0.40);
+    setAnimatedLightIntensity(ambientFillRef.current, blendRef.current * 0.28);
   });
 
   return (
@@ -2143,6 +2192,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         position={[-0.8, 5.2, 2.8]}
         color="#ffd89a"
         intensity={0}
+        visible={false}
       />
       {/* Soft warm fill from the right */}
       <pointLight
@@ -2151,6 +2201,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         color="#ffb860"
         distance={11}
         intensity={0}
+        visible={false}
       />
       {/* Warm underlight — rakes up from below to light the bottom bun underside */}
       <pointLight
@@ -2159,6 +2210,7 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         color="#ffb870"
         distance={10}
         intensity={0}
+        visible={false}
       />
       {/* Back separation rim — gives depth between layers */}
       <directionalLight
@@ -2166,11 +2218,13 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
         position={[1.2, 2.5, -3.0]}
         color="#ffe8c8"
         intensity={0}
+        visible={false}
       />
       {/* Warm hemisphere fill — lifts shadowed underside without washing out warm look */}
       <hemisphereLight
         ref={ambientFillRef}
         args={["#fff1d8", "#3a2010", 0]}
+        visible={false}
       />
     </>
   );
@@ -3102,6 +3156,15 @@ export default function SpatialScene() {
   const orderTotal = orderSubtotal + orderTax;
   const totalItemCount = orderItems.reduce((s, { qty }) => s + qty, 0);
 
+  const openMenu = useCallback(() => {
+    landingPhaseRef.current = "menu";
+    explodedRef.current = true;
+    setIntroFading(true);
+    setIntroVisible(false);
+    setLandingPhase("menu");
+    setExploded(true);
+  }, []);
+
   // "Added to order" toast — fires for ~1.8s whenever the total item count
   // goes UP (so increments via single-add, voice, or gesture all surface).
   // Decrement (remove / clear) doesn't trigger the toast.
@@ -3134,11 +3197,21 @@ export default function SpatialScene() {
     const t1 = setTimeout(() => setIntroFading(true), 2000);
     const t2 = setTimeout(() => {
       setIntroVisible(false);
+      landingPhaseRef.current = "menu";
       setLandingPhase("menu");
     }, 2700);
-    const t3 = setTimeout(() => setExploded(true), 3200);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, []);
+    const t3 = setTimeout(() => {
+      explodedRef.current = true;
+      setExploded(true);
+    }, 3200);
+    const fallback = setTimeout(openMenu, 3800);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(fallback);
+    };
+  }, [openMenu]);
 
   // Stability hardening — on unmount, clear every outstanding mutable timer
   // ref so React doesn't get a setState landed on an unmounted component.
@@ -3301,10 +3374,7 @@ export default function SpatialScene() {
     // Landing gate — any gesture during intro immediately opens the menu.
     // Refs are updated synchronously so the action also processes in this call.
     if (landingPhaseRef.current !== "menu") {
-      landingPhaseRef.current = "menu";
-      explodedRef.current = true;
-      setLandingPhase("menu");
-      setExploded(true);
+      openMenu();
       // fall through — process the action with freshly updated refs
     }
 
@@ -3410,7 +3480,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-  }, [activePartIndex, addToOrder, clearOrder, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, addToOrder, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3425,6 +3495,15 @@ export default function SpatialScene() {
           event.preventDefault();
           setReviewMode(false);
         }
+        return;
+      }
+
+      if (event.key === "Enter" && landingPhaseRef.current !== "menu") {
+        event.preventDefault();
+        lastInteractionRef.current = Date.now();
+        demoActiveRef.current = false;
+        demoPhaseRef.current = null;
+        openMenu();
         return;
       }
 
@@ -3454,7 +3533,7 @@ export default function SpatialScene() {
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [applyGestureAction, inspectMode, reviewMode]);
+  }, [applyGestureAction, inspectMode, openMenu, reviewMode]);
 
   return (
     <div className="absolute inset-0">
