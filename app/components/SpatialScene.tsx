@@ -3614,6 +3614,14 @@ export default function SpatialScene() {
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setBurgerExploded(inspectMode && activePartIndex === 0);
+    }, 0);
+
+    return () => clearTimeout(id);
+  }, [inspectMode, activePartIndex]);
+
   // Auto-demo loop — ticks every 120ms, driven entirely by refs
   useEffect(() => {
     const id = setInterval(() => {
