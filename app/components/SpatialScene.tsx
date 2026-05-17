@@ -27,8 +27,8 @@ const CAROUSEL_PARTS = [
     description: "Seared cut with rich savory finish, finished in bone-marrow butter.",
   },
   {
-    name: "Classic Fries Set",
-    description: "Hand-cut golden fries with house seasoning and dipping sauce.",
+    name: "Fresh Oyster Selection",
+    description: "Chilled ocean delicacy, served on cracked ice with citrus mignonette.",
   },
   {
     name: "Artisan Coffee Set",
@@ -53,7 +53,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 26.50, 7.90, 6.50, 12.80, 14.50];
+const ITEM_PRICES = [18.90, 26.50, 22.00, 6.50, 12.80, 14.50];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -76,12 +76,12 @@ const FOOD_INSPECT_DATA = [
   },
   {
     special: null,
-    calories: "380 kcal",
-    protein: "5g",
-    allergens: "None",
-    flavorProfile: "Crispy, salty, lightly herbed",
-    ingredients: "Russet potatoes · sunflower oil · sea salt · house seasoning",
-    chefNote: "Hand-cut daily and seasoned with our house spice blend.",
+    calories: "120 kcal",
+    protein: "14g",
+    allergens: "Shellfish",
+    flavorProfile: "Briny, delicate, ocean-fresh, silky texture",
+    ingredients: "Fresh oysters · cracked ice · lemon · shallot mignonette · sea salt",
+    chefNote: "Hand-selected daily — served chilled on ice with a citrus mignonette.",
   },
   {
     special: null,
@@ -977,11 +977,19 @@ function FoodModel({
   targetSize = 0.92,
   positionOffset = [0, 0, 0] as [number, number, number],
   rotationOffset = [0, 0, 0] as [number, number, number],
+  materialMetalness,
+  materialRoughness,
+  materialEnvMapIntensity,
 }: {
   path: string;
   targetSize?: number;
   positionOffset?: [number, number, number];
   rotationOffset?: [number, number, number];
+  // Optional per-item PBR overrides. Defaults preserve the existing
+  // food-baseline (roughness floor 0.55, original textures untouched).
+  materialMetalness?: number;
+  materialRoughness?: number;
+  materialEnvMapIntensity?: number;
 }) {
   const { scene } = useGLTF(path);
 
@@ -1002,10 +1010,16 @@ function FoodModel({
       mats.forEach((m) => {
         if (!m.isMeshStandardMaterial) return;
         m.transparent = true;
-        m.roughness = Math.max(m.roughness, 0.55);
+        // Per-item PBR overrides if supplied; otherwise the legacy floor of 0.55.
+        m.roughness = materialRoughness ?? Math.max(m.roughness, 0.55);
+        if (materialMetalness !== undefined) m.metalness = materialMetalness;
+        if (materialEnvMapIntensity !== undefined) {
+          m.envMapIntensity = materialEnvMapIntensity;
+        }
+        m.needsUpdate = true;
       });
     });
-  }, [scene]);
+  }, [scene, materialMetalness, materialRoughness, materialEnvMapIntensity]);
 
   return (
     <group scale={normalizedScale} position={positionOffset} rotation={rotationOffset}>
@@ -1016,7 +1030,7 @@ function FoodModel({
   );
 }
 useGLTF.preload("/models/steak.glb");
-useGLTF.preload("/models/fries.glb");
+useGLTF.preload("/models/oyster.glb");
 useGLTF.preload("/models/coffee.glb");
 useGLTF.preload("/models/dessert.glb");
 useGLTF.preload("/models/fried%20chicken.glb");
@@ -1470,7 +1484,7 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 2: Classic Fries Set ── */}
+      {/* ── Item 2: Fresh Oyster Selection — luxury seafood showcase ── */}
       <Part
         partIndex={2}
         progressRef={progressRef}
@@ -1481,20 +1495,36 @@ function SpatialMenuCarousel({
         inspectRotationRef={inspectRotationRef}
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.80, 1.08]}
-        explodedPosition={[0, 0.15, 0]}
-        focusScale={1.2}
-        secondaryScale={0.64}
-        inspectZFocus={1.3}
-        inspectScaleMultiplier={1.44}
-        // Fries — middle of the stagger, symmetric.
+        // Slightly elevated rest position so the oyster sits proud on stage.
+        explodedPosition={[0, 0.22, 0]}
+        // Larger carousel focusScale (1.20 → 1.34) so the oyster doesn't
+        // disappear next to the heavier burger / steak silhouettes.
+        focusScale={1.34}
+        secondaryScale={0.66}
+        // Pulled forward and scaled up in inspect for hero framing.
+        inspectZFocus={1.65}
+        inspectScaleMultiplier={1.62}
+        // Stagger unchanged — middle of entrance order.
         explodeDelay={0.14}
         assembleDelay={0.14}
         selfRotationAmount={0.16}
         motionSeed={3}
       >
         <FoodModel
-          path="/models/fries.glb"
-          targetSize={0.92}
+          path="/models/oyster.glb"
+          // Larger normalisation — oyster's natural footprint is wider/flatter
+          // than fries; needs presence on the carousel stage.
+          targetSize={1.05}
+          // Elegant dining angle — slight forward tilt opens the shell toward
+          // the camera, letting the spotlight catch the wet meat surface.
+          rotationOffset={[0.18, 0, 0]}
+          // Wet-shell PBR: lower roughness on the reflective bivalve surface
+          // with high env-map response so the spotlight raking across the
+          // edge creates a clean specular highlight. No metalness — keeps it
+          // from reading as plastic or chrome.
+          materialMetalness={0}
+          materialRoughness={0.42}
+          materialEnvMapIntensity={0.95}
         />
       </Part>
 
@@ -1540,8 +1570,10 @@ function SpatialMenuCarousel({
         explodedPosition={[0, 0.16, 0]}
         focusScale={1.28}
         secondaryScale={0.66}
-        inspectZFocus={1.4}
-        inspectScaleMultiplier={1.50}
+        // Inspect framing pulled slightly forward (1.40 → 1.70) and scaled up
+        // (1.50 → 1.70, +13 %) so the layered dessert reads as a luxury hero.
+        inspectZFocus={1.70}
+        inspectScaleMultiplier={1.70}
         // Dessert — first to arrive on entrance, last to retreat on return.
         explodeDelay={0.00}
         assembleDelay={0.28}
