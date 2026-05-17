@@ -2008,6 +2008,7 @@ function SpatialMenuCarousel({
         // Po' Boy — earlier in entrance, lingers later on return.
         explodeDelay={0.07}
         assembleDelay={0.21}
+        explodedRotation={[0, -0.87, 0]}
         selfRotationAmount={0.18}
         motionSeed={4}
       >
