@@ -2999,6 +2999,12 @@ export default function SpatialScene() {
   const [trayGlow, setTrayGlow] = useState(false);
   const [orderToastVisible, setOrderToastVisible] = useState(false);
   const orderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // addToOrder timer chain — tracked so a rapid second double-fist doesn't
+  // race against a previous fly-particle animation, and so an unmount during
+  // any of the three phases doesn't leak setState onto a stale component.
+  const addToOrderFly1Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addToOrderFly2Ref = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addToOrderGlowRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Hero-pause timer — ENTER_INSPECT defers setInspectMode(true) by 220ms so
   // the active spotlight gets a brief settle moment on screen before the
   // inspect transition takes over. Kept in a ref so we can cancel cleanly
@@ -3066,6 +3072,35 @@ export default function SpatialScene() {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
+  // Stability hardening — on unmount, clear every outstanding mutable timer
+  // ref so React doesn't get a setState landed on an unmounted component.
+  // Each ref is reset to null after the clear for predictable behaviour if
+  // some future code path checks them.
+  useEffect(() => {
+    return () => {
+      if (orderToastTimerRef.current) {
+        clearTimeout(orderToastTimerRef.current);
+        orderToastTimerRef.current = null;
+      }
+      if (inspectEnterTimerRef.current) {
+        clearTimeout(inspectEnterTimerRef.current);
+        inspectEnterTimerRef.current = null;
+      }
+      if (addToOrderFly1Ref.current) {
+        clearTimeout(addToOrderFly1Ref.current);
+        addToOrderFly1Ref.current = null;
+      }
+      if (addToOrderFly2Ref.current) {
+        clearTimeout(addToOrderFly2Ref.current);
+        addToOrderFly2Ref.current = null;
+      }
+      if (addToOrderGlowRef.current) {
+        clearTimeout(addToOrderGlowRef.current);
+        addToOrderGlowRef.current = null;
+      }
+    };
+  }, []);
+
   const resetInspectRotation = useCallback(() => {
     inspectRotationRef.current.x = 0;
     inspectRotationRef.current.y = 0;
@@ -3123,6 +3158,13 @@ export default function SpatialScene() {
   }, [resetInspectRotation]);
 
   const addToOrder = useCallback(() => {
+    // Cancel any in-flight timers from a previous add — a rapid double-fire
+    // would otherwise race two fly-particle animations and the trailing
+    // setFlyParticle(null) from the older chain could blank the newer one.
+    if (addToOrderFly1Ref.current) clearTimeout(addToOrderFly1Ref.current);
+    if (addToOrderFly2Ref.current) clearTimeout(addToOrderFly2Ref.current);
+    if (addToOrderGlowRef.current) clearTimeout(addToOrderGlowRef.current);
+
     // Start position: active item lives roughly in the center of the viewport
     const startX = window.innerWidth * 0.5;
     const startY = window.innerHeight * 0.42;
@@ -3140,12 +3182,13 @@ export default function SpatialScene() {
     setFlyParticle({ x: startX, y: startY, opacity: 1, scale: 1 });
 
     // Phase 2 — fly to tray (browser paints phase 1 first, then transitions)
-    setTimeout(() => {
+    addToOrderFly1Ref.current = setTimeout(() => {
       setFlyParticle({ x: endX, y: endY, opacity: 0, scale: 0.32 });
+      addToOrderFly1Ref.current = null;
     }, 16);
 
     // Phase 3 — update order state and trigger glow after fly lands
-    setTimeout(() => {
+    addToOrderFly2Ref.current = setTimeout(() => {
       setFlyParticle(null);
       setOrderItems((prev) => {
         const idx = prev.findIndex((e) => e.partIndex === activePartIndex);
@@ -3155,7 +3198,11 @@ export default function SpatialScene() {
         return [...prev, { partIndex: activePartIndex, qty: 1 }];
       });
       setTrayGlow(true);
-      setTimeout(() => setTrayGlow(false), 900);
+      addToOrderFly2Ref.current = null;
+      addToOrderGlowRef.current = setTimeout(() => {
+        setTrayGlow(false);
+        addToOrderGlowRef.current = null;
+      }, 900);
     }, 730);
   }, [activePartIndex]);
 
@@ -3198,7 +3245,19 @@ export default function SpatialScene() {
       return;
     }
 
+    // Helper: cancel any pending hero-pause inspect entry so a fast
+    // enter→navigate sequence doesn't flip inspect on after the user has
+    // already moved on. Called from every action that should preempt the
+    // pending timer.
+    const cancelPendingInspectEnter = () => {
+      if (inspectEnterTimerRef.current) {
+        clearTimeout(inspectEnterTimerRef.current);
+        inspectEnterTimerRef.current = null;
+      }
+    };
+
     if (action === "ASSEMBLE") {
+      cancelPendingInspectEnter();
       resetInspectRotation();
       setBurgerExploded(false);
       setInspectMode(false);
@@ -3207,6 +3266,7 @@ export default function SpatialScene() {
     }
 
     if (action === "RESET") {
+      cancelPendingInspectEnter();
       resetInspectRotation();
       setBurgerExploded(false);
       if (!inspectModeRef.current) setExploded(false);
@@ -3214,13 +3274,8 @@ export default function SpatialScene() {
     }
 
     if (action === "EXIT_INSPECT") {
+      cancelPendingInspectEnter();
       resetInspectRotation();
-      // Cancel any pending hero-pause inspect entry so a fast enter→exit
-      // doesn't get flipped back on by the trailing setTimeout.
-      if (inspectEnterTimerRef.current) {
-        clearTimeout(inspectEnterTimerRef.current);
-        inspectEnterTimerRef.current = null;
-      }
       if (inspectModeRef.current) {
         setBurgerExploded(false);
         setInspectMode(false);
@@ -3271,11 +3326,13 @@ export default function SpatialScene() {
     }
 
     if (action === "PREV_PART") {
+      cancelPendingInspectEnter();
       if (explodedRef.current) { setBurgerExploded(false); showPreviousPart(); }
       return;
     }
 
     if (action === "NEXT_PART") {
+      cancelPendingInspectEnter();
       if (explodedRef.current) { setBurgerExploded(false); showNextPart(); }
       return;
     }
