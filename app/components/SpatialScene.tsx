@@ -917,15 +917,18 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/Cheese%20(1).glb",
     name: "Cheese",
-    assembledY: -0.26,
+    // Raised −0.26 → −0.22 so cheese no longer hugs the patty — the patty's
+    // top edge now reads clearly under cheese instead of being hidden.
+    assembledY: -0.22,
     revealedY:  -0.60,
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.18,    0],
     idleYRotSpeed: -0.014,
-    // Bumped 0.90 → 1.02 so the cheese slice spans the burger width like the
-    // upper layers instead of looking like a smaller insert.
-    scale: 1.02,
+    // Reduced 1.02 → 0.90 → 0.78 (−13 % from prior). Cheese tucks well inside
+    // the burger body now — it no longer dominates the silhouette; patty,
+    // buns, and lettuce all extend visibly past the cheese edges.
+    scale: 0.78,
     weight: 0.95,  // medium slice
     // Soft matte cheese with slight sheen — never metallic.
     materialMetalness: 0,
@@ -943,9 +946,11 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
     idleYRotSpeed: -0.026,
-    // Bumped 0.95 → 1.06 — patty is the anchor and should read at least as
-    // wide as the top bun. Slightly larger than buns reads as "patty peeks out".
-    scale: 1.06,
+    // Pulled back 1.10 → 1.02. Still ~+7 % over the 0.95 baseline so the
+    // grilled edge peeks past cheese (0.78) by ~0.24 — clearly visible —
+    // without the patty becoming visually oversized. Visibility comes
+    // primarily from the cheese being smaller, not the patty being bigger.
+    scale: 1.02,
     weight: 1.15,  // heaviest — patty as the anchor
     // Rough grilled surface — high roughness, modest env so it doesn't go dead black.
     materialMetalness: 0,
@@ -963,9 +968,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
     idleYRotSpeed:  0.018,
-    // Bumped 0.90 → 1.00 to match the top-bun span. Bottom bun supports the
-    // burger more visually and now reads as the same loaf as the top.
-    scale: 1.00,
+    // Pulled back 1.10 → 0.98 — bottom bun sits just slightly wider than the
+    // top bun (0.92) so it reads as a steady foundation without becoming an
+    // oversized plate that draws attention away from the body of the burger.
+    scale: 0.98,
     weight: 1.10,  // heavy bun
     // Matte bread — matches top bun.
     materialMetalness: 0,
