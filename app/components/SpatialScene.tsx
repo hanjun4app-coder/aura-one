@@ -1281,6 +1281,9 @@ function BurgerExplodedView({ active }: { active: boolean }) {
   const groupRefs = useRef<(THREE.Group | null)[]>(
     new Array(BURGER_LAYERS.length).fill(null)
   );
+  const pivotRefs = useRef<(THREE.Group | null)[]>(
+    new Array(BURGER_LAYERS.length).fill(null)
+  );
   const layerRot = useRef<number[]>(new Array(BURGER_LAYERS.length).fill(0));
 
   useFrame(({ clock }, delta) => {
@@ -1325,6 +1328,7 @@ function BurgerExplodedView({ active }: { active: boolean }) {
 
     BURGER_LAYERS.forEach((layer, i) => {
       const group = groupRefs.current[i];
+      const pivot = pivotRefs.current[i];
       if (!group) return;
 
       // Per-layer staggered spread band keyed by stack position from top.
@@ -1369,9 +1373,13 @@ function BurgerExplodedView({ active }: { active: boolean }) {
       const [rx, ryBase, rz] = layer.revealedRotation;
       group.rotation.set(
         bx + rx * spreadP,
-        byBase + ryBase * spreadP + layerRot.current[i],
+        byBase + ryBase * spreadP,
         bz + rz * spreadP
       );
+
+      if (pivot) {
+        pivot.rotation.y = layerRot.current[i];
+      }
     });
 
     settledClosedRef.current = !active && progress < 0.001;
@@ -1388,14 +1396,20 @@ function BurgerExplodedView({ active }: { active: boolean }) {
               groupRefs.current[i] = el;
             }}
           >
-            <BurgerLayerGLB
-              path={layer.path}
-              doubleSide={layer.doubleSide}
-              modelRotationCorrection={layer.modelRotationCorrection}
-              materialMetalness={layer.materialMetalness}
-              materialRoughness={layer.materialRoughness}
-              materialEnvMapIntensity={layer.materialEnvMapIntensity}
-            />
+            <group
+              ref={(el) => {
+                pivotRefs.current[i] = el;
+              }}
+            >
+              <BurgerLayerGLB
+                path={layer.path}
+                doubleSide={layer.doubleSide}
+                modelRotationCorrection={layer.modelRotationCorrection}
+                materialMetalness={layer.materialMetalness}
+                materialRoughness={layer.materialRoughness}
+                materialEnvMapIntensity={layer.materialEnvMapIntensity}
+              />
+            </group>
           </group>
         ))}
       </group>
