@@ -829,8 +829,10 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.16,         0, 0],
     idleYRotSpeed: -0.018,
-    // +12% from 0.82 — bun frames the burger more prominently
-    scale: 0.92,
+    // Trimmed 0.92 → 0.85 (−7.6 %) so the top bun no longer dominates the
+    // crown relative to the rest of the burger after the overall product
+    // scale bump on EXPLODED_STACK_SCALE.
+    scale: 0.85,
     weight: 1.10,  // heavier bun — lifts first on reveal, settles last on reassemble
     // Matte bread — no plastic shine. Higher roughness, lower env reflection.
     materialMetalness: 0,
@@ -1067,7 +1069,11 @@ useGLTF.preload("/models/dessert.glb");
 useGLTF.preload("/models/fried%20chicken.glb");
 
 // Uniform scale applied to the whole burger group so it fits the viewport.
-const EXPLODED_STACK_SCALE = 0.72;
+// Bumped 0.72 → 0.78 (+8.3 %) — the burger product as a whole reads larger
+// in both carousel and inspect without individually enlarging ingredients.
+// Conservative end of the spec's +8–15 % range so the revealed stack still
+// fits the inspect framing without clipping at extremes.
+const EXPLODED_STACK_SCALE = 0.78;
 
 // Loads a single burger layer GLB, normalizes it, and applies safe material defaults.
 // Transparency is OFF by default — the parent BurgerExplodedView toggles it only while
