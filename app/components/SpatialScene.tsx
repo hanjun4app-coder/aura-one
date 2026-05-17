@@ -224,7 +224,7 @@ const MAX_CANVAS_DPR = PERFORMANCE_MODE ? 1.5 : 2;
 const MATERIAL_OPACITY_EPSILON = 0.003;
 const CAROUSEL_VISIBLE_SLOT_DISTANCE = 2;
 const EXPLODED_STACK_SCALE = 0.78;
-const BURGER_REVEAL_SCALE = 0.62;
+const BURGER_REVEAL_SCALE = 0.70;
 const BURGER_REVEAL_Z_OFFSET = -0.55;
 const BURGER_REVEAL_Y_OFFSET = 0;
 
@@ -318,7 +318,7 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectX = 0;
     layout.inspectY = 0.20;
     layout.inspectZOffset = -0.32;
-    layout.revealScale = 0.48;
+    layout.revealScale = 0.52;
     layout.revealX = 0.02;
     layout.revealY = -0.02;
     layout.revealZ = -0.18;
@@ -326,7 +326,7 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectX = 0.02;
     layout.inspectY = 0.30;
     layout.inspectZOffset = -0.24;
-    layout.revealScale = 0.48;
+    layout.revealScale = 0.54;
     layout.revealX = 0;
     layout.revealY = -0.03;
     layout.revealZ = -0.18;
@@ -334,7 +334,7 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectX = -0.36;
     layout.inspectY = 0.32;
     layout.inspectZOffset = -0.14;
-    layout.revealScale = 0.54;
+    layout.revealScale = 0.62;
     layout.revealX = 0.12;
     layout.revealY = -0.05;
     layout.revealZ = -0.14;
@@ -1062,6 +1062,9 @@ type BurgerLayerConfig = {
   // Mathematically equivalent to baseRotation, but kept separate so it can
   // be reasoned about as a "fix the GLB's authoring orientation" knob.
   modelRotationCorrection?: readonly [number, number, number];
+  // Optional model-level visual offset after bbox centering. Used sparingly for
+  // assets whose visual mass is not aligned with their computed bounds center.
+  modelPositionCorrection?: readonly [number, number, number];
   // Optional motion weight. >1 = heavier ingredient (slower spread / settle),
   // <1 = lighter (faster). Used to give buns / patty a slight heft while
   // bacon / lettuce / onion ring read as lighter. Defaults to 1.0.
@@ -1131,7 +1134,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.16,         0, 0],
-    idleYRotSpeed: -0.018,
+    idleYRotSpeed: -0.032,
+    modelPositionCorrection: [0.055, 0, 0],
     // Trimmed 0.92 → 0.85 (−7.6 %) so the top bun no longer dominates the
     // crown relative to the rest of the burger after the overall product
     // scale bump on EXPLODED_STACK_SCALE.
@@ -1153,7 +1157,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.14,  0.40, -0.05],
-    idleYRotSpeed:  0.020,
+    idleYRotSpeed:  0.034,
     // +15% from 0.78 — bacon reads more clearly across the burger
     scale: 0.90,
     weight: 0.85,  // light strips — quick to spread
@@ -1175,7 +1179,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // Driven by LETTUCE_ORIENTATION_TEST above — change that to swap candidates.
     modelRotationCorrection: ORIENTATION_TESTS[LETTUCE_ORIENTATION_TEST],
     revealedRotation:[ 0, 0, 0],
-    idleYRotSpeed:  0.016,
+    idleYRotSpeed:  0.030,
     // +10% from 1.00 — leaf extends further past inner layers
     scale: 1.10,
     weight: 0.85,  // light leaf
@@ -1196,7 +1200,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.03,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.25,    0],
-    idleYRotSpeed: -0.018,
+    idleYRotSpeed: -0.032,
     scale: 0.88,
     // Overall ~12 % rendered width reduction so the slice doesn't dominate
     // the burger silhouette (X/Z dial-down via the post-norm multiplier).
@@ -1222,7 +1226,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // Driven by ONION_ORIENTATION_TEST above — change that to swap candidates.
     modelRotationCorrection: ORIENTATION_TESTS[ONION_ORIENTATION_TEST],
     revealedRotation:[ 0.04,  0.15,    0],
-    idleYRotSpeed:  0.022,
+    idleYRotSpeed:  0.036,
     scale: 0.85,
     weight: 0.90,  // light ring
     // Light fried surface — slight sheen, not glossy.
@@ -1242,7 +1246,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.18,    0],
-    idleYRotSpeed: -0.014,
+    idleYRotSpeed: -0.026,
     // Reduced 1.02 → 0.90 → 0.78 (−13 % from prior). Cheese tucks well inside
     // the burger body now — it no longer dominates the silhouette; patty,
     // buns, and lettuce all extend visibly past the cheese edges.
@@ -1263,7 +1267,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
-    idleYRotSpeed: -0.026,
+    idleYRotSpeed: -0.040,
     // `scale` was already pulled back to top-bun parity, but the patty GLB's
     // bbox is wider on the horizontal axis than the top-bun's, so even at
     // the same `scale` the rendered diameter is larger. `visualScaleMultiplier`
@@ -1286,7 +1290,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
-    idleYRotSpeed:  0.018,
+    idleYRotSpeed:  0.032,
     // bottom.glb's authored bbox is wider on the horizontal axis than
     // top-bun.glb's, so even at parity `scale` it renders larger. Use the
     // post-normalisation multiplier to dial rendered diameter to match the
@@ -1378,6 +1382,7 @@ function BurgerLayerGLB({
   path,
   doubleSide,
   modelRotationCorrection,
+  modelPositionCorrection,
   materialMetalness,
   materialRoughness,
   materialEnvMapIntensity,
@@ -1385,6 +1390,7 @@ function BurgerLayerGLB({
   path: string;
   doubleSide: boolean;
   modelRotationCorrection?: readonly [number, number, number];
+  modelPositionCorrection?: readonly [number, number, number];
   materialMetalness?: number;
   materialRoughness?: number;
   materialEnvMapIntensity?: number;
@@ -1464,7 +1470,10 @@ function BurgerLayerGLB({
         {/* Model-level rotation correction. Applied INSIDE the centering
             wrapper so the corrected geometry stays centered on origin and
             the outer animation rotation composes on top of this correction. */}
-        <group rotation={modelRotationCorrection ?? [0, 0, 0]}>
+        <group
+          position={modelPositionCorrection ?? [0, 0, 0]}
+          rotation={modelRotationCorrection ?? [0, 0, 0]}
+        >
           <primitive object={scene} />
         </group>
       </group>
@@ -1618,6 +1627,7 @@ function BurgerExplodedView({
                 path={layer.path}
                 doubleSide={layer.doubleSide}
                 modelRotationCorrection={layer.modelRotationCorrection}
+                modelPositionCorrection={layer.modelPositionCorrection}
                 materialMetalness={layer.materialMetalness}
                 materialRoughness={layer.materialRoughness}
                 materialEnvMapIntensity={layer.materialEnvMapIntensity}
@@ -4036,7 +4046,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/18 bg-white/26 text-left text-stone-800 shadow-2xl shadow-stone-900/6 backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/12 bg-white/18 text-left text-stone-800 shadow-xl shadow-stone-900/4 backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
@@ -4123,7 +4133,7 @@ export default function SpatialScene() {
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/22 bg-white/28 shadow-2xl shadow-stone-900/8 backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/14 bg-white/18 shadow-xl shadow-stone-900/5 backdrop-blur-2xl transition-all duration-700 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "opacity-0"
