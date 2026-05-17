@@ -229,12 +229,17 @@ const BURGER_REVEAL_Z_OFFSET = -0.55;
 const BURGER_REVEAL_Y_OFFSET = 0;
 
 type SceneLayout = {
+  mode: "phone-portrait" | "ipad-portrait" | "ipad-landscape" | "desktop";
   isPhone: boolean;
   isTablet: boolean;
   isPortrait: boolean;
-  inspectPosition: [number, number, number];
-  burgerRevealScale: number;
-  burgerRevealOffset: [number, number, number];
+  inspectX: number;
+  inspectY: number;
+  inspectZOffset: number;
+  revealScale: number;
+  revealX: number;
+  revealY: number;
+  revealZ: number;
   productInfoClassName: string;
   ingredientCardClassName: string;
 };
@@ -245,47 +250,69 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
   const isTablet = width >= 700 && width <= 1180;
   const isTabletPortrait = isTablet && isPortrait;
   const isTabletLandscape = isTablet && !isPortrait;
+  const mode = isPhone
+    ? "phone-portrait"
+    : isTabletPortrait
+      ? "ipad-portrait"
+      : isTabletLandscape
+        ? "ipad-landscape"
+        : "desktop";
 
-  return {
+  const layout: SceneLayout = {
+    mode,
     isPhone,
     isTablet,
     isPortrait,
-    inspectPosition: isPhone
-      ? [0, 0.20, -0.32]
-      : isTabletPortrait
-        ? [-0.08, 0.28, -0.22]
-        : isTabletLandscape
-          ? [-0.34, 0.34, -0.12]
-          : [-0.60, 0.42, 0],
-    burgerRevealScale: isPhone
-      ? 0.48
-      : isTabletPortrait
-        ? 0.52
-        : isTabletLandscape
-          ? 0.56
-          : BURGER_REVEAL_SCALE,
-    burgerRevealOffset: isPhone
-      ? [0.02, -0.02, -0.18]
-      : isTabletPortrait
-        ? [0.06, -0.04, -0.14]
-        : isTabletLandscape
-          ? [0.18, -0.03, -0.10]
-          : [0, BURGER_REVEAL_Y_OFFSET, BURGER_REVEAL_Z_OFFSET],
+    inspectX: -0.60,
+    inspectY: 0.42,
+    inspectZOffset: 0,
+    revealScale: BURGER_REVEAL_SCALE,
+    revealX: 0,
+    revealY: BURGER_REVEAL_Y_OFFSET,
+    revealZ: BURGER_REVEAL_Z_OFFSET,
     productInfoClassName: isPhone
       ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[30vh] p-4"
       : isTabletPortrait
-        ? "bottom-[4.5rem] left-1/2 w-[min(18rem,calc(100vw-2rem))] max-h-[31vh] -translate-x-1/2 p-4"
+        ? "bottom-[4.25rem] left-1/2 w-[min(17rem,calc(100vw-2rem))] max-h-[29vh] -translate-x-1/2 p-4"
         : isTabletLandscape
-          ? "bottom-[5rem] right-4 w-[min(17rem,calc(42vw-1rem))] max-h-[40vh] p-4"
+          ? "bottom-[4.75rem] right-4 w-[min(16rem,calc(38vw-1rem))] max-h-[39vh] p-4"
           : "bottom-[6.5rem] right-4 md:right-8 w-[min(20rem,calc(50vw-1rem))] max-h-[min(46vh,24rem)] p-5 md:p-6",
     ingredientCardClassName: isPhone
       ? "bottom-[4.25rem] left-4 w-[min(15rem,calc(100vw-2rem))] max-h-[34vh] translate-y-0"
       : isTabletPortrait
-        ? "bottom-[4.5rem] left-1/2 w-[min(16rem,calc(100vw-2rem))] max-h-[32vh] -translate-x-1/2 translate-y-0"
+        ? "bottom-[4.25rem] right-4 w-[min(15rem,calc(100vw-2rem))] max-h-[30vh] translate-y-0"
         : isTabletLandscape
-          ? "bottom-[4.75rem] left-4 w-[min(15rem,34vw)] max-h-[42vh] translate-y-0"
+          ? "bottom-[4.5rem] left-4 w-[min(14rem,31vw)] max-h-[40vh] translate-y-0"
           : "left-4 top-1/2 w-[min(17rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
   };
+
+  if (mode === "phone-portrait") {
+    layout.inspectX = 0;
+    layout.inspectY = 0.20;
+    layout.inspectZOffset = -0.32;
+    layout.revealScale = 0.48;
+    layout.revealX = 0.02;
+    layout.revealY = -0.02;
+    layout.revealZ = -0.18;
+  } else if (mode === "ipad-portrait") {
+    layout.inspectX = -0.04;
+    layout.inspectY = 0.24;
+    layout.inspectZOffset = -0.24;
+    layout.revealScale = 0.50;
+    layout.revealX = -0.02;
+    layout.revealY = -0.06;
+    layout.revealZ = -0.18;
+  } else if (mode === "ipad-landscape") {
+    layout.inspectX = -0.36;
+    layout.inspectY = 0.32;
+    layout.inspectZOffset = -0.14;
+    layout.revealScale = 0.54;
+    layout.revealX = 0.12;
+    layout.revealY = -0.05;
+    layout.revealZ = -0.14;
+  }
+
+  return layout;
 }
 
 function getSceneLayoutSnapshot() {
@@ -300,13 +327,21 @@ function useSceneLayout() {
   const [layout, setLayout] = useState<SceneLayout>(getSceneLayoutSnapshot);
 
   useEffect(() => {
-    const updateLayout = () => setLayout(getSceneLayoutSnapshot());
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const updateLayout = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        setLayout(getSceneLayoutSnapshot());
+      }, 120);
+    };
 
     updateLayout();
     window.addEventListener("resize", updateLayout);
     window.addEventListener("orientationchange", updateLayout);
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
       window.removeEventListener("resize", updateLayout);
       window.removeEventListener("orientationchange", updateLayout);
     };
@@ -849,17 +884,15 @@ function Part({
     // Stays well inside the visible X range (~±2.11 at the inspect plane)
     // so no product silhouette — including burger reveal — clips on the
     // left edge. Off-slot items unchanged.
-    const [inspectActiveX, inspectActiveY, inspectActiveZOffset] =
-      layout.inspectPosition;
-    const inspectX = slot === 0 ? inspectActiveX : rearDirection * (5.0 + slotDistance * 1.0);
+    const inspectX = slot === 0 ? layout.inspectX : rearDirection * (5.0 + slotDistance * 1.0);
     // Active item gets a very slow gentle float — alive but restrained.
     // Y lifted 0.25 → 0.42 (+0.17) so the inspected hero sits at "screen
     // center, slightly below" — closer to the optical center against the
     // bottom HUD while still leaving room above for the larger inspect scale.
     const inspectY = slot === 0
-      ? inspectActiveY + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
+      ? layout.inspectY + Math.sin(t * 0.28) * 0.036 * inspectBlendRef.current
       : -0.18 - slotDistance * 0.14;
-    const inspectZ = slot === 0 ? inspectZFocus + inspectActiveZOffset : -5.8 - slotDistance * 2.2;
+    const inspectZ = slot === 0 ? inspectZFocus + layout.inspectZOffset : -5.8 - slotDistance * 2.2;
     inspectPositionRef.current.set(inspectX, inspectY, inspectZ);
 
     const dimTarget = inspectMode && slot !== 0 ? 1 : 0;
@@ -1452,24 +1485,23 @@ function BurgerExplodedView({
     if (stackRef.current) {
       const stackScale = THREE.MathUtils.lerp(
         EXPLODED_STACK_SCALE,
-        layout.burgerRevealScale,
+        layout.revealScale,
         revealFrameP
       );
-      const [revealX, revealY, revealZ] = layout.burgerRevealOffset;
       stackRef.current.scale.setScalar(stackScale);
       stackRef.current.position.x = THREE.MathUtils.lerp(
         0,
-        revealX,
+        layout.revealX,
         revealFrameP
       );
       stackRef.current.position.y = THREE.MathUtils.lerp(
         0,
-        revealY,
+        layout.revealY,
         revealFrameP
       );
       stackRef.current.position.z = THREE.MathUtils.lerp(
         0,
-        revealZ,
+        layout.revealZ,
         revealFrameP
       );
     }
