@@ -846,6 +846,8 @@ const ORIENTATION_TESTS = {
 
 type OrientationTestKey = keyof typeof ORIENTATION_TESTS;
 
+const DEBUG_BURGER_BOUNDS = false;
+
 // Pick which candidate to try for each problem layer.
 // Change these values to test a different rotation without touching the layer
 // config below. After the right key is found we can inline the value.
@@ -1153,7 +1155,7 @@ function BurgerLayerGLB({
     // Diagnostic: print the GLB's raw bbox + its normalised post-scale width
     // (X axis) so we can confirm which layers come out wider than expected
     // after the maxDim normalisation. Logs ONCE per GLB on mount.
-    if (typeof window !== "undefined") {
+    if (DEBUG_BURGER_BOUNDS && typeof window !== "undefined") {
       const widthAfterNorm = size.x * norm;
       const heightAfterNorm = size.y * norm;
       const depthAfterNorm = size.z * norm;
