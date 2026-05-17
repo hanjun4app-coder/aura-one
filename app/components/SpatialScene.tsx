@@ -2325,6 +2325,10 @@ function CameraGestureLayer({
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [cameraStatus, setCameraStatus] =
     useState<CameraGestureStatus>("CAMERA OFF");
+  // Tracks whether the most recent enable attempt failed (permission denied,
+  // device unavailable, Safari restrictions etc). Used to surface a friendly
+  // fallback prompt without exposing technical error details to the customer.
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
 
   const updateStatus = useCallback((status: CameraGestureStatus) => {
     if (statusRef.current === status) return;
@@ -2341,6 +2345,11 @@ function CameraGestureLayer({
     (prefix: string, error: unknown) => {
       console.error(`[AURA CAMERA] ${prefix}`, error);
       updateStatus("CAMERA ERROR");
+      // Customer-facing fallback: surface the unavailability flag so the
+      // enable prompt comes back with friendly retry copy, and ensure we
+      // don't leave the broken pill on screen.
+      setCameraUnavailable(true);
+      setCameraEnabled(false);
     },
     [updateStatus]
   );
@@ -2767,6 +2776,10 @@ function CameraGestureLayer({
 
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
+    // Clear any prior failure flag so the prompt reverts to the standard copy
+    // while the retry is in flight. If it fails again, reportCameraError will
+    // re-arm the fallback.
+    setCameraUnavailable(false);
 
     if (!navigator.mediaDevices?.getUserMedia) {
       updateStatus("CAMERA ERROR");
@@ -2971,14 +2984,28 @@ function CameraGestureLayer({
         </div>
       </div>
 
-      {/* Enable button shown only when camera is off */}
+      {/* Customer-facing camera prompt shown only when the camera is off.
+          Two display modes:
+            - normal:        "ENABLE CAMERA TO INTERACT"
+            - unavailable:   "CAMERA UNAVAILABLE" (after a failed attempt)
+          Both surface a keyboard-demo fallback line so the experience never
+          feels broken if Safari permissions are blocked. */}
       {!cameraEnabled && (
         <button
           onClick={enableCamera}
-          className="flex items-center gap-2 border border-stone-300/32 bg-white/48 px-3.5 py-2 text-[0.50rem] tracking-[0.26em] text-stone-500/70 shadow-sm shadow-stone-200/18 backdrop-blur-md transition hover:bg-white/68 hover:text-stone-700/85"
+          className="flex flex-col items-start gap-1 border border-stone-300/32 bg-white/48 px-4 py-2.5 text-left shadow-sm shadow-stone-200/18 backdrop-blur-md transition hover:bg-white/68"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-stone-400/45" />
-          ENABLE CAMERA
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-stone-400/45" />
+            <span className="text-[0.50rem] tracking-[0.26em] text-stone-500/75 transition hover:text-stone-700/85">
+              {cameraUnavailable ? "CAMERA UNAVAILABLE" : "ENABLE CAMERA TO INTERACT"}
+            </span>
+          </div>
+          <span className="ml-3.5 text-[0.44rem] tracking-[0.18em] text-stone-400/55">
+            {cameraUnavailable
+              ? "Keyboard demo available  ·  Tap to retry"
+              : "Or browse with the keyboard demo"}
+          </span>
         </button>
       )}
     </div>
