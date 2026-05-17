@@ -125,6 +125,21 @@ const FOOD_INSPECT_DATA = [
   },
 ] as const;
 
+if (
+  process.env.NODE_ENV === "development" &&
+  (CAROUSEL_PARTS.length !== ITEM_PRICES.length ||
+    CAROUSEL_PARTS.length !== FOOD_INSPECT_DATA.length)
+) {
+  console.warn(
+    "[AURA CONFIG] Menu config length mismatch",
+    {
+      carouselParts: CAROUSEL_PARTS.length,
+      foodInspectData: FOOD_INSPECT_DATA.length,
+      itemPrices: ITEM_PRICES.length,
+    }
+  );
+}
+
 const INSPECT_ROTATION_STEP = 0.32;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 const HAND_LANDMARKER_MODEL_URL =
