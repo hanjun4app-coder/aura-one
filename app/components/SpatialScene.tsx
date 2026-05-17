@@ -820,10 +820,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/top-bun.glb",
     name: "Top Bun",
-    // Lowered from 0.40 → 0.34 → 0.28 → 0.24 — bun keeps coming down for a
-    // more compact crown. 0.02 above bacon (0.22) — heavy overlap with the bun's
-    // dome is intentional and reads as the bacon nestling inside the bread.
-    assembledY:  0.24,
+    // Lowered 0.24 → 0.19 with the upper group so the whole top half sits
+    // closer to the onion ring — burger reads more compact.
+    assembledY:  0.19,
     revealedY:   1.40,
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
@@ -844,9 +843,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/bacon%20(1).glb",
     name: "Bacon",
-    // Lowered 0.22 → 0.16 so bacon integrates more into the stack and isn't
-    // peeking too high against the top bun (0.24).
-    assembledY:  0.16,
+    // Lowered 0.16 → 0.11 in lockstep with the upper-group compression.
+    assembledY:  0.11,
     revealedY:   1.00,
     revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
@@ -865,9 +863,8 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/lettuce2.glb",
     name: "Lettuce",
-    // Dropped 0.14 → 0.06 so lettuce lies nearly parallel with tomato (0.00)
-    // — leaf and slice sit together as a layered pair.
-    assembledY:  0.06,
+    // Dropped 0.06 → 0.01 with the upper-group compression.
+    assembledY:  0.01,
     revealedY:   0.60,
     revealedOffset:  [-0.03,  0.00],
     baseRotation:    [ 0, 0, 0],
@@ -888,7 +885,9 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
   {
     path: "/models/burger-layers/tomato%20slice%203.glb",
     name: "Tomato",
-    assembledY:  0.00,
+    // Dropped 0.00 → −0.05 so tomato sits closer to onion ring (−0.12),
+    // closing the gap from 0.12 → 0.07. Onion ring and below untouched.
+    assembledY: -0.05,
     revealedY:   0.20,
     revealedOffset:  [ 0.03,  0.00],
     baseRotation:    [ 0,            0, 0],
@@ -1550,13 +1549,14 @@ function SpatialMenuCarousel({
         midPosition={[0, 0.80, 1.08]}
         // Slightly elevated rest position so the oyster sits proud on stage.
         explodedPosition={[0, 0.22, 0]}
-        // Larger carousel focusScale (1.20 → 1.34) so the oyster doesn't
-        // disappear next to the heavier burger / steak silhouettes.
-        focusScale={1.34}
+        // Bumped 1.34 → 1.48 (+10 %) — oyster reads more substantial in the
+        // carousel against burger/steak.
+        focusScale={1.48}
         secondaryScale={0.66}
         // Pulled forward and scaled up in inspect for hero framing.
+        // Inspect multiplier 1.62 → 1.88 (+16 %).
         inspectZFocus={1.65}
-        inspectScaleMultiplier={1.62}
+        inspectScaleMultiplier={1.88}
         // Stagger unchanged — middle of entrance order.
         explodeDelay={0.14}
         assembleDelay={0.14}
@@ -1621,12 +1621,13 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[0, 0.84, 1.02]}
         explodedPosition={[0, 0.16, 0]}
-        focusScale={1.28}
+        // Carousel focus 1.28 → 1.42 (+11 %).
+        focusScale={1.42}
         secondaryScale={0.66}
         // Inspect framing pulled slightly forward (1.40 → 1.70) and scaled up
-        // (1.50 → 1.70, +13 %) so the layered dessert reads as a luxury hero.
+        // (1.70 → 1.96, +15 %) so the layered dessert reads as a luxury hero.
         inspectZFocus={1.70}
-        inspectScaleMultiplier={1.70}
+        inspectScaleMultiplier={1.96}
         // Dessert — first to arrive on entrance, last to retreat on return.
         explodeDelay={0.00}
         assembleDelay={0.28}
@@ -1652,10 +1653,12 @@ function SpatialMenuCarousel({
         basePosition={[0, 0, 0]}
         midPosition={[0.08, 0.86, 1.00]}
         explodedPosition={[0, 0.18, 0]}
-        focusScale={1.26}
+        // Carousel focus 1.26 → 1.40 (+11 %).
+        focusScale={1.40}
         secondaryScale={0.65}
+        // Inspect multiplier 1.48 → 1.72 (+16 %).
         inspectZFocus={1.55}
-        inspectScaleMultiplier={1.48}
+        inspectScaleMultiplier={1.72}
         // Slots between coffee (0.07/0.21) and dessert (0.00/0.28) in the
         // entrance stagger — arrives early-middle, leaves late-middle.
         explodeDelay={0.035}
