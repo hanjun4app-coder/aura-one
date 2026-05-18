@@ -325,6 +325,14 @@ function resolveAuraVoiceAnswer(transcript: string) {
   return match?.answer ?? "I can answer questions about ingredients, allergens, price, how to use this, and customization.";
 }
 
+function selectAuraVoice(voices: SpeechSynthesisVoice[]) {
+  return (
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en-us")) ??
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ??
+    null
+  );
+}
+
 function requestSpatialFullscreenOnce(requestedRef: MutableRefObject<boolean>) {
   if (typeof document === "undefined" || requestedRef.current) return;
 
@@ -3581,6 +3589,8 @@ export default function SpatialScene() {
   const voiceRecognitionRef = useRef<AuraSpeechRecognition | null>(null);
   const voiceActiveRef = useRef(false);
   const voiceMountedRef = useRef(true);
+  const auraVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const voiceFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trayRef = useRef<HTMLDivElement>(null);
   const introFallbackLoggedRef = useRef(false);
   const introManualClickLoggedRef = useRef(false);
@@ -3669,8 +3679,16 @@ export default function SpatialScene() {
     stopInspectDrag(event);
   }, [stopInspectDrag]);
 
+  const clearVoiceFallbackTimer = useCallback(() => {
+    if (voiceFallbackTimerRef.current) {
+      clearTimeout(voiceFallbackTimerRef.current);
+      voiceFallbackTimerRef.current = null;
+    }
+  }, []);
+
   const stopAuraVoice = useCallback(() => {
     voiceActiveRef.current = false;
+    clearVoiceFallbackTimer();
     const recognition = voiceRecognitionRef.current;
 
     if (recognition) {
@@ -3684,7 +3702,67 @@ export default function SpatialScene() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+  }, [clearVoiceFallbackTimer]);
+
+  const unlockAuraSpeech = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
+
+    const synth = window.speechSynthesis;
+    const voices = synth.getVoices();
+    auraVoiceRef.current = selectAuraVoice(voices) ?? auraVoiceRef.current;
+    synth.cancel();
+
+    const unlockUtterance = new SpeechSynthesisUtterance(".");
+    unlockUtterance.lang = "en-US";
+    unlockUtterance.rate = 1;
+    unlockUtterance.pitch = 1;
+    unlockUtterance.volume = 0.01;
+    if (auraVoiceRef.current) unlockUtterance.voice = auraVoiceRef.current;
+    synth.speak(unlockUtterance);
+
+    return true;
   }, []);
+
+  const speakAuraAnswer = useCallback((answer: string) => {
+    clearVoiceFallbackTimer();
+
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setVoiceStatus(answer);
+      voiceFallbackTimerRef.current = setTimeout(() => {
+        if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
+      }, 5200);
+      return;
+    }
+
+    const synth = window.speechSynthesis;
+    const voices = synth.getVoices();
+    auraVoiceRef.current = selectAuraVoice(voices) ?? auraVoiceRef.current;
+    synth.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(answer);
+    utterance.lang = "en-US";
+    utterance.rate = 0.94;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    if (auraVoiceRef.current) utterance.voice = auraVoiceRef.current;
+
+    utterance.onstart = () => {
+      if (voiceMountedRef.current) setVoiceStatus("Speaking...");
+    };
+
+    utterance.onend = () => {
+      if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
+    };
+
+    utterance.onerror = () => {
+      if (voiceMountedRef.current) {
+        setVoiceStatus("Audio unavailable. Please check iPad volume.");
+      }
+    };
+
+    setVoiceStatus("Speaking...");
+    synth.speak(utterance);
+  }, [clearVoiceFallbackTimer]);
 
   const handleAskAuraClick = useCallback(() => {
     requestImmersiveFullscreen();
@@ -3702,6 +3780,7 @@ export default function SpatialScene() {
     }
 
     stopAuraVoice();
+    unlockAuraSpeech();
 
     const recognition = new Recognition();
     voiceRecognitionRef.current = recognition;
@@ -3717,21 +3796,7 @@ export default function SpatialScene() {
       const answer = resolveAuraVoiceAnswer(transcript);
 
       voiceActiveRef.current = false;
-      setVoiceStatus("ANSWERING");
-
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(answer);
-        utterance.lang = "en-US";
-        utterance.rate = 0.92;
-        utterance.pitch = 0.95;
-        utterance.onend = () => {
-          if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
-        };
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setVoiceStatus(answer);
-      }
+      speakAuraAnswer(answer);
     };
 
     recognition.onerror = () => {
@@ -3755,7 +3820,14 @@ export default function SpatialScene() {
       voiceRecognitionRef.current = null;
       setVoiceStatus("VOICE UNAVAILABLE");
     }
-  }, [activePartIndex, inspectMode, requestImmersiveFullscreen, stopAuraVoice]);
+  }, [
+    activePartIndex,
+    inspectMode,
+    requestImmersiveFullscreen,
+    speakAuraAnswer,
+    stopAuraVoice,
+    unlockAuraSpeech,
+  ]);
 
   const openMenu = useCallback(() => {
     landingPhaseRef.current = "menu";
@@ -3880,6 +3952,22 @@ export default function SpatialScene() {
   useEffect(() => { explodedRef.current = exploded; }, [exploded]);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const synth = window.speechSynthesis;
+    const updateVoice = () => {
+      auraVoiceRef.current = selectAuraVoice(synth.getVoices()) ?? auraVoiceRef.current;
+    };
+
+    updateVoice();
+    synth.addEventListener("voiceschanged", updateVoice);
+
+    return () => {
+      synth.removeEventListener("voiceschanged", updateVoice);
+    };
+  }, []);
 
   useEffect(() => {
     if (!inspectMode) {
