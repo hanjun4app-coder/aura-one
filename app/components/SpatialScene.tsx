@@ -291,9 +291,40 @@ const AURA_VOICE_RESPONSES = [
       "This is our signature spatial burger experience. Each ingredient can be explored individually using gesture interaction.",
   },
   {
-    triggers: ["ingredients", "what ingredients", "what's inside", "what is inside"],
+    triggers: [
+      "ingredients",
+      "what ingredients",
+      "what's inside",
+      "what is inside",
+      "what ingredients are in this burger",
+    ],
     answer:
       "The burger includes brioche bun, wagyu beef patty, aged cheddar, tomato, crisp lettuce, and truffle sauce.",
+  },
+  {
+    triggers: ["what do you recommend", "recommend", "recommendation"],
+    answer:
+      "I recommend the signature burger combo. It is the hero item in this demo and shows the spatial ingredient reveal most clearly.",
+  },
+  {
+    triggers: ["most popular item", "popular item", "most popular"],
+    answer:
+      "The signature burger combo is presented as the featured favorite, with the strongest visual story for in-store discovery.",
+  },
+  {
+    triggers: ["is this spicy", "spicy", "is it spicy"],
+    answer:
+      "This burger is rich and savory, not strongly spicy. The flavor is focused on wagyu beef, cheddar, truffle sauce, and toasted brioche.",
+  },
+  {
+    triggers: ["does this contain dairy", "contain dairy", "has dairy", "dairy"],
+    answer:
+      "Yes. This burger contains dairy from the aged cheddar and may also include dairy in the sauce or bun preparation.",
+  },
+  {
+    triggers: ["does this contain gluten", "contain gluten", "has gluten", "gluten"],
+    answer:
+      "Yes. This burger contains gluten from the brioche bun. Please ask the restaurant team about gluten-free options.",
   },
   {
     triggers: ["allergens", "allergy", "allergies"],
@@ -301,7 +332,7 @@ const AURA_VOICE_RESPONSES = [
       "This item contains wheat, dairy, and egg. Please ask a team member for complete allergen guidance.",
   },
   {
-    triggers: ["price", "how much", "cost"],
+    triggers: ["price", "how much", "cost", "how much is this burger"],
     answer: "The signature burger combo is eighteen dollars and ninety cents.",
   },
   {
@@ -313,6 +344,21 @@ const AURA_VOICE_RESPONSES = [
     triggers: ["customize", "customise", "change it", "modify"],
     answer:
       "You can customize toppings and preparation with the team. This demo highlights the ingredient structure before ordering.",
+  },
+  {
+    triggers: ["can this system use our own menu", "use our own menu", "own menu"],
+    answer:
+      "Yes. AURA ONE can be configured around a restaurant's own menu items, product visuals, pricing, and featured experiences.",
+  },
+  {
+    triggers: ["can this work in my restaurant", "work in my restaurant", "my restaurant"],
+    answer:
+      "Yes. The system is designed as an in-store spatial menu experience for restaurants, demos, and premium hospitality environments.",
+  },
+  {
+    triggers: ["do customers need special devices", "special devices", "need devices"],
+    answer:
+      "Customers do not need special hardware. The experience can run on supported tablets, displays, or kiosk-style web devices.",
   },
 ] as const;
 
