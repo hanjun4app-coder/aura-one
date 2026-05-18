@@ -25,14 +25,6 @@ const CAROUSEL_PARTS = [
     description: "Double wagyu patty, truffle mayo, aged cheddar, brioche bun.",
   },
   {
-    name: "Premium Steak",
-    description: "Seared cut with rich savory finish, finished in bone-marrow butter.",
-  },
-  {
-    name: "Fresh Oyster Selection",
-    description: "Chilled ocean delicacy, served on cracked ice with citrus mignonette.",
-  },
-  {
     name: "Louisiana Po' Boy",
     description: "Toasted roll with crisp seafood, remoulade, lettuce, and tomato.",
   },
@@ -59,7 +51,7 @@ const BURGER_INGREDIENTS = [
   { name: "Top Bun", cal: "180 kcal", allergen: "Gluten, Sesame", flavor: "Toasted brioche dome with sesame seeds" },
 ] as const;
 
-const ITEM_PRICES = [18.90, 26.50, 22.00, 16.90, 12.80, 14.50, 24.00];
+const ITEM_PRICES = [18.90, 16.90, 12.80, 14.50, 24.00];
 
 const FOOD_INSPECT_DATA = [
   {
@@ -70,24 +62,6 @@ const FOOD_INSPECT_DATA = [
     flavorProfile: "Savory, creamy, smoky, lightly sweet",
     ingredients: "Brioche bun · wagyu beef patty · aged cheddar · crisp lettuce · tomato · truffle sauce",
     chefNote: "Signature layered burger with warm brioche and rich truffle sauce.",
-  },
-  {
-    special: null,
-    calories: "620 kcal",
-    protein: "48g",
-    allergens: "None",
-    flavorProfile: "Savory, smoky, juicy, robust",
-    ingredients: "Prime ribeye · sea salt · cracked pepper · bone-marrow butter · rosemary",
-    chefNote: "Dry-aged 28 days, seared in cast iron and finished with bone-marrow butter.",
-  },
-  {
-    special: null,
-    calories: "120 kcal",
-    protein: "14g",
-    allergens: "Shellfish",
-    flavorProfile: "Briny, delicate, ocean-fresh, silky texture",
-    ingredients: "Fresh oysters · cracked ice · lemon · shallot mignonette · sea salt",
-    chefNote: "Hand-selected daily — served chilled on ice with a citrus mignonette.",
   },
   {
     special: null,
@@ -127,6 +101,39 @@ const FOOD_INSPECT_DATA = [
   },
 ] as const;
 
+const INACTIVE_MENU_ITEMS = [
+  {
+    name: "Premium Steak",
+    description: "Seared cut with rich savory finish, finished in bone-marrow butter.",
+    price: 26.50,
+    modelPath: "/models/steak.glb",
+    inspectData: {
+      special: null,
+      calories: "620 kcal",
+      protein: "48g",
+      allergens: "None",
+      flavorProfile: "Savory, smoky, juicy, robust",
+      ingredients: "Prime ribeye · sea salt · cracked pepper · bone-marrow butter · rosemary",
+      chefNote: "Dry-aged 28 days, seared in cast iron and finished with bone-marrow butter.",
+    },
+  },
+  {
+    name: "Fresh Oyster Selection",
+    description: "Chilled ocean delicacy, served on cracked ice with citrus mignonette.",
+    price: 22.00,
+    modelPath: "/models/oyster.glb",
+    inspectData: {
+      special: null,
+      calories: "120 kcal",
+      protein: "14g",
+      allergens: "Shellfish",
+      flavorProfile: "Briny, delicate, ocean-fresh, silky texture",
+      ingredients: "Fresh oysters · cracked ice · lemon · shallot mignonette · sea salt",
+      chefNote: "Hand-selected daily — served chilled on ice with a citrus mignonette.",
+    },
+  },
+] as const;
+
 if (
   process.env.NODE_ENV === "development" &&
   (CAROUSEL_PARTS.length !== ITEM_PRICES.length ||
@@ -138,6 +145,7 @@ if (
       carouselParts: CAROUSEL_PARTS.length,
       foodInspectData: FOOD_INSPECT_DATA.length,
       itemPrices: ITEM_PRICES.length,
+      inactiveMenuItems: INACTIVE_MENU_ITEMS.length,
     }
   );
 }
@@ -194,6 +202,18 @@ const EXIT_INSPECT_COOLDOWN_MS = 2500;          // post-exit lockout prevents do
 const PALM_HOLD_DURATION_MS = 900;
 const PALM_HOLD_STABLE_THRESHOLD = 0.012;
 const BURGER_EXPLODE_COOLDOWN_MS = 2000;
+const CAMERA_DEFAULT_DETECTION_INTERVAL_MS = 83;
+const CAMERA_IPAD_INSPECT_DETECTION_INTERVAL_MS = 115;
+const CAMERA_DEFAULT_CONSTRAINTS = {
+  width: { ideal: 360, max: 360 },
+  height: { ideal: 270, max: 270 },
+  frameRate: { ideal: 15, max: 15 },
+} satisfies MediaTrackConstraints;
+const CAMERA_IPAD_CONSTRAINTS = {
+  width: { ideal: 320, max: 360 },
+  height: { ideal: 240, max: 270 },
+  frameRate: { ideal: 12, max: 15 },
+} satisfies MediaTrackConstraints;
 // Fist → open-palm reveal gesture (Burger Inspect only).
 // Armed on a fist pulse; fires when the hand stays open & not-fist for
 // FIST_OPEN_PALM_STABLE_MS, as long as the armed state hasn't timed out.
@@ -520,6 +540,18 @@ function getSceneLayoutSnapshot() {
   }
 
   return resolveSceneLayout(window.innerWidth, window.innerHeight);
+}
+
+function isIpadSafariRuntime() {
+  if (typeof navigator === "undefined") return false;
+
+  const ua = navigator.userAgent;
+  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/i.test(ua);
+  const isIpad =
+    /iPad/i.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  return isIpad && isSafari;
 }
 
 function useSceneLayout() {
@@ -2075,92 +2107,9 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 1: Sushi Roll Combo ── */}
+      {/* ── Item 1: Louisiana Po' Boy ── */}
       <Part
         partIndex={1}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
-        layout={layout}
-        basePosition={[0, 0, 0]}
-        midPosition={[-0.12, 0.86, 0.98]}
-        explodedPosition={[0, 0.22, 0]}
-        focusScale={1.32}
-        secondaryScale={0.64}
-        inspectZFocus={1.5}
-        // Inspect multiplier 1.52 → 1.72 (+13 %).
-        inspectScaleMultiplier={1.72}
-        // Sushi — second-last to arrive, second to leave on return.
-        explodeDelay={0.21}
-        assembleDelay={0.07}
-        selfRotationAmount={0.14}
-        motionSeed={2}
-      >
-        <FoodModel
-          path="/models/steak.glb"
-          targetSize={0.98}
-          rotationOffset={[0.12, 0, 0]}
-          // Seared meat: subtle juice sheen on the surface but not glossy.
-          // Lower roughness + higher env catches warm spotlight on the
-          // grilled crust without making the steak look plastic-coated.
-          materialMetalness={0}
-          materialRoughness={0.48}
-          materialEnvMapIntensity={0.85}
-        />
-      </Part>
-
-      {/* ── Item 2: Fresh Oyster Selection — luxury seafood showcase ── */}
-      <Part
-        partIndex={2}
-        progressRef={progressRef}
-        activePartIndex={activePartIndex}
-        totalParts={n}
-        carouselEnabled={exploded}
-        inspectMode={inspectMode}
-        inspectRotationRef={inspectRotationRef}
-        layout={layout}
-        basePosition={[0, 0, 0]}
-        midPosition={[0, 0.80, 1.08]}
-        // Slightly elevated rest position so the oyster sits proud on stage.
-        explodedPosition={[0, 0.22, 0]}
-        // Bumped 1.34 → 1.48 (+10 %) — oyster reads more substantial in the
-        // carousel against burger/steak.
-        focusScale={1.48}
-        secondaryScale={0.66}
-        // Pulled forward and scaled up in inspect for hero framing.
-        // Inspect multiplier 1.88 → 2.12 (+13 %).
-        inspectZFocus={1.65}
-        inspectScaleMultiplier={2.12}
-        // Stagger unchanged — middle of entrance order.
-        explodeDelay={0.14}
-        assembleDelay={0.14}
-        selfRotationAmount={0.16}
-        motionSeed={3}
-      >
-        <FoodModel
-          path="/models/oyster.glb"
-          // Larger normalisation — oyster's natural footprint is wider/flatter
-          // than fries; needs presence on the carousel stage.
-          targetSize={1.05}
-          // Elegant dining angle — slight forward tilt opens the shell toward
-          // the camera, letting the spotlight catch the wet meat surface.
-          rotationOffset={[0.18, 0, 0]}
-          // Wet-shell PBR: lower roughness on the reflective bivalve surface
-          // with high env-map response so the spotlight raking across the
-          // edge creates a clean specular highlight. No metalness — keeps it
-          // from reading as plastic or chrome.
-          materialMetalness={0}
-          materialRoughness={0.42}
-          materialEnvMapIntensity={0.95}
-        />
-      </Part>
-
-      {/* ── Item 3: Louisiana Po' Boy ── */}
-      <Part
-        partIndex={3}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -2194,9 +2143,9 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 4: Chef's Dessert Combo ── */}
+      {/* ── Item 2: Chef's Dessert Combo ── */}
       <Part
-        partIndex={4}
+        partIndex={2}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -2232,9 +2181,9 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 5: Crispy Fried Chicken ── */}
+      {/* ── Item 3: Crispy Fried Chicken ── */}
       <Part
-        partIndex={5}
+        partIndex={3}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -2271,9 +2220,9 @@ function SpatialMenuCarousel({
         />
       </Part>
 
-      {/* ── Item 6: Louisiana Crawfish — premium coastal showcase ── */}
+      {/* ── Item 4: Louisiana Crawfish — premium coastal showcase ── */}
       <Part
-        partIndex={6}
+        partIndex={4}
         progressRef={progressRef}
         activePartIndex={activePartIndex}
         totalParts={n}
@@ -2895,6 +2844,7 @@ function CameraGestureLayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const handLandmarkerRef = useRef<HandLandmarkerInstance | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isIpadSafariRef = useRef(isIpadSafariRuntime());
   const isInitializingRef = useRef(false);
   const frameRef = useRef<number | null>(null);
   const runDetectionLoopRef = useRef<() => void>(() => undefined);
@@ -3346,9 +3296,13 @@ function CameraGestureLayer({
     const video = videoRef.current;
     const handLandmarker = handLandmarkerRef.current;
     const now = performance.now();
+    const detectionInterval =
+      isIpadSafariRef.current && inspectMode
+        ? CAMERA_IPAD_INSPECT_DETECTION_INTERVAL_MS
+        : CAMERA_DEFAULT_DETECTION_INTERVAL_MS;
 
-    if (video && handLandmarker && video.readyState >= 2) {
-      if (now - lastDetectionAtRef.current > 72) {
+    if (!document.hidden && video && handLandmarker && video.readyState >= 2) {
+      if (now - lastDetectionAtRef.current > detectionInterval) {
         lastDetectionAtRef.current = now;
 
         try {
@@ -3365,7 +3319,7 @@ function CameraGestureLayer({
     }
 
     frameRef.current = requestAnimationFrame(() => runDetectionLoopRef.current());
-  }, [processHandResult, releaseCameraResources, updateStatus]);
+  }, [inspectMode, processHandResult, releaseCameraResources, updateStatus]);
 
   useEffect(() => {
     runDetectionLoopRef.current = runDetectionLoop;
@@ -3400,8 +3354,9 @@ function CameraGestureLayer({
         audio: false,
         video: {
           facingMode: "user",
-          height: { ideal: 360 },
-          width: { ideal: 480 },
+          ...(isIpadSafariRef.current
+            ? CAMERA_IPAD_CONSTRAINTS
+            : CAMERA_DEFAULT_CONSTRAINTS),
         },
       });
       updateDebugStep("Camera stream received");
@@ -3471,40 +3426,40 @@ function CameraGestureLayer({
       runningMode: "VIDEO" as const,
     };
 
-    updateStatus("TRYING GPU");
-    updateDebugStep("Initializing HandLandmarker (GPU)");
+    const delegateOrder = isIpadSafariRef.current
+      ? (["CPU", "GPU"] as const)
+      : (["GPU", "CPU"] as const);
+    let landmarkerInitError: unknown = null;
 
-    try {
-      handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          delegate: "GPU",
-          modelAssetPath: HAND_LANDMARKER_MODEL_URL,
-        },
-        ...handLandmarkerOptions,
-      });
-    } catch (gpuError) {
-      console.warn("[AURA CAMERA] GPU init failed", gpuError);
-      console.info("[AURA CAMERA] Retrying CPU delegate");
-      updateStatus("GPU FAILED");
-      updateDebugStep("GPU init failed — retrying CPU");
+    for (const delegate of delegateOrder) {
+      updateStatus(delegate === "GPU" ? "TRYING GPU" : "FALLBACK CPU");
+      updateDebugStep(`Initializing HandLandmarker (${delegate})`);
 
       try {
-        updateStatus("FALLBACK CPU");
-        updateDebugStep("Initializing HandLandmarker (CPU)");
         handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
-            delegate: "CPU",
+            delegate,
             modelAssetPath: HAND_LANDMARKER_MODEL_URL,
           },
           ...handLandmarkerOptions,
         });
-        console.info("[AURA CAMERA] CPU fallback success");
-      } catch (cpuError) {
-        releaseCameraResources();
-        reportCameraError("HandLandmarker init failed (GPU + CPU)", cpuError);
-        isInitializingRef.current = false;
-        return;
+
+        if (delegate === "CPU" && !isIpadSafariRef.current) {
+          console.info("[AURA CAMERA] CPU fallback success");
+        }
+        break;
+      } catch (error) {
+        landmarkerInitError = error;
+        console.warn(`[AURA CAMERA] ${delegate} init failed`, error);
+        if (delegate === "GPU") updateStatus("GPU FAILED");
       }
+    }
+
+    if (!handLandmarkerRef.current) {
+      releaseCameraResources();
+      reportCameraError("HandLandmarker init failed", landmarkerInitError);
+      isInitializingRef.current = false;
+      return;
     }
 
     setCameraEnabled(true);
@@ -3551,10 +3506,10 @@ function CameraGestureLayer({
       {/* Video pill — visible while camera is enabled. Mount kept always so
           videoRef.current is never null when getUserMedia resolves. */}
       <div className={cameraEnabled
-        ? "w-36 overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md"
+        ? `${isReady ? "w-auto rounded-full" : "w-36"} overflow-hidden border border-stone-200/25 bg-white/38 shadow-md shadow-stone-200/14 backdrop-blur-md`
         : "sr-only"
       }>
-        <div className="relative aspect-video overflow-hidden bg-stone-100/60">
+        <div className={isReady ? "sr-only" : "relative aspect-video overflow-hidden bg-stone-100/60"}>
           <video
             ref={videoRef}
             autoPlay
