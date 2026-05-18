@@ -3619,6 +3619,7 @@ export default function SpatialScene() {
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
   const [showEnterMenuFallback, setShowEnterMenuFallback] = useState(false);
+  const [gestureOnboardingDismissed, setGestureOnboardingDismissed] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Ask AURA");
   const landingPhaseRef = useRef<LandingPhase>("intro");
   const inspectRotationRef = useRef({ x: 0, y: 0 });
@@ -4214,6 +4215,7 @@ export default function SpatialScene() {
 
     if (action === "ENTER_INSPECT") {
       if (!explodedRef.current) return;
+      setGestureOnboardingDismissed(true);
       // Cinematic 220ms hero pause: the spotlight fades up on the active item
       // for a beat before the inspect transition begins. Subsequent ENTER
       // triggers within the window collapse onto the same pending flip.
@@ -4248,19 +4250,30 @@ export default function SpatialScene() {
     }
 
     if (action === "TOGGLE_BURGER_EXPLODE") {
-      if (inspectModeRef.current && activePartIndex === 0) setBurgerExploded((v) => !v);
+      if (inspectModeRef.current && activePartIndex === 0) {
+        setGestureOnboardingDismissed(true);
+        setBurgerExploded((v) => !v);
+      }
       return;
     }
 
     if (action === "PREV_PART") {
       cancelPendingInspectEnter();
-      if (explodedRef.current) { setBurgerExploded(false); showPreviousPart(); }
+      if (explodedRef.current) {
+        setGestureOnboardingDismissed(true);
+        setBurgerExploded(false);
+        showPreviousPart();
+      }
       return;
     }
 
     if (action === "NEXT_PART") {
       cancelPendingInspectEnter();
-      if (explodedRef.current) { setBurgerExploded(false); showNextPart(); }
+      if (explodedRef.current) {
+        setGestureOnboardingDismissed(true);
+        setBurgerExploded(false);
+        showNextPart();
+      }
       return;
     }
 
@@ -4350,6 +4363,8 @@ export default function SpatialScene() {
         : sceneLayout.mode === "phone-portrait"
           ? "right-4 top-[calc(env(safe-area-inset-top)+4.25rem)]"
           : "right-8 top-24";
+  const showGestureOnboarding =
+    landingPhase === "menu" && exploded && !gestureOnboardingDismissed && !reviewMode;
 
   return (
     <div
@@ -4372,6 +4387,10 @@ export default function SpatialScene() {
         @keyframes auraIntroBarBreathe {
           0%, 100% { opacity: 1; transform: scaleX(1); }
           50%      { opacity: 0.55; transform: scaleX(0.78); }
+        }
+        @keyframes auraGestureHintBreathe {
+          0%, 100% { opacity: 0.82; transform: translate(-50%, 0); }
+          50%      { opacity: 0.58; transform: translate(-50%, -2px); }
         }
       `}</style>
       {introVisible && (
@@ -4463,6 +4482,28 @@ export default function SpatialScene() {
         burgerExploded={burgerExploded}
         activePartIndex={activePartIndex}
       />
+
+      <div
+        className={`pointer-events-none absolute left-1/2 z-10 w-[min(22rem,calc(100vw-2rem))] rounded-3xl border border-white/10 bg-white/14 px-5 py-3 text-center shadow-lg shadow-stone-900/[0.025] backdrop-blur-2xl transition-all duration-1000 ${
+          showGestureOnboarding
+            ? "translate-y-0 opacity-100"
+            : "translate-y-2 opacity-0"
+        } ${
+          sceneLayout.mode === "ipad-portrait"
+            ? "bottom-[calc(env(safe-area-inset-bottom)+6.6rem)]"
+            : sceneLayout.mode === "phone-portrait"
+              ? "bottom-[calc(env(safe-area-inset-bottom)+6.4rem)]"
+              : "bottom-[6.25rem]"
+        }`}
+        style={showGestureOnboarding ? { animation: "auraGestureHintBreathe 4.8s ease-in-out infinite" } : undefined}
+      >
+        <p className="text-[0.68rem] font-light tracking-[0.18em] text-stone-700/68">
+          Raise your hand to explore
+        </p>
+        <p className="mt-1.5 text-[0.52rem] font-light tracking-[0.16em] text-stone-500/50">
+          Swipe gently to browse · Open palm to inspect
+        </p>
+      </div>
 
       {/* ── Mode label (top-center) — minimal Apple-style state badge ── */}
       {/* Burger-specific label appears only while inspecting the burger;
