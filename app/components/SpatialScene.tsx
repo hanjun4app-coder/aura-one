@@ -3817,6 +3817,32 @@ export default function SpatialScene() {
     stopInspectDrag(event);
   }, [stopInspectDrag]);
 
+  useEffect(() => {
+    const clearInspectDrag = () => {
+      inspectDragRef.current.active = false;
+      inspectDragRef.current.pointerId = -1;
+    };
+    const clearInspectDragOnHidden = () => {
+      if (document.hidden) clearInspectDrag();
+    };
+
+    window.addEventListener("pointerup", clearInspectDrag);
+    window.addEventListener("pointercancel", clearInspectDrag);
+    window.addEventListener("touchend", clearInspectDrag, { passive: true });
+    window.addEventListener("touchcancel", clearInspectDrag, { passive: true });
+    window.addEventListener("blur", clearInspectDrag);
+    document.addEventListener("visibilitychange", clearInspectDragOnHidden);
+
+    return () => {
+      window.removeEventListener("pointerup", clearInspectDrag);
+      window.removeEventListener("pointercancel", clearInspectDrag);
+      window.removeEventListener("touchend", clearInspectDrag);
+      window.removeEventListener("touchcancel", clearInspectDrag);
+      window.removeEventListener("blur", clearInspectDrag);
+      document.removeEventListener("visibilitychange", clearInspectDragOnHidden);
+    };
+  }, []);
+
   const clearVoiceFallbackTimer = useCallback(() => {
     if (voiceFallbackTimerRef.current) {
       clearTimeout(voiceFallbackTimerRef.current);
@@ -4282,6 +4308,7 @@ export default function SpatialScene() {
 
     if (action === "ASSEMBLE") {
       cancelPendingInspectEnter();
+      stopInspectDrag();
       resetInspectRotation();
       setBurgerExploded(false);
       setInspectMode(false);
@@ -4291,6 +4318,7 @@ export default function SpatialScene() {
 
     if (action === "RESET") {
       cancelPendingInspectEnter();
+      stopInspectDrag();
       resetInspectRotation();
       setBurgerExploded(false);
       if (!inspectModeRef.current) setExploded(false);
@@ -4299,6 +4327,7 @@ export default function SpatialScene() {
 
     if (action === "EXIT_INSPECT") {
       cancelPendingInspectEnter();
+      stopInspectDrag();
       resetInspectRotation();
       if (inspectModeRef.current) {
         setBurgerExploded(false);
@@ -4353,6 +4382,7 @@ export default function SpatialScene() {
 
     if (action === "PREV_PART") {
       cancelPendingInspectEnter();
+      stopInspectDrag();
       if (explodedRef.current) {
         setBurgerExploded(false);
         showPreviousPart();
@@ -4362,6 +4392,7 @@ export default function SpatialScene() {
 
     if (action === "NEXT_PART") {
       cancelPendingInspectEnter();
+      stopInspectDrag();
       if (explodedRef.current) {
         setBurgerExploded(false);
         showNextPart();
@@ -4374,7 +4405,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-  }, [activePartIndex, addToOrder, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart]);
+  }, [activePartIndex, addToOrder, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
