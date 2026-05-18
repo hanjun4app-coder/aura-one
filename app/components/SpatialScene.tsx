@@ -5,6 +5,7 @@ import { useGLTF, useProgress } from "@react-three/drei";
 import {
   Suspense,
   type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -142,6 +143,7 @@ if (
 }
 
 const INSPECT_ROTATION_STEP = 0.32;
+const INSPECT_DRAG_ROTATION_SPEED = 0.006;
 const MEDIAPIPE_WASM_PATH = "/mediapipe/wasm";
 // Localized for kiosk/demo reliability; avoids runtime Google Storage model fetches.
 const HAND_LANDMARKER_MODEL_URL =
@@ -253,6 +255,75 @@ type FullscreenRootElement = HTMLElement & {
 type FullscreenDocument = Document & {
   webkitFullscreenElement?: Element | null;
 };
+
+type AuraSpeechRecognitionEvent = Event & {
+  results: {
+    length: number;
+    [index: number]: {
+      0: { transcript: string };
+      isFinal?: boolean;
+    };
+  };
+};
+
+type AuraSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+  onresult: ((event: AuraSpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+};
+
+type AuraSpeechWindow = Window & {
+  SpeechRecognition?: new () => AuraSpeechRecognition;
+  webkitSpeechRecognition?: new () => AuraSpeechRecognition;
+};
+
+const AURA_VOICE_RESPONSES = [
+  {
+    triggers: ["what is this", "what's this", "what is that", "what am i seeing"],
+    answer:
+      "This is our signature spatial burger experience. Each ingredient can be explored individually using gesture interaction.",
+  },
+  {
+    triggers: ["ingredients", "what ingredients", "what's inside", "what is inside"],
+    answer:
+      "The burger includes brioche bun, wagyu beef patty, aged cheddar, tomato, crisp lettuce, and truffle sauce.",
+  },
+  {
+    triggers: ["allergens", "allergy", "allergies"],
+    answer:
+      "This item contains wheat, dairy, and egg. Please ask a team member for complete allergen guidance.",
+  },
+  {
+    triggers: ["price", "how much", "cost"],
+    answer: "The signature burger combo is eighteen dollars and ninety cents.",
+  },
+  {
+    triggers: ["how to use", "use this", "how does this work"],
+    answer:
+      "Swipe to explore the menu. Enter inspect mode to view details, then use gestures or touch to rotate the product.",
+  },
+  {
+    triggers: ["customize", "customise", "change it", "modify"],
+    answer:
+      "You can customize toppings and preparation with the team. This demo highlights the ingredient structure before ordering.",
+  },
+] as const;
+
+function resolveAuraVoiceAnswer(transcript: string) {
+  const normalized = transcript.toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
+  const match = AURA_VOICE_RESPONSES.find(({ triggers }) =>
+    triggers.some((trigger) => normalized.includes(trigger))
+  );
+
+  return match?.answer ?? "I can answer questions about ingredients, allergens, price, how to use this, and customization.";
+}
 
 function requestSpatialFullscreenOnce(requestedRef: MutableRefObject<boolean>) {
   if (typeof document === "undefined" || requestedRef.current) return;
@@ -3499,8 +3570,17 @@ export default function SpatialScene() {
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
   const [showEnterMenuFallback, setShowEnterMenuFallback] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("Ask AURA");
   const landingPhaseRef = useRef<LandingPhase>("intro");
   const inspectRotationRef = useRef({ x: 0, y: 0 });
+  const inspectDragRef = useRef({
+    active: false,
+    lastX: 0,
+    pointerId: -1,
+  });
+  const voiceRecognitionRef = useRef<AuraSpeechRecognition | null>(null);
+  const voiceActiveRef = useRef(false);
+  const voiceMountedRef = useRef(true);
   const trayRef = useRef<HTMLDivElement>(null);
   const introFallbackLoggedRef = useRef(false);
   const introManualClickLoggedRef = useRef(false);
@@ -3533,6 +3613,149 @@ export default function SpatialScene() {
   const requestImmersiveFullscreen = useCallback(() => {
     requestSpatialFullscreenOnce(fullscreenRequestedRef);
   }, []);
+
+  const stopInspectDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      event &&
+      inspectDragRef.current.active &&
+      inspectDragRef.current.pointerId === event.pointerId &&
+      event.currentTarget.hasPointerCapture?.(event.pointerId)
+    ) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+
+    inspectDragRef.current.active = false;
+    inspectDragRef.current.pointerId = -1;
+  }, []);
+
+  const handleInspectPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    requestImmersiveFullscreen();
+
+    if (!inspectMode || !exploded || event.button > 0) return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button, a, input, textarea, select")
+    ) {
+      return;
+    }
+
+    lastInteractionRef.current = Date.now();
+    demoActiveRef.current = false;
+    demoPhaseRef.current = null;
+    inspectDragRef.current.active = true;
+    inspectDragRef.current.pointerId = event.pointerId;
+    inspectDragRef.current.lastX = event.clientX;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }, [exploded, inspectMode, requestImmersiveFullscreen]);
+
+  const handleInspectPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      !inspectMode ||
+      !inspectDragRef.current.active ||
+      inspectDragRef.current.pointerId !== event.pointerId
+    ) {
+      return;
+    }
+
+    const dx = event.clientX - inspectDragRef.current.lastX;
+    inspectDragRef.current.lastX = event.clientX;
+    inspectRotationRef.current.y += dx * INSPECT_DRAG_ROTATION_SPEED;
+    lastInteractionRef.current = Date.now();
+    event.preventDefault();
+  }, [inspectMode]);
+
+  const handleInspectPointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    stopInspectDrag(event);
+  }, [stopInspectDrag]);
+
+  const stopAuraVoice = useCallback(() => {
+    voiceActiveRef.current = false;
+    const recognition = voiceRecognitionRef.current;
+
+    if (recognition) {
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.stop();
+      voiceRecognitionRef.current = null;
+    }
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  const handleAskAuraClick = useCallback(() => {
+    requestImmersiveFullscreen();
+
+    if (!inspectMode || activePartIndex !== 0) return;
+    if (typeof window === "undefined") return;
+
+    const speechWindow = window as AuraSpeechWindow;
+    const Recognition =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      setVoiceStatus("Voice is not supported on this browser.");
+      return;
+    }
+
+    stopAuraVoice();
+
+    const recognition = new Recognition();
+    voiceRecognitionRef.current = recognition;
+    voiceActiveRef.current = true;
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const lastResult = event.results[event.results.length - 1];
+      const transcript = lastResult?.[0]?.transcript ?? "";
+      const answer = resolveAuraVoiceAnswer(transcript);
+
+      voiceActiveRef.current = false;
+      setVoiceStatus("ANSWERING");
+
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(answer);
+        utterance.lang = "en-US";
+        utterance.rate = 0.92;
+        utterance.pitch = 0.95;
+        utterance.onend = () => {
+          if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
+        };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setVoiceStatus(answer);
+      }
+    };
+
+    recognition.onerror = () => {
+      voiceActiveRef.current = false;
+      setVoiceStatus("VOICE UNAVAILABLE");
+    };
+
+    recognition.onend = () => {
+      if (voiceActiveRef.current) {
+        voiceActiveRef.current = false;
+        setVoiceStatus("Ask AURA");
+      }
+      voiceRecognitionRef.current = null;
+    };
+
+    try {
+      setVoiceStatus("LISTENING");
+      recognition.start();
+    } catch {
+      voiceActiveRef.current = false;
+      voiceRecognitionRef.current = null;
+      setVoiceStatus("VOICE UNAVAILABLE");
+    }
+  }, [activePartIndex, inspectMode, requestImmersiveFullscreen, stopAuraVoice]);
 
   const openMenu = useCallback(() => {
     landingPhaseRef.current = "menu";
@@ -3657,6 +3880,29 @@ export default function SpatialScene() {
   useEffect(() => { explodedRef.current = exploded; }, [exploded]);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
+
+  useEffect(() => {
+    if (!inspectMode) {
+      inspectDragRef.current.active = false;
+      inspectDragRef.current.pointerId = -1;
+    }
+  }, [inspectMode]);
+
+  useEffect(() => {
+    if (!inspectMode || activePartIndex !== 0) {
+      stopAuraVoice();
+      const id = setTimeout(() => {
+        setVoiceStatus("Ask AURA");
+      }, 0);
+
+      return () => clearTimeout(id);
+    }
+  }, [activePartIndex, inspectMode, stopAuraVoice]);
+
+  useEffect(() => () => {
+    voiceMountedRef.current = false;
+    stopAuraVoice();
+  }, [stopAuraVoice]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -3967,9 +4213,25 @@ export default function SpatialScene() {
     burgerRevealOpen && sceneLayout.mode === "ipad-portrait"
       ? "top-[calc(env(safe-area-inset-top)+4.25rem)] left-[5vw] w-[min(11.25rem,34vw)] max-h-[17vh] p-2.5"
       : sceneLayout.productInfoClassName;
+  const askAuraClassName =
+    sceneLayout.mode === "ipad-portrait"
+      ? "right-[5vw] top-[calc(env(safe-area-inset-top)+4.25rem)]"
+      : sceneLayout.mode === "ipad-landscape"
+        ? "right-5 top-[calc(env(safe-area-inset-top)+4.75rem)]"
+        : sceneLayout.mode === "phone-portrait"
+          ? "right-4 top-[calc(env(safe-area-inset-top)+4.25rem)]"
+          : "right-8 top-24";
 
   return (
-    <div className="absolute inset-0 overflow-hidden" onPointerDownCapture={requestImmersiveFullscreen}>
+    <div
+      className="absolute inset-0 overflow-hidden"
+      onPointerDownCapture={requestImmersiveFullscreen}
+      onPointerDown={handleInspectPointerDown}
+      onPointerMove={handleInspectPointerMove}
+      onPointerUp={handleInspectPointerEnd}
+      onPointerCancel={handleInspectPointerEnd}
+      onLostPointerCapture={handleInspectPointerEnd}
+    >
       {/* Intro breathing keyframes — subtle 3s loop on the wordmark + a slightly
           slower bar-glow pulse on the amber accent rules. Lives inline so the
           intro is self-contained in this component. */}
@@ -4192,6 +4454,24 @@ export default function SpatialScene() {
           </p>
         )}
       </div>
+
+      {inspectMode && activePartIndex === 0 && (
+        <div className={`pointer-events-auto absolute z-10 ${askAuraClassName}`}>
+          <button
+            type="button"
+            onClick={handleAskAuraClick}
+            className="rounded-2xl border border-white/10 bg-white/16 px-3.5 py-2 text-left shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-500 hover:bg-white/24"
+            aria-label="Ask AURA voice concierge"
+          >
+            <span className="block text-[0.48rem] font-light tracking-[0.34em] text-stone-700/78">
+              Ask AURA
+            </span>
+            <span className="mt-1 block max-w-[9.5rem] text-[0.48rem] font-light leading-snug tracking-[0.14em] text-stone-500/62">
+              {voiceStatus === "Ask AURA" ? "TAP TO SPEAK" : voiceStatus}
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
