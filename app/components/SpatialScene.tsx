@@ -305,17 +305,17 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     productInfoClassName: isPhone
       ? "bottom-[4.25rem] left-4 right-4 w-auto max-h-[26vh] p-3.5"
       : isTabletPortrait
-        ? "bottom-[calc(env(safe-area-inset-bottom)+3.65rem)] left-[6vw] w-[72vw] max-h-[18vh] p-3"
+        ? "bottom-[calc(env(safe-area-inset-bottom)+3.65rem)] left-[6vw] w-[66vw] max-h-[18vh] p-3"
         : isTabletLandscape
-          ? "bottom-[5rem] right-5 w-[min(14.5rem,34vw)] max-h-[34vh] p-3.5"
-          : "bottom-[6.75rem] right-5 md:right-8 w-[min(17.5rem,calc(42vw-1rem))] max-h-[min(38vh,20rem)] p-4 md:p-5",
+          ? "bottom-[5rem] right-5 w-[min(13rem,30vw)] max-h-[34vh] p-3.5"
+          : "bottom-[6.75rem] right-5 md:right-8 w-[min(15.5rem,calc(38vw-1rem))] max-h-[min(38vh,20rem)] p-4 md:p-5",
     ingredientCardClassName: isPhone
-      ? "bottom-[4.25rem] left-4 w-[min(14rem,calc(100vw-2rem))] max-h-[30vh] translate-y-0"
+      ? "bottom-[4.25rem] left-4 w-[min(13rem,calc(100vw-2rem))] max-h-[30vh] translate-y-0"
       : isTabletPortrait
-        ? "bottom-[4rem] right-4 w-[min(13.5rem,calc(100vw-2rem))] max-h-[26vh] translate-y-0"
+        ? "bottom-[4rem] right-4 w-[min(12.5rem,calc(100vw-2rem))] max-h-[26vh] translate-y-0"
         : isTabletLandscape
-          ? "bottom-[4.75rem] left-5 w-[min(12.5rem,28vw)] max-h-[34vh] translate-y-0"
-          : "left-5 top-1/2 w-[min(14.5rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
+          ? "bottom-[4.75rem] left-5 w-[min(11.25rem,25vw)] max-h-[34vh] translate-y-0"
+          : "left-5 top-1/2 w-[min(12.75rem,calc(100vw-2rem))] -translate-y-1/2 md:left-6",
   };
 
   if (mode === "phone-portrait") {
@@ -3921,7 +3921,7 @@ export default function SpatialScene() {
   const burgerRevealOpen = burgerExploded && inspectMode && activePartIndex === 0;
   const productInfoClassName =
     burgerRevealOpen && sceneLayout.mode === "ipad-portrait"
-      ? "top-[calc(env(safe-area-inset-top)+4.25rem)] left-[5vw] w-[min(12.5rem,38vw)] max-h-[17vh] p-2.5"
+      ? "top-[calc(env(safe-area-inset-top)+4.25rem)] left-[5vw] w-[min(11.25rem,34vw)] max-h-[17vh] p-2.5"
       : sceneLayout.productInfoClassName;
 
   return (
@@ -4064,7 +4064,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto border border-white/8 bg-white/13 text-left text-stone-800 shadow-lg shadow-stone-900/[0.03] backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto rounded-2xl border border-white/8 bg-white/13 text-left text-stone-800 shadow-lg shadow-stone-900/[0.03] backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
@@ -4151,7 +4151,7 @@ export default function SpatialScene() {
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden border border-amber-200/10 bg-white/13 shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden rounded-2xl border border-amber-200/10 bg-white/13 shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-700 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "opacity-0"
