@@ -2078,6 +2078,54 @@ function AmbientCameraBreathing({
   return null;
 }
 
+function AmbientLightingBreathing({
+  inspectMode,
+  lastInteractionRef,
+  inspectDragRef,
+}: {
+  inspectMode: boolean;
+  lastInteractionRef: MutableRefObject<number>;
+  inspectDragRef: MutableRefObject<{ active: boolean; lastX: number; pointerId: number }>;
+}) {
+  const ambientRef = useRef<THREE.AmbientLight>(null);
+  const directionalRef = useRef<THREE.DirectionalLight>(null);
+  const lowPointRef = useRef<THREE.PointLight>(null);
+  const highPointRef = useRef<THREE.PointLight>(null);
+  const intensityRef = useRef(0);
+
+  useFrame(({ clock }, delta) => {
+    const recentlyInteracted = Date.now() - lastInteractionRef.current < 1800;
+    const targetIntensity = inspectDragRef.current.active || inspectMode
+      ? 0
+      : recentlyInteracted
+        ? 0.18
+        : 1;
+
+    intensityRef.current = THREE.MathUtils.damp(
+      intensityRef.current,
+      targetIntensity,
+      0.7,
+      delta
+    );
+
+    const breathe = Math.sin(clock.getElapsedTime() * 0.16) * 0.006 * intensityRef.current;
+
+    if (ambientRef.current) ambientRef.current.intensity = 0.92 * (1 + breathe);
+    if (directionalRef.current) directionalRef.current.intensity = 0.88 * (1 + breathe * 0.8);
+    if (lowPointRef.current) lowPointRef.current.intensity = 0.22 * (1 + breathe * 1.15);
+    if (highPointRef.current) highPointRef.current.intensity = 0.14 * (1 + breathe);
+  });
+
+  return (
+    <>
+      <ambientLight ref={ambientRef} intensity={0.92} color="#fff8f0" />
+      <directionalLight ref={directionalRef} position={[4, 5, 3]} intensity={0.88} color="#fff8f0" />
+      <pointLight ref={lowPointRef} position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
+      <pointLight ref={highPointRef} position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
+    </>
+  );
+}
+
 function SpatialMenuCarousel({
   exploded,
   activePartIndex,
@@ -4480,10 +4528,11 @@ export default function SpatialScene() {
           lastInteractionRef={lastInteractionRef}
           inspectDragRef={inspectDragRef}
         />
-        <ambientLight intensity={0.92} color="#fff8f0" />
-        <directionalLight position={[4, 5, 3]} intensity={0.88} color="#fff8f0" />
-        <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
-        <pointLight position={[0, 3, -2]} intensity={0.14} color="#ffe8c8" />
+        <AmbientLightingBreathing
+          inspectMode={inspectMode}
+          lastInteractionRef={lastInteractionRef}
+          inspectDragRef={inspectDragRef}
+        />
         <InspectSceneLighting inspectMode={inspectMode} />
         {/* Stationary front-center stage spotlight — active whenever the menu
             is open AND we're not yet in inspect mode. Items rotate into its
