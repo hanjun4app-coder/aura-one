@@ -1347,7 +1347,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.16,         0, 0],
-    idleYRotSpeed: -0.032,
+    idleYRotSpeed:  0.038,
     // Trimmed 0.92 → 0.85 (−7.6 %) so the top bun no longer dominates the
     // crown relative to the rest of the burger after the overall product
     // scale bump on EXPLODED_STACK_SCALE.
@@ -1369,7 +1369,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.05],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.14,  0.40, -0.05],
-    idleYRotSpeed:  0.034,
+    idleYRotSpeed:  0.041,
     // +15% from 0.78 — bacon reads more clearly across the burger
     scale: 0.90,
     weight: 0.85,  // light strips — quick to spread
@@ -1391,7 +1391,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // Driven by LETTUCE_ORIENTATION_TEST above — change that to swap candidates.
     modelRotationCorrection: ORIENTATION_TESTS[LETTUCE_ORIENTATION_TEST],
     revealedRotation:[ 0, 0, 0],
-    idleYRotSpeed:  0.030,
+    idleYRotSpeed:  0.036,
     // +10% from 1.00 — leaf extends further past inner layers
     scale: 1.10,
     weight: 0.85,  // light leaf
@@ -1412,7 +1412,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.03,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.25,    0],
-    idleYRotSpeed: -0.032,
+    idleYRotSpeed:  0.038,
     scale: 0.88,
     // Overall ~12 % rendered width reduction so the slice doesn't dominate
     // the burger silhouette (X/Z dial-down via the post-norm multiplier).
@@ -1438,7 +1438,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     // Driven by ONION_ORIENTATION_TEST above — change that to swap candidates.
     modelRotationCorrection: ORIENTATION_TESTS[ONION_ORIENTATION_TEST],
     revealedRotation:[ 0.04,  0.15,    0],
-    idleYRotSpeed:  0.036,
+    idleYRotSpeed:  0.043,
     scale: 0.85,
     weight: 0.90,  // light ring
     // Light fried surface — slight sheen, not glossy.
@@ -1458,7 +1458,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.10,  0.18,    0],
-    idleYRotSpeed: -0.026,
+    idleYRotSpeed:  0.031,
     // Reduced 1.02 → 0.90 → 0.78 (−13 % from prior). Cheese tucks well inside
     // the burger body now — it no longer dominates the silhouette; patty,
     // buns, and lettuce all extend visibly past the cheese edges.
@@ -1479,7 +1479,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00,  0.00],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.02,  0.08,    0],
-    idleYRotSpeed: -0.040,
+    idleYRotSpeed:  0.048,
     // `scale` was already pulled back to top-bun parity, but the patty GLB's
     // bbox is wider on the horizontal axis than the top-bun's, so even at
     // the same `scale` the rendered diameter is larger. `visualScaleMultiplier`
@@ -1502,7 +1502,7 @@ const BURGER_LAYERS: ReadonlyArray<BurgerLayerConfig> = [
     revealedOffset:  [ 0.00, -0.03],
     baseRotation:    [ 0,            0, 0],
     revealedRotation:[ 0.08,         0, 0],
-    idleYRotSpeed:  0.032,
+    idleYRotSpeed:  0.038,
     // bottom.glb's authored bbox is wider on the horizontal axis than
     // top-bun.glb's, so even at parity `scale` it renders larger. Use the
     // post-normalisation multiplier to dial rendered diameter to match the
