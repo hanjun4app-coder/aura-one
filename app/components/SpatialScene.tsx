@@ -286,89 +286,129 @@ type AuraSpeechWindow = Window & {
 
 const AURA_VOICE_RESPONSES = [
   {
-    triggers: ["what is this", "what's this", "what is that", "what am i seeing"],
+    intent: "WHAT_IS_THIS",
+    phrases: ["what is this", "whats this", "what is that", "what am i seeing"],
+    keywords: [["what", "this"]],
     answer:
       "This is our signature spatial burger experience. Each ingredient can be explored individually using gesture interaction.",
   },
   {
-    triggers: [
-      "ingredients",
-      "what ingredients",
-      "what's inside",
-      "what is inside",
-      "what ingredients are in this burger",
-    ],
+    intent: "INGREDIENTS",
+    phrases: ["what is in this", "whats in this", "what comes with this"],
+    keywords: [["ingredient"], ["inside"], ["comes", "with"]],
     answer:
       "The burger includes brioche bun, wagyu beef patty, aged cheddar, tomato, crisp lettuce, and truffle sauce.",
   },
   {
-    triggers: ["what do you recommend", "recommend", "recommendation"],
+    intent: "RECOMMEND",
+    phrases: ["what do you recommend", "what should i order"],
+    keywords: [["recommend"], ["suggestion"], ["best", "item"], ["should", "order"]],
     answer:
       "I recommend the signature burger combo. It is the hero item in this demo and shows the spatial ingredient reveal most clearly.",
   },
   {
-    triggers: ["most popular item", "popular item", "most popular"],
+    intent: "POPULAR",
+    phrases: ["most popular item", "best seller"],
+    keywords: [["popular"], ["favorite"], ["favourite"], ["best", "seller"]],
     answer:
       "The signature burger combo is presented as the featured favorite, with the strongest visual story for in-store discovery.",
   },
   {
-    triggers: ["is this spicy", "spicy", "is it spicy"],
+    intent: "SPICY",
+    phrases: ["is this spicy", "spice level"],
+    keywords: [["spicy"], ["hot"], ["spice"]],
     answer:
       "This burger is rich and savory, not strongly spicy. The flavor is focused on wagyu beef, cheddar, truffle sauce, and toasted brioche.",
   },
   {
-    triggers: ["does this contain dairy", "contain dairy", "has dairy", "dairy"],
+    intent: "DAIRY",
+    phrases: ["does this contain dairy"],
+    keywords: [["dairy"], ["milk"], ["cheese"], ["lactose"]],
     answer:
       "Yes. This burger contains dairy from the aged cheddar and may also include dairy in the sauce or bun preparation.",
   },
   {
-    triggers: ["does this contain gluten", "contain gluten", "has gluten", "gluten"],
+    intent: "GLUTEN",
+    phrases: ["does this contain gluten"],
+    keywords: [["gluten"], ["wheat"], ["bread"], ["bun"]],
     answer:
       "Yes. This burger contains gluten from the brioche bun. Please ask the restaurant team about gluten-free options.",
   },
   {
-    triggers: ["allergens", "allergy", "allergies"],
+    intent: "ALLERGENS",
+    phrases: [],
+    keywords: [["allergen"], ["allergy"], ["allergies"]],
     answer:
       "This item contains wheat, dairy, and egg. Please ask a team member for complete allergen guidance.",
   },
   {
-    triggers: ["price", "how much", "cost", "how much is this burger"],
+    intent: "PRICE",
+    phrases: ["how much", "how much is this burger"],
+    keywords: [["price"], ["cost"], ["dollar"], ["dollars"]],
     answer: "The signature burger combo is eighteen dollars and ninety cents.",
   },
   {
-    triggers: ["how to use", "use this", "how does this work"],
+    intent: "HOW_TO_USE",
+    phrases: ["how to use", "use this", "how does this work"],
+    keywords: [["control"], ["gesture"], ["swipe"]],
     answer:
       "Swipe to explore the menu. Enter inspect mode to view details, then use gestures or touch to rotate the product.",
   },
   {
-    triggers: ["customize", "customise", "change it", "modify"],
+    intent: "CUSTOMIZE",
+    phrases: [],
+    keywords: [["customize"], ["customise"], ["change"], ["modify"]],
     answer:
       "You can customize toppings and preparation with the team. This demo highlights the ingredient structure before ordering.",
   },
   {
-    triggers: ["can this system use our own menu", "use our own menu", "own menu"],
+    intent: "CUSTOM_MENU",
+    phrases: ["own menu", "our menu"],
+    keywords: [["custom"], ["customize"], ["branding"], ["brand"]],
     answer:
       "Yes. AURA ONE can be configured around a restaurant's own menu items, product visuals, pricing, and featured experiences.",
   },
   {
-    triggers: ["can this work in my restaurant", "work in my restaurant", "my restaurant"],
+    intent: "RESTAURANT_FIT",
+    phrases: ["my restaurant", "our restaurant", "work in restaurant", "can this work"],
+    keywords: [["restaurant"], ["install"]],
     answer:
       "Yes. The system is designed as an in-store spatial menu experience for restaurants, demos, and premium hospitality environments.",
   },
   {
-    triggers: ["do customers need special devices", "special devices", "need devices"],
+    intent: "DEVICES",
+    phrases: ["special device", "special devices", "need devices"],
+    keywords: [["device"], ["devices"], ["tablet"], ["ipad"], ["touchscreen"], ["gesture", "display"]],
     answer:
       "Customers do not need special hardware. The experience can run on supported tablets, displays, or kiosk-style web devices.",
   },
 ] as const;
 
+const AURA_VOICE_FALLBACK =
+  "I can answer questions about ingredients, allergens, price, recommendations, and restaurant customization.";
+
+function normalizeAuraTranscript(transcript: string) {
+  return transcript
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
 function resolveAuraVoiceAnswer(transcript: string) {
-  const normalized = transcript.toLowerCase().replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim();
-  const match = AURA_VOICE_RESPONSES.find(({ triggers }) =>
-    triggers.some((trigger) => normalized.includes(trigger))
+  const normalized = normalizeAuraTranscript(transcript);
+  const match = AURA_VOICE_RESPONSES.find(({ phrases, keywords }) =>
+    phrases.some((phrase) => normalized.includes(phrase)) ||
+    keywords.some((group) => group.every((keyword) => normalized.includes(keyword)))
   );
 
-  return match?.answer ?? "I can answer questions about ingredients, allergens, price, how to use this, and customization.";
+  if (process.env.NODE_ENV === "development") {
+    console.info("[AURA VOICE] transcript raw", transcript);
+    console.info("[AURA VOICE] transcript normalized", normalized);
+    console.info("[AURA VOICE] matched intent", match?.intent ?? "FALLBACK");
+  }
+
+  return match?.answer ?? AURA_VOICE_FALLBACK;
 }
 
 function selectAuraVoice(voices: SpeechSynthesisVoice[]) {
