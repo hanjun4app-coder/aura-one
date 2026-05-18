@@ -3712,6 +3712,7 @@ export default function SpatialScene() {
   // inspect transition takes over. Kept in a ref so we can cancel cleanly
   // if the user exits / re-fires before it lands.
   const inspectEnterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inspectTouchReturnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevTotalItemCountRef = useRef(0);
   const [reviewMode, setReviewMode] = useState(false);
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
@@ -3743,6 +3744,7 @@ export default function SpatialScene() {
   // mirrors so the interval closure always sees current React state
   const explodedRef = useRef(false);
   const inspectModeRef = useRef(false);
+  const burgerExplodedRef = useRef(false);
 
   const orderSubtotal = orderItems.reduce(
     (s, { partIndex, qty }) => s + ITEM_PRICES[partIndex] * qty,
@@ -3762,7 +3764,23 @@ export default function SpatialScene() {
     requestSpatialFullscreenOnce(fullscreenRequestedRef);
   }, []);
 
+  const logInspectDev = useCallback((message: string) => {
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[AURA INSPECT] ${message}`);
+    }
+  }, []);
+
+  const clearInspectTouchReturnTimer = useCallback(() => {
+    if (!inspectTouchReturnTimerRef.current) return;
+
+    clearTimeout(inspectTouchReturnTimerRef.current);
+    inspectTouchReturnTimerRef.current = null;
+    logInspectDev("touch return cancelled");
+  }, [logInspectDev]);
+
   const stopInspectDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
+    const wasActive = inspectDragRef.current.active;
+
     if (
       event &&
       inspectDragRef.current.active &&
@@ -3774,7 +3792,67 @@ export default function SpatialScene() {
 
     inspectDragRef.current.active = false;
     inspectDragRef.current.pointerId = -1;
+
+    return wasActive;
   }, []);
+
+  const safeExitInspectFromTouchReturn = useCallback(() => {
+    if (inspectEnterTimerRef.current) {
+      clearTimeout(inspectEnterTimerRef.current);
+      inspectEnterTimerRef.current = null;
+    }
+
+    inspectDragRef.current.active = false;
+    inspectDragRef.current.pointerId = -1;
+    inspectRotationRef.current.x = 0;
+    inspectRotationRef.current.y = 0;
+    burgerExplodedRef.current = false;
+    inspectModeRef.current = false;
+    explodedRef.current = true;
+    setBurgerExploded(false);
+    setInspectMode(false);
+    setExploded(true);
+  }, []);
+
+  const armInspectTouchReturnTimer = useCallback(() => {
+    clearInspectTouchReturnTimer();
+    lastInteractionRef.current = Date.now();
+    logInspectDev("touch return timer armed");
+
+    inspectTouchReturnTimerRef.current = setTimeout(() => {
+      inspectTouchReturnTimerRef.current = null;
+      logInspectDev("touch return timer fired");
+
+      const canExit =
+        inspectModeRef.current &&
+        !inspectDragRef.current.active &&
+        !inspectEnterTimerRef.current;
+
+      if (process.env.NODE_ENV === "development") {
+        console.info("[AURA INSPECT] touch return state", {
+          inspectMode,
+          inspectModeRef: inspectModeRef.current,
+          inspectDragActive: inspectDragRef.current.active,
+          hasInspectEnterTimer: Boolean(inspectEnterTimerRef.current),
+          activePartIndex,
+          burgerExploded,
+          burgerExplodedRef: burgerExplodedRef.current,
+          canExit,
+        });
+      }
+
+      if (canExit) {
+        safeExitInspectFromTouchReturn();
+      }
+    }, 3800);
+  }, [
+    activePartIndex,
+    burgerExploded,
+    clearInspectTouchReturnTimer,
+    inspectMode,
+    logInspectDev,
+    safeExitInspectFromTouchReturn,
+  ]);
 
   const handleInspectPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     requestImmersiveFullscreen();
@@ -3787,6 +3865,7 @@ export default function SpatialScene() {
       return;
     }
 
+    clearInspectTouchReturnTimer();
     lastInteractionRef.current = Date.now();
     demoActiveRef.current = false;
     demoPhaseRef.current = null;
@@ -3795,7 +3874,7 @@ export default function SpatialScene() {
     inspectDragRef.current.lastX = event.clientX;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
-  }, [exploded, inspectMode, requestImmersiveFullscreen]);
+  }, [clearInspectTouchReturnTimer, exploded, inspectMode, requestImmersiveFullscreen]);
 
   const handleInspectPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (
@@ -3814,13 +3893,19 @@ export default function SpatialScene() {
   }, [inspectMode]);
 
   const handleInspectPointerEnd = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    stopInspectDrag(event);
-  }, [stopInspectDrag]);
+    if (stopInspectDrag(event) && inspectModeRef.current) {
+      armInspectTouchReturnTimer();
+    }
+  }, [armInspectTouchReturnTimer, stopInspectDrag]);
 
   useEffect(() => {
     const clearInspectDrag = () => {
+      const wasActive = inspectDragRef.current.active;
       inspectDragRef.current.active = false;
       inspectDragRef.current.pointerId = -1;
+      if (wasActive && inspectModeRef.current) {
+        armInspectTouchReturnTimer();
+      }
     };
     const clearInspectDragOnHidden = () => {
       if (document.hidden) clearInspectDrag();
@@ -3841,7 +3926,7 @@ export default function SpatialScene() {
       window.removeEventListener("blur", clearInspectDrag);
       document.removeEventListener("visibilitychange", clearInspectDragOnHidden);
     };
-  }, []);
+  }, [armInspectTouchReturnTimer]);
 
   const clearVoiceFallbackTimer = useCallback(() => {
     if (voiceFallbackTimerRef.current) {
@@ -4092,6 +4177,10 @@ export default function SpatialScene() {
         clearTimeout(inspectEnterTimerRef.current);
         inspectEnterTimerRef.current = null;
       }
+      if (inspectTouchReturnTimerRef.current) {
+        clearTimeout(inspectTouchReturnTimerRef.current);
+        inspectTouchReturnTimerRef.current = null;
+      }
       if (addToOrderFly1Ref.current) {
         clearTimeout(addToOrderFly1Ref.current);
         addToOrderFly1Ref.current = null;
@@ -4115,6 +4204,7 @@ export default function SpatialScene() {
   // Keep mirrors in sync
   useEffect(() => { explodedRef.current = exploded; }, [exploded]);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
+  useEffect(() => { burgerExplodedRef.current = burgerExploded; }, [burgerExploded]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
 
   useEffect(() => {
@@ -4137,8 +4227,9 @@ export default function SpatialScene() {
     if (!inspectMode) {
       inspectDragRef.current.active = false;
       inspectDragRef.current.pointerId = -1;
+      clearInspectTouchReturnTimer();
     }
-  }, [inspectMode]);
+  }, [clearInspectTouchReturnTimer, inspectMode]);
 
   useEffect(() => {
     if (!inspectMode || activePartIndex !== 0) {
@@ -4308,6 +4399,7 @@ export default function SpatialScene() {
 
     if (action === "ASSEMBLE") {
       cancelPendingInspectEnter();
+      clearInspectTouchReturnTimer();
       stopInspectDrag();
       resetInspectRotation();
       setBurgerExploded(false);
@@ -4318,6 +4410,7 @@ export default function SpatialScene() {
 
     if (action === "RESET") {
       cancelPendingInspectEnter();
+      clearInspectTouchReturnTimer();
       stopInspectDrag();
       resetInspectRotation();
       setBurgerExploded(false);
@@ -4327,6 +4420,7 @@ export default function SpatialScene() {
 
     if (action === "EXIT_INSPECT") {
       cancelPendingInspectEnter();
+      clearInspectTouchReturnTimer();
       stopInspectDrag();
       resetInspectRotation();
       if (inspectModeRef.current) {
@@ -4382,6 +4476,7 @@ export default function SpatialScene() {
 
     if (action === "PREV_PART") {
       cancelPendingInspectEnter();
+      clearInspectTouchReturnTimer();
       stopInspectDrag();
       if (explodedRef.current) {
         setBurgerExploded(false);
@@ -4392,6 +4487,7 @@ export default function SpatialScene() {
 
     if (action === "NEXT_PART") {
       cancelPendingInspectEnter();
+      clearInspectTouchReturnTimer();
       stopInspectDrag();
       if (explodedRef.current) {
         setBurgerExploded(false);
@@ -4405,7 +4501,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-  }, [activePartIndex, addToOrder, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
+  }, [activePartIndex, addToOrder, clearInspectTouchReturnTimer, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
