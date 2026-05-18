@@ -782,6 +782,12 @@ function Part({
       1 - Math.exp(-delta * 8)
     );
     const cullVisibility = cullVisibilityRef.current;
+    if (cullTarget === 0 && cullVisibility < 0.01) {
+      groupRef.current.visible = false;
+      previousProgressRef.current = localProgress;
+      previousRawProgressRef.current = rawProgress;
+      return;
+    }
     const carouselScale =
       slot === 0
         ? focusScale
@@ -2261,6 +2267,14 @@ function InspectSceneLighting({ inspectMode }: { inspectMode: boolean }) {
   const blendRef = useRef(0);
 
   useFrame((_, delta) => {
+    if (!inspectMode && blendRef.current === 0) return;
+    if (!inspectMode && blendRef.current < 0.001) {
+      blendRef.current = 0;
+      setAnimatedLightIntensity(keyLightRef.current, 0);
+      setAnimatedLightIntensity(rimLightRef.current, 0);
+      setAnimatedLightIntensity(floorPoolRef.current, 0);
+      return;
+    }
     // Slow cinematic fade — lighting builds and withdraws gradually.
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
@@ -2315,6 +2329,13 @@ function CarouselCenterSpotlight({ active }: { active: boolean }) {
   const blendRef = useRef(0);
 
   useFrame((_, delta) => {
+    if (!active && blendRef.current === 0) return;
+    if (!active && blendRef.current < 0.001) {
+      blendRef.current = 0;
+      setAnimatedLightIntensity(mainRef.current, 0);
+      setAnimatedLightIntensity(fillRef.current, 0);
+      return;
+    }
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
       active ? 1 : 0,
@@ -2381,6 +2402,17 @@ function BurgerInspectLighting({ active }: { active: boolean }) {
   const blendRef     = useRef(0);
 
   useFrame((_, delta) => {
+    if (!active && blendRef.current === 0) return;
+    if (!active && blendRef.current < 0.001) {
+      blendRef.current = 0;
+      setAnimatedLightIntensity(cinemaKeyRef.current, 0);
+      setAnimatedLightIntensity(sideFillRef.current, 0);
+      setAnimatedLightIntensity(heroFillRef.current, 0);
+      setAnimatedLightIntensity(bottomBounceRef.current, 0);
+      setAnimatedLightIntensity(backRimRef.current, 0);
+      setAnimatedLightIntensity(edgeRimRef.current, 0);
+      return;
+    }
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
       active ? 1 : 0,
@@ -2471,6 +2503,16 @@ function BurgerExplodedLighting({ active }: { active: boolean }) {
   const blendRef     = useRef(0);
 
   useFrame((_, delta) => {
+    if (!active && blendRef.current === 0) return;
+    if (!active && blendRef.current < 0.001) {
+      blendRef.current = 0;
+      setAnimatedLightIntensity(topKeyRef.current, 0);
+      setAnimatedLightIntensity(warmFillRef.current, 0);
+      setAnimatedLightIntensity(underlightRef.current, 0);
+      setAnimatedLightIntensity(backRimRef.current, 0);
+      setAnimatedLightIntensity(ambientFillRef.current, 0);
+      return;
+    }
     blendRef.current = THREE.MathUtils.lerp(
       blendRef.current,
       active ? 1 : 0,
@@ -3149,14 +3191,16 @@ function CameraGestureLayer({
         } catch (error) {
           console.error("[AURA CAMERA] detect loop failed", error);
           updateStatus("CAMERA ERROR");
-          handLandmarkerRef.current = null;
+          releaseCameraResources();
+          setCameraUnavailable(true);
+          setCameraEnabled(false);
           return;
         }
       }
     }
 
     frameRef.current = requestAnimationFrame(() => runDetectionLoopRef.current());
-  }, [processHandResult, updateStatus]);
+  }, [processHandResult, releaseCameraResources, updateStatus]);
 
   useEffect(() => {
     runDetectionLoopRef.current = runDetectionLoop;
