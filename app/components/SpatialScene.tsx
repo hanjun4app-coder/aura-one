@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useProgress } from "@react-three/drei";
 import {
   Suspense,
@@ -2027,6 +2027,55 @@ function MenuBook({ open }: { open: boolean }) {
       </group>
     </group>
   );
+}
+
+function AmbientCameraBreathing({
+  inspectMode,
+  lastInteractionRef,
+  inspectDragRef,
+}: {
+  inspectMode: boolean;
+  lastInteractionRef: MutableRefObject<number>;
+  inspectDragRef: MutableRefObject<{ active: boolean; lastX: number; pointerId: number }>;
+}) {
+  const { camera } = useThree();
+  const basePositionRef = useRef(new THREE.Vector3());
+  const initializedRef = useRef(false);
+  const intensityRef = useRef(0);
+
+  useFrame(({ clock }, delta) => {
+    if (!initializedRef.current) {
+      basePositionRef.current.copy(camera.position);
+      initializedRef.current = true;
+    }
+
+    const recentlyInteracted = Date.now() - lastInteractionRef.current < 1600;
+    const targetIntensity = inspectDragRef.current.active
+      ? 0
+      : inspectMode
+        ? 0.16
+        : recentlyInteracted
+          ? 0.32
+          : 1;
+
+    intensityRef.current = THREE.MathUtils.damp(
+      intensityRef.current,
+      targetIntensity,
+      0.85,
+      delta
+    );
+
+    const i = intensityRef.current;
+    const t = clock.getElapsedTime();
+
+    camera.position.set(
+      basePositionRef.current.x + Math.sin(t * 0.19) * 0.010 * i,
+      basePositionRef.current.y + Math.sin(t * 0.14 + 1.2) * 0.006 * i,
+      basePositionRef.current.z + Math.sin(t * 0.11 + 2.1) * 0.014 * i
+    );
+  });
+
+  return null;
 }
 
 function SpatialMenuCarousel({
@@ -4426,6 +4475,11 @@ export default function SpatialScene() {
       >
         <color attach="background" args={["#f6f2ea"]} />
 
+        <AmbientCameraBreathing
+          inspectMode={inspectMode}
+          lastInteractionRef={lastInteractionRef}
+          inspectDragRef={inspectDragRef}
+        />
         <ambientLight intensity={0.92} color="#fff8f0" />
         <directionalLight position={[4, 5, 3]} intensity={0.88} color="#fff8f0" />
         <pointLight position={[-4, -2, 3]} intensity={0.22} color="#ffecd0" />
