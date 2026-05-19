@@ -246,7 +246,7 @@ const MAX_CANVAS_DPR = PERFORMANCE_MODE ? 1.5 : 2;
 const MATERIAL_OPACITY_EPSILON = 0.003;
 const CAROUSEL_VISIBLE_SLOT_DISTANCE = 2;
 const EXPLODED_STACK_SCALE = 0.78;
-const BURGER_REVEAL_SCALE = 0.70;
+const BURGER_REVEAL_SCALE = 0.77;
 const BURGER_REVEAL_Z_OFFSET = -0.55;
 const BURGER_REVEAL_Y_OFFSET = 0;
 
@@ -260,6 +260,8 @@ type SceneLayout = {
   inspectZOffset: number;
   carouselXOffset: number;
   carouselYOffset: number;
+  carouselScaleMultiplier: number;
+  inspectProductScaleMultiplier: number;
   revealScale: number;
   revealX: number;
   revealY: number;
@@ -483,6 +485,8 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     inspectZOffset: 0,
     carouselXOffset: 0,
     carouselYOffset: 0,
+    carouselScaleMultiplier: 1.12,
+    inspectProductScaleMultiplier: 1.11,
     revealScale: BURGER_REVEAL_SCALE,
     revealX: 0,
     revealY: BURGER_REVEAL_Y_OFFSET,
@@ -507,7 +511,9 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectX = 0;
     layout.inspectY = 0.20;
     layout.inspectZOffset = -0.32;
-    layout.revealScale = 0.52;
+    layout.carouselScaleMultiplier = 1.05;
+    layout.inspectProductScaleMultiplier = 1.05;
+    layout.revealScale = 0.55;
     layout.revealX = 0.02;
     layout.revealY = -0.02;
     layout.revealZ = -0.18;
@@ -517,7 +523,9 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectZOffset = -0.24;
     layout.carouselXOffset = -0.48;
     layout.carouselYOffset = 0.42;
-    layout.revealScale = 0.54;
+    layout.carouselScaleMultiplier = 1.08;
+    layout.inspectProductScaleMultiplier = 1.08;
+    layout.revealScale = 0.59;
     layout.revealX = 0;
     layout.revealY = -0.03;
     layout.revealZ = -0.18;
@@ -525,7 +533,9 @@ function resolveSceneLayout(width: number, height: number): SceneLayout {
     layout.inspectX = -0.36;
     layout.inspectY = 0.32;
     layout.inspectZOffset = -0.14;
-    layout.revealScale = 0.62;
+    layout.carouselScaleMultiplier = 1.10;
+    layout.inspectProductScaleMultiplier = 1.10;
+    layout.revealScale = 0.68;
     layout.revealX = 0.12;
     layout.revealY = -0.05;
     layout.revealZ = -0.14;
@@ -986,10 +996,14 @@ function Part({
       return;
     }
     const carouselScale =
-      slot === 0
+      (slot === 0
         ? focusScale
-        : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55);
-    const inspectScale = slot === 0 ? focusScale * inspectScaleMultiplier : 0.22;
+        : THREE.MathUtils.lerp(0.5, secondaryScale, Math.max(depth, 0) * 0.55)) *
+      layout.carouselScaleMultiplier;
+    const inspectScale =
+      slot === 0
+        ? focusScale * inspectScaleMultiplier * layout.inspectProductScaleMultiplier
+        : 0.22;
     const scaleTarget = THREE.MathUtils.lerp(
       THREE.MathUtils.lerp(0, carouselScale, carouselPresence),
       inspectScale,
@@ -1716,6 +1730,11 @@ function BurgerExplodedView({
   const layerRot = useRef<number[]>(new Array(BURGER_LAYERS.length).fill(0));
 
   useFrame(({ clock }, delta) => {
+    if (settledClosedRef.current && !active && progressRef.current < 0.001) {
+      progressRef.current = 0;
+      return;
+    }
+
     // Asymmetric lerp dynamics:
     //   reveal     → 2.3 (slow, elegant unfurl)
     //   reassemble → 3.2 (faster decisive pull, "magnetic close")
@@ -2368,6 +2387,8 @@ function SpatialMenuCarousel({
 
 function AmbientParticles() {
   const pointsRef = useRef<THREE.Points>(null);
+  const frameSkipRef = useRef(0);
+  const deltaAccumulatorRef = useRef(0);
 
   const positions = useMemo(() => {
     const count = AMBIENT_PARTICLE_COUNT;
@@ -2384,7 +2405,11 @@ function AmbientParticles() {
 
   useFrame((_, delta) => {
     if (!pointsRef.current) return;
-    pointsRef.current.rotation.y += delta * 0.025;
+    deltaAccumulatorRef.current += delta;
+    frameSkipRef.current = (frameSkipRef.current + 1) % 2;
+    if (frameSkipRef.current !== 0) return;
+    pointsRef.current.rotation.y += deltaAccumulatorRef.current * 0.025;
+    deltaAccumulatorRef.current = 0;
   });
 
   return (
@@ -2406,18 +2431,25 @@ function AmbientParticles() {
 function AuraLogoParticles({ exploded }: { exploded: boolean }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const progressRef = useRef(0);
+  const frameSkipRef = useRef(0);
+  const deltaAccumulatorRef = useRef(0);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const particles = useMemo(() => createLogoParticles(), []);
 
   useFrame(({ clock }, delta) => {
     if (!meshRef.current) return;
+    deltaAccumulatorRef.current += delta;
+    frameSkipRef.current = (frameSkipRef.current + 1) % 2;
+    if (frameSkipRef.current !== 0) return;
+    const effectiveDelta = deltaAccumulatorRef.current;
+    deltaAccumulatorRef.current = 0;
 
     const mesh = meshRef.current;
 
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
       exploded ? 1 : 0,
-      1 - Math.exp(-delta * 2.35)
+      1 - Math.exp(-effectiveDelta * 2.35)
     );
 
     const t = clock.getElapsedTime();
@@ -3944,7 +3976,13 @@ export default function SpatialScene() {
       recognition.onresult = null;
       recognition.onerror = null;
       recognition.onend = null;
-      recognition.stop();
+      try {
+        recognition.stop();
+      } catch (error) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[AURA VOICE] SpeechRecognition stop failed", error);
+        }
+      }
       voiceRecognitionRef.current = null;
     }
 
