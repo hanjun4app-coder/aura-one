@@ -409,6 +409,14 @@ const AURA_VOICE_RESPONSES = [
 const AURA_VOICE_FALLBACK =
   "I can answer questions about ingredients, allergens, price, recommendations, and restaurant customization.";
 
+type AuraVoiceCommand = {
+  answer: string;
+  addPartIndex?: number;
+  showPartIndex?: number;
+  startOrderingMode?: boolean;
+  intent: string;
+};
+
 function normalizeAuraTranscript(transcript: string) {
   return transcript
     .toLowerCase()
@@ -417,8 +425,127 @@ function normalizeAuraTranscript(transcript: string) {
     .replace(/\s+/g, " ");
 }
 
-function resolveAuraVoiceAnswer(transcript: string) {
+function matchAuraMenuItem(transcript: string) {
+  if (/\b(po boy|poboy|po' boy|poor boy)\b/.test(transcript)) return 1;
+  if (/\b(dessert|sweet|cake|pastry)\b/.test(transcript)) return 2;
+  if (/\b(chicken|fried chicken)\b/.test(transcript)) return 3;
+  if (/\b(crawfish|crayfish)\b/.test(transcript)) return 4;
+  if (/\b(burger|signature burger)\b/.test(transcript)) return 0;
+
+  return null;
+}
+
+function getAuraOrderItemLabel(partIndex: number) {
+  if (partIndex === 0) return "burger";
+  if (partIndex === 1) return "po boy";
+  if (partIndex === 2) return "dessert";
+  if (partIndex === 3) return "fried chicken";
+
+  return CAROUSEL_PARTS[partIndex].name.toLowerCase();
+}
+
+function resolveAuraVoiceCommand(
+  transcript: string,
+  orderingMode = false
+): AuraVoiceCommand {
   const normalized = normalizeAuraTranscript(transcript);
+  const menuItemIndex = matchAuraMenuItem(normalized);
+  const wantsAdd =
+    /\b(add|order|want|wants|i want|i would like|get me)\b/.test(normalized);
+  const wantsShow =
+    /\b(show|see|view|display|open|take me)\b/.test(normalized);
+  const wantsOrderingMode =
+    menuItemIndex === null &&
+    (normalized.includes("can i order") ||
+      normalized.includes("i want to order") ||
+      normalized.includes("can i place an order") ||
+      normalized.includes("place an order"));
+
+  if (wantsOrderingMode) {
+    return {
+      intent: "START_ORDERING",
+      startOrderingMode: true,
+      answer: "Of course. What would you like to order?",
+    };
+  }
+
+  if (orderingMode) {
+    if (
+      menuItemIndex !== null &&
+      (menuItemIndex === 0 ||
+        menuItemIndex === 1 ||
+        menuItemIndex === 2 ||
+        menuItemIndex === 3)
+    ) {
+      const itemLabel = getAuraOrderItemLabel(menuItemIndex);
+      return {
+        intent: "ORDER_MODE_ADD_ITEM",
+        addPartIndex: menuItemIndex,
+        answer: `Added the ${itemLabel} to your demo order.`,
+      };
+    }
+
+    return {
+      intent: "ORDER_MODE_UNSUPPORTED",
+      answer:
+        "I can add the burger, fried chicken, po boy, or dessert in this demo.",
+    };
+  }
+
+  if (menuItemIndex !== null && wantsAdd) {
+    const friendlyName = getAuraOrderItemLabel(menuItemIndex);
+    return {
+      intent: "ADD_ITEM",
+      addPartIndex: menuItemIndex,
+      answer: `Added the ${friendlyName} to your demo order.`,
+    };
+  }
+
+  if (menuItemIndex !== null && wantsShow) {
+    const itemName = CAROUSEL_PARTS[menuItemIndex].name;
+    return {
+      intent: "SHOW_ITEM",
+      showPartIndex: menuItemIndex,
+      answer: `Showing ${itemName}.`,
+    };
+  }
+
+  if (
+    normalized.includes("what has gluten") ||
+    normalized.includes("which has gluten")
+  ) {
+    return {
+      intent: "GLUTEN_MENU",
+      answer:
+        "Items with gluten include the signature burger, the Louisiana po' boy, fried chicken, and dessert. Crawfish is the cleanest shellfish-forward option in this demo.",
+    };
+  }
+
+  if (
+    normalized.includes("what has dairy") ||
+    normalized.includes("which has dairy")
+  ) {
+    return {
+      intent: "DAIRY_MENU",
+      answer:
+        "Dairy appears in the signature burger, dessert, and fried chicken preparation. The po' boy may include dairy depending on sauce, and crawfish can include butter.",
+    };
+  }
+
+  if (
+    menuItemIndex !== null &&
+    (normalized.includes("how much") ||
+      normalized.includes("price") ||
+      normalized.includes("cost"))
+  ) {
+    const itemName = CAROUSEL_PARTS[menuItemIndex].name;
+    const price = ITEM_PRICES[menuItemIndex].toFixed(2);
+    return {
+      intent: "ITEM_PRICE",
+      answer: `${itemName} is ${price} in this demo menu.`,
+    };
+  }
+
   const match = AURA_VOICE_RESPONSES.find(({ phrases, keywords }) =>
     phrases.some((phrase) => normalized.includes(phrase)) ||
     keywords.some((group) => group.every((keyword) => normalized.includes(keyword)))
@@ -430,7 +557,10 @@ function resolveAuraVoiceAnswer(transcript: string) {
     console.info("[AURA VOICE] matched intent", match?.intent ?? "FALLBACK");
   }
 
-  return match?.answer ?? AURA_VOICE_FALLBACK;
+  return {
+    intent: match?.intent ?? "FALLBACK",
+    answer: match?.answer ?? AURA_VOICE_FALLBACK,
+  };
 }
 
 function selectAuraVoice(voices: SpeechSynthesisVoice[]) {
@@ -3759,9 +3889,12 @@ export default function SpatialScene() {
   });
   const voiceRecognitionRef = useRef<AuraSpeechRecognition | null>(null);
   const voiceActiveRef = useRef(false);
+  const voiceOrderingModeRef = useRef(false);
   const voiceMountedRef = useRef(true);
   const auraVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const voiceFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceOrderingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startAuraRecognitionRef = useRef<() => void>(() => undefined);
   const trayRef = useRef<HTMLDivElement>(null);
   const introFallbackLoggedRef = useRef(false);
   const introManualClickLoggedRef = useRef(false);
@@ -3785,6 +3918,22 @@ export default function SpatialScene() {
   const orderTax = orderSubtotal * 0.10;
   const orderTotal = orderSubtotal + orderTax;
   const totalItemCount = orderItems.reduce((s, { qty }) => s + qty, 0);
+  const demoOrderSummary =
+    orderItems.length === 0
+      ? "Demo Order"
+      : `Demo Order: ${orderItems
+          .map(({ partIndex, qty }) => {
+            const shortName =
+              partIndex === 0
+                ? "Burger"
+                : CAROUSEL_PARTS[partIndex].name.replace(
+                    /^Louisiana |^Premium |^Crispy /,
+                    ""
+                  );
+
+            return `${shortName} x${qty}`;
+          })
+          .join(" · ")}`;
 
   const logIntroDev = useCallback((message: string) => {
     if (process.env.NODE_ENV === "development") {
@@ -3967,6 +4116,24 @@ export default function SpatialScene() {
     }
   }, []);
 
+  const clearVoiceOrderingMode = useCallback(() => {
+    voiceOrderingModeRef.current = false;
+    if (voiceOrderingTimerRef.current) {
+      clearTimeout(voiceOrderingTimerRef.current);
+      voiceOrderingTimerRef.current = null;
+    }
+  }, []);
+
+  const armVoiceOrderingMode = useCallback(() => {
+    voiceOrderingModeRef.current = true;
+    if (voiceOrderingTimerRef.current) clearTimeout(voiceOrderingTimerRef.current);
+    voiceOrderingTimerRef.current = setTimeout(() => {
+      voiceOrderingModeRef.current = false;
+      voiceOrderingTimerRef.current = null;
+      if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
+    }, 10000);
+  }, []);
+
   const stopAuraVoice = useCallback(() => {
     voiceActiveRef.current = false;
     clearVoiceFallbackTimer();
@@ -4010,13 +4177,14 @@ export default function SpatialScene() {
     return true;
   }, []);
 
-  const speakAuraAnswer = useCallback((answer: string) => {
+  const speakAuraAnswer = useCallback((answer: string, onDone?: () => void) => {
     clearVoiceFallbackTimer();
 
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setVoiceStatus(answer);
       voiceFallbackTimerRef.current = setTimeout(() => {
-        if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
+        onDone?.();
+        if (!onDone && voiceMountedRef.current) setVoiceStatus("Ask AURA");
       }, 5200);
       return;
     }
@@ -4038,6 +4206,10 @@ export default function SpatialScene() {
     };
 
     utterance.onend = () => {
+      if (onDone) {
+        onDone();
+        return;
+      }
       if (voiceMountedRef.current) setVoiceStatus("Ask AURA");
     };
 
@@ -4051,18 +4223,58 @@ export default function SpatialScene() {
     synth.speak(utterance);
   }, [clearVoiceFallbackTimer]);
 
-  const handleAskAuraClick = useCallback(() => {
+  const addVoiceOrderItem = useCallback((partIndex: number) => {
+    setOrderItems((prev) => {
+      const idx = prev.findIndex((entry) => entry.partIndex === partIndex);
+      if (idx >= 0) {
+        return prev.map((entry, i) =>
+          i === idx ? { ...entry, qty: entry.qty + 1 } : entry
+        );
+      }
+
+      return [...prev, { partIndex, qty: 1 }];
+    });
+    setTrayGlow(true);
+    if (addToOrderGlowRef.current) clearTimeout(addToOrderGlowRef.current);
+    addToOrderGlowRef.current = setTimeout(() => {
+      setTrayGlow(false);
+      addToOrderGlowRef.current = null;
+    }, 900);
+  }, []);
+
+  const openMenu = useCallback(() => {
+    landingPhaseRef.current = "menu";
+    explodedRef.current = true;
+    setIntroFading(true);
+    setIntroVisible(false);
+    setShowEnterMenuFallback(false);
+    setLandingPhase("menu");
+    setExploded(true);
+
+    if (!introMenuOpenLoggedRef.current) {
+      introMenuOpenLoggedRef.current = true;
+      logIntroDev("menu opened");
+    }
+  }, [logIntroDev]);
+
+  const startAuraRecognition = useCallback(() => {
     requestImmersiveFullscreen();
 
-    if (!inspectMode || activePartIndex !== 0) return;
     if (typeof window === "undefined") return;
+    lastInteractionRef.current = Date.now();
+    demoActiveRef.current = false;
+    demoPhaseRef.current = null;
+
+    if (landingPhaseRef.current !== "menu") {
+      openMenu();
+    }
 
     const speechWindow = window as AuraSpeechWindow;
     const Recognition =
       speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
 
     if (!Recognition) {
-      setVoiceStatus("Voice is not supported on this browser.");
+      setVoiceStatus("Voice ordering is not supported on this browser.");
       return;
     }
 
@@ -4080,10 +4292,37 @@ export default function SpatialScene() {
     recognition.onresult = (event) => {
       const lastResult = event.results[event.results.length - 1];
       const transcript = lastResult?.[0]?.transcript ?? "";
-      const answer = resolveAuraVoiceAnswer(transcript);
+      const command = resolveAuraVoiceCommand(
+        transcript,
+        voiceOrderingModeRef.current
+      );
+
+      if (command.addPartIndex !== undefined) {
+        addVoiceOrderItem(command.addPartIndex);
+        clearVoiceOrderingMode();
+      }
+
+      if (command.showPartIndex !== undefined) {
+        setBurgerExploded(false);
+        setActivePartIndex(command.showPartIndex);
+        if (!explodedRef.current) setExploded(true);
+      }
+
+      if (command.startOrderingMode) {
+        armVoiceOrderingMode();
+      }
 
       voiceActiveRef.current = false;
-      speakAuraAnswer(answer);
+      speakAuraAnswer(
+        command.answer,
+        command.startOrderingMode
+          ? () => {
+              if (voiceOrderingModeRef.current) {
+                startAuraRecognitionRef.current();
+              }
+            }
+          : undefined
+      );
     };
 
     recognition.onerror = () => {
@@ -4108,28 +4347,23 @@ export default function SpatialScene() {
       setVoiceStatus("VOICE UNAVAILABLE");
     }
   }, [
-    activePartIndex,
-    inspectMode,
+    addVoiceOrderItem,
+    openMenu,
     requestImmersiveFullscreen,
     speakAuraAnswer,
     stopAuraVoice,
     unlockAuraSpeech,
+    armVoiceOrderingMode,
+    clearVoiceOrderingMode,
   ]);
 
-  const openMenu = useCallback(() => {
-    landingPhaseRef.current = "menu";
-    explodedRef.current = true;
-    setIntroFading(true);
-    setIntroVisible(false);
-    setShowEnterMenuFallback(false);
-    setLandingPhase("menu");
-    setExploded(true);
+  useEffect(() => {
+    startAuraRecognitionRef.current = startAuraRecognition;
+  }, [startAuraRecognition]);
 
-    if (!introMenuOpenLoggedRef.current) {
-      introMenuOpenLoggedRef.current = true;
-      logIntroDev("menu opened");
-    }
-  }, [logIntroDev]);
+  const handleAskAuraClick = useCallback(() => {
+    startAuraRecognition();
+  }, [startAuraRecognition]);
 
   // "Added to order" toast — fires for ~1.8s whenever the total item count
   // goes UP (so increments via single-add, voice, or gesture all surface).
@@ -4231,6 +4465,10 @@ export default function SpatialScene() {
         clearTimeout(addToOrderGlowRef.current);
         addToOrderGlowRef.current = null;
       }
+      if (voiceOrderingTimerRef.current) {
+        clearTimeout(voiceOrderingTimerRef.current);
+        voiceOrderingTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -4270,7 +4508,8 @@ export default function SpatialScene() {
   }, [clearInspectTouchReturnTimer, inspectMode]);
 
   useEffect(() => {
-    if (!inspectMode || activePartIndex !== 0) {
+    if (!exploded) {
+      clearVoiceOrderingMode();
       stopAuraVoice();
       const id = setTimeout(() => {
         setVoiceStatus("Ask AURA");
@@ -4278,12 +4517,13 @@ export default function SpatialScene() {
 
       return () => clearTimeout(id);
     }
-  }, [activePartIndex, inspectMode, stopAuraVoice]);
+  }, [clearVoiceOrderingMode, exploded, stopAuraVoice]);
 
   useEffect(() => () => {
     voiceMountedRef.current = false;
+    clearVoiceOrderingMode();
     stopAuraVoice();
-  }, [stopAuraVoice]);
+  }, [clearVoiceOrderingMode, stopAuraVoice]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -4860,7 +5100,7 @@ export default function SpatialScene() {
         )}
       </div>
 
-      {inspectMode && activePartIndex === 0 && (
+      {landingPhase === "menu" && exploded && (
         <div className={`pointer-events-auto absolute z-10 ${askAuraClassName}`}>
           <button
             type="button"
@@ -4952,7 +5192,7 @@ export default function SpatialScene() {
       >
         <div className="mb-3 flex items-center justify-between">
           <p className="text-[0.56rem] tracking-[0.42em] text-amber-700/60">
-            ORDER TRAY
+            DEMO ORDER
           </p>
           <button
             onClick={clearOrder}
@@ -4961,6 +5201,9 @@ export default function SpatialScene() {
             CLEAR ALL
           </button>
         </div>
+        <p className="mb-3 truncate text-[0.58rem] font-light tracking-[0.08em] text-stone-500/75">
+          {demoOrderSummary}
+        </p>
 
         <ul className="max-h-[38vh] space-y-2 overflow-y-auto">
           {orderItems.map(({ partIndex, qty }) => (
@@ -5031,7 +5274,7 @@ export default function SpatialScene() {
           {/* Header */}
           <div className="mb-7 flex items-start justify-between">
             <div>
-              <p className="text-[0.54rem] tracking-[0.52em] text-amber-700/58">YOUR ORDER</p>
+              <p className="text-[0.54rem] tracking-[0.52em] text-amber-700/58">DEMO ORDER</p>
               <p className="mt-1.5 text-[0.68rem] font-light tracking-[0.12em] text-stone-500/65">
                 {totalItemCount} item{totalItemCount !== 1 ? "s" : ""}
               </p>
