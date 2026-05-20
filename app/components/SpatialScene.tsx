@@ -249,6 +249,20 @@ const EXPLODED_STACK_SCALE = 0.78;
 const BURGER_REVEAL_SCALE = 0.77;
 const BURGER_REVEAL_Z_OFFSET = -0.55;
 const BURGER_REVEAL_Y_OFFSET = 0;
+const BASE_MENU_AUTO_ROTATE_MS = 7000;
+const BASE_MENU_INSPECT_HOLD_MS = 4200;
+const BASE_MENU_POST_INSPECT_RETURN_MS = 1800;
+const BASE_MENU_NEXT_PRODUCT_DELAY_MS = 800;
+const SHOW_MODE_EXIT_AFTER_NARRATION_MS = 650;
+const SHOW_MODE_NEXT_PRODUCT_AFTER_RETURN_MS = 950;
+const SHOW_MODE_PRODUCTS = [0, 1, 2, 3, 4] as const;
+const SHOW_MODE_NARRATION = [
+  "This is our signature spatial burger experience. Each layer opens with a calm ingredient reveal.",
+  "This Louisiana Po' Boy brings crisp seafood, fresh vegetables, and a cool remoulade finish.",
+  "The dessert is light and elegant, designed as a quiet finish to the meal.",
+  "The fried chicken is crisp and savory, with a gentle honey thyme finish.",
+  "The crawfish brings warm coastal spice and a clean Louisiana profile.",
+] as const;
 
 type SceneLayout = {
   mode: "phone-portrait" | "ipad-portrait" | "ipad-landscape" | "desktop";
@@ -306,13 +320,19 @@ type AuraSpeechWindow = Window & {
   webkitSpeechRecognition?: new () => AuraSpeechRecognition;
 };
 
+type AuraAudioWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+type AuraSoundName = "burgerReveal" | "voiceActivate" | "orderConfirm";
+
 const AURA_VOICE_RESPONSES = [
   {
     intent: "WHAT_IS_THIS",
     phrases: ["what is this", "whats this", "what is that", "what am i seeing"],
     keywords: [["what", "this"]],
     answer:
-      "This is our signature spatial burger experience. Each ingredient can be explored individually using gesture interaction.",
+      "This is our signature spatial burger experience. Each ingredient can open gently for a closer look.",
   },
   {
     intent: "INGREDIENTS",
@@ -326,14 +346,14 @@ const AURA_VOICE_RESPONSES = [
     phrases: ["what do you recommend", "what should i order"],
     keywords: [["recommend"], ["suggestion"], ["best", "item"], ["should", "order"]],
     answer:
-      "I recommend the signature burger combo. It is the hero item in this demo and shows the spatial ingredient reveal most clearly.",
+      "I would start with the signature burger. It shows the ingredient reveal most clearly.",
   },
   {
     intent: "POPULAR",
     phrases: ["most popular item", "best seller"],
     keywords: [["popular"], ["favorite"], ["favourite"], ["best", "seller"]],
     answer:
-      "The signature burger combo is presented as the featured favorite, with the strongest visual story for in-store discovery.",
+      "The signature burger is the featured favorite in this experience.",
   },
   {
     intent: "SPICY",
@@ -374,46 +394,48 @@ const AURA_VOICE_RESPONSES = [
     phrases: ["how to use", "use this", "how does this work"],
     keywords: [["control"], ["gesture"], ["swipe"]],
     answer:
-      "Swipe to explore the menu. Enter inspect mode to view details, then use gestures or touch to rotate the product.",
+      "Swipe gently to explore. Open a product to inspect it, then rotate it with touch.",
   },
   {
     intent: "CUSTOMIZE",
     phrases: [],
     keywords: [["customize"], ["customise"], ["change"], ["modify"]],
     answer:
-      "You can customize toppings and preparation with the team. This demo highlights the ingredient structure before ordering.",
+      "Yes. The team can help customize toppings and preparation.",
   },
   {
     intent: "CUSTOM_MENU",
     phrases: ["own menu", "our menu"],
     keywords: [["custom"], ["customize"], ["branding"], ["brand"]],
     answer:
-      "Yes. AURA ONE can be configured around a restaurant's own menu items, product visuals, pricing, and featured experiences.",
+      "Yes. AURA ONE can be configured around your menu, visuals, pricing, and featured items.",
   },
   {
     intent: "RESTAURANT_FIT",
     phrases: ["my restaurant", "our restaurant", "work in restaurant", "can this work"],
     keywords: [["restaurant"], ["install"]],
     answer:
-      "Yes. The system is designed as an in-store spatial menu experience for restaurants, demos, and premium hospitality environments.",
+      "Yes. It is designed for restaurants, demos, and premium hospitality spaces.",
   },
   {
     intent: "DEVICES",
     phrases: ["special device", "special devices", "need devices"],
     keywords: [["device"], ["devices"], ["tablet"], ["ipad"], ["touchscreen"], ["gesture", "display"]],
     answer:
-      "Customers do not need special hardware. The experience can run on supported tablets, displays, or kiosk-style web devices.",
+      "Customers do not need special hardware. It can run on supported tablets, displays, or kiosk-style web devices.",
   },
 ] as const;
 
 const AURA_VOICE_FALLBACK =
-  "I can answer questions about ingredients, allergens, price, recommendations, and restaurant customization.";
+  "I can help with ingredients, allergens, pricing, recommendations, and restaurant customization.";
 
 type AuraVoiceCommand = {
   answer: string;
   addPartIndex?: number;
   showPartIndex?: number;
   startOrderingMode?: boolean;
+  startShowMode?: boolean;
+  stopShowMode?: boolean;
   intent: string;
 };
 
@@ -460,12 +482,38 @@ function resolveAuraVoiceCommand(
       normalized.includes("i want to order") ||
       normalized.includes("can i place an order") ||
       normalized.includes("place an order"));
+  const wantsShowModeOn =
+    normalized.includes("show on") ||
+    normalized.includes("start show") ||
+    normalized.includes("start showcase") ||
+    normalized.includes("turn on show mode");
+  const wantsShowModeOff =
+    normalized.includes("show off") ||
+    normalized.includes("stop show") ||
+    normalized.includes("stop showcase") ||
+    normalized.includes("turn off show mode");
+
+  if (wantsShowModeOn) {
+    return {
+      intent: "SHOW_MODE_ON",
+      startShowMode: true,
+      answer: "Show mode is now active.",
+    };
+  }
+
+  if (wantsShowModeOff) {
+    return {
+      intent: "SHOW_MODE_OFF",
+      stopShowMode: true,
+      answer: "Show mode is now off.",
+    };
+  }
 
   if (wantsOrderingMode) {
     return {
       intent: "START_ORDERING",
       startOrderingMode: true,
-      answer: "Of course. What would you like to order?",
+      answer: "Of course. What would you like?",
     };
   }
 
@@ -481,14 +529,14 @@ function resolveAuraVoiceCommand(
       return {
         intent: "ORDER_MODE_ADD_ITEM",
         addPartIndex: menuItemIndex,
-        answer: `Added the ${itemLabel} to your demo order.`,
+        answer: `Your ${itemLabel} has been added.`,
       };
     }
 
     return {
       intent: "ORDER_MODE_UNSUPPORTED",
       answer:
-        "I can add the burger, fried chicken, po boy, or dessert in this demo.",
+        "For this demo, I can add the burger, fried chicken, po boy, or dessert.",
     };
   }
 
@@ -497,7 +545,7 @@ function resolveAuraVoiceCommand(
     return {
       intent: "ADD_ITEM",
       addPartIndex: menuItemIndex,
-      answer: `Added the ${friendlyName} to your demo order.`,
+      answer: `Your ${friendlyName} has been added.`,
     };
   }
 
@@ -506,7 +554,7 @@ function resolveAuraVoiceCommand(
     return {
       intent: "SHOW_ITEM",
       showPartIndex: menuItemIndex,
-      answer: `Showing ${itemName}.`,
+      answer: `Here is ${itemName}.`,
     };
   }
 
@@ -517,7 +565,7 @@ function resolveAuraVoiceCommand(
     return {
       intent: "GLUTEN_MENU",
       answer:
-        "Items with gluten include the signature burger, the Louisiana po' boy, fried chicken, and dessert. Crawfish is the cleanest shellfish-forward option in this demo.",
+        "Items with gluten include the burger, po' boy, fried chicken, and dessert. Crawfish is the cleanest option here.",
     };
   }
 
@@ -528,7 +576,7 @@ function resolveAuraVoiceCommand(
     return {
       intent: "DAIRY_MENU",
       answer:
-        "Dairy appears in the signature burger, dessert, and fried chicken preparation. The po' boy may include dairy depending on sauce, and crawfish can include butter.",
+        "Dairy appears in the burger, dessert, and fried chicken preparation. The po' boy may include dairy in the sauce.",
     };
   }
 
@@ -542,7 +590,7 @@ function resolveAuraVoiceCommand(
     const price = ITEM_PRICES[menuItemIndex].toFixed(2);
     return {
       intent: "ITEM_PRICE",
-      answer: `${itemName} is ${price} in this demo menu.`,
+      answer: `${itemName} is ${price}.`,
     };
   }
 
@@ -564,8 +612,28 @@ function resolveAuraVoiceCommand(
 }
 
 function selectAuraVoice(voices: SpeechSynthesisVoice[]) {
+  const preferredNames = [
+    "samantha",
+    "karen",
+    "daniel",
+    "ava",
+    "allison",
+    "victoria",
+    "moira",
+    "fiona",
+    "arthur",
+  ];
+  const preferredVoice = preferredNames
+    .map((name) =>
+      voices.find((voice) => voice.name.toLowerCase().includes(name))
+    )
+    .find(Boolean);
+
   return (
+    preferredVoice ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("en-us")) ??
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en-gb")) ??
+    voices.find((voice) => voice.lang.toLowerCase().startsWith("en-au")) ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ??
     null
   );
@@ -3882,6 +3950,7 @@ export default function SpatialScene() {
   const [voiceStatus, setVoiceStatus] = useState("Ask AURA");
   const [voiceShowcasing, setVoiceShowcasing] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const [showMode, setShowMode] = useState(false);
   const landingPhaseRef = useRef<LandingPhase>("intro");
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const inspectDragRef = useRef({
@@ -3897,6 +3966,20 @@ export default function SpatialScene() {
   const voiceFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceOrderingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceShowcaseTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const idleDemoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const baseMenuDemoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const idleDemoStepRef = useRef(0);
+  const baseMenuAutoRotateRef = useRef(0);
+  const baseMenuDemoActiveRef = useRef(false);
+  const showModeRef = useRef(false);
+  const auraAudioContextRef = useRef<AudioContext | null>(null);
+  const auraAudioUnlockedRef = useRef(false);
+  const auraAudioCooldownRef = useRef<Record<AuraSoundName, number>>({
+    burgerReveal: 0,
+    voiceActivate: 0,
+    orderConfirm: 0,
+  });
+  const previousBurgerRevealRef = useRef(false);
   const startAuraRecognitionRef = useRef<() => void>(() => undefined);
   const trayRef = useRef<HTMLDivElement>(null);
   const introFallbackLoggedRef = useRef(false);
@@ -3904,12 +3987,11 @@ export default function SpatialScene() {
   const introMenuOpenLoggedRef = useRef(false);
   const fullscreenRequestedRef = useRef(false);
 
-  // Auto-demo mode — all stable refs, no extra re-renders
+  // Show mode / base auto-rotation — all stable refs, no extra render-loop work.
   const lastInteractionRef = useRef(0);
   const demoActiveRef = useRef(false);
-  const demoPhaseRef = useRef<"wait_inspect" | "inspecting" | "wait_next" | null>(null);
-  const demoPhaseDueRef = useRef(0);
   // mirrors so the interval closure always sees current React state
+  const activePartIndexRef = useRef(0);
   const explodedRef = useRef(false);
   const inspectModeRef = useRef(false);
   const burgerExplodedRef = useRef(false);
@@ -3949,9 +4031,102 @@ export default function SpatialScene() {
     requestSpatialFullscreenOnce(fullscreenRequestedRef);
   }, []);
 
+  const getAuraAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    if (auraAudioContextRef.current) return auraAudioContextRef.current;
+
+    const audioWindow = window as AuraAudioWindow;
+    const AudioContextCtor = window.AudioContext ?? audioWindow.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+
+    auraAudioContextRef.current = new AudioContextCtor();
+    return auraAudioContextRef.current;
+  }, []);
+
+  const unlockAuraAudio = useCallback(() => {
+    const context = getAuraAudioContext();
+    if (!context) return;
+
+    auraAudioUnlockedRef.current = true;
+    if (context.state === "suspended") {
+      void context.resume();
+    }
+  }, [getAuraAudioContext]);
+
+  const playAuraSound = useCallback((name: AuraSoundName) => {
+    if (!auraAudioUnlockedRef.current) return;
+
+    const context = getAuraAudioContext();
+    if (!context) return;
+
+    const nowMs = Date.now();
+    const cooldown = name === "burgerReveal" ? 900 : 360;
+    if (nowMs - auraAudioCooldownRef.current[name] < cooldown) return;
+    auraAudioCooldownRef.current[name] = nowMs;
+
+    const startAt = context.currentTime + 0.012;
+    if (context.state === "suspended") {
+      void context.resume();
+    }
+
+    const masterVolume = 0.42;
+    const playTone = (
+      frequency: number,
+      offset: number,
+      duration: number,
+      volume: number,
+      filterFrequency = 1200,
+      type: OscillatorType = "sine"
+    ) => {
+      const oscillator = context.createOscillator();
+      const filter = context.createBiquadFilter();
+      const gain = context.createGain();
+      const start = startAt + offset;
+      const end = start + duration;
+      const attack = Math.min(0.035, duration * 0.22);
+      const releaseStart = Math.max(start + attack + 0.02, end - duration * 0.62);
+
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency, start);
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(filterFrequency, start);
+      filter.Q.setValueAtTime(0.45, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(volume * masterVolume, start + attack);
+      gain.gain.setValueAtTime(volume * masterVolume, releaseStart);
+      gain.gain.exponentialRampToValueAtTime(0.0001, end);
+      oscillator.connect(filter);
+      filter.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(start);
+      oscillator.stop(end + 0.04);
+    };
+
+    if (name === "burgerReveal") {
+      playTone(180, 0, 0.52, 0.008, 520);
+      playTone(360, 0.08, 0.46, 0.005, 760, "triangle");
+    } else if (name === "voiceActivate") {
+      playTone(520, 0, 0.2, 0.009, 900);
+    } else if (name === "orderConfirm") {
+      playTone(620, 0, 0.24, 0.008, 980, "triangle");
+    }
+  }, [getAuraAudioContext]);
+
   const logInspectDev = useCallback((message: string) => {
     if (process.env.NODE_ENV === "development") {
       console.info(`[AURA INSPECT] ${message}`);
+    }
+  }, []);
+
+  const logIdleDev = useCallback((message: string) => {
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[AURA IDLE] ${message}`);
+    }
+  }, []);
+
+  const logShowDev = useCallback((message: string) => {
+    if (process.env.NODE_ENV === "development") {
+      console.info(`[AURA SHOW] ${message}`);
     }
   }, []);
 
@@ -3968,6 +4143,47 @@ export default function SpatialScene() {
     voiceShowcaseTimersRef.current = [];
     setVoiceShowcasing(false);
   }, []);
+
+  const clearBaseMenuDemo = useCallback(() => {
+    baseMenuDemoTimersRef.current.forEach((timer) => clearTimeout(timer));
+    baseMenuDemoTimersRef.current = [];
+    baseMenuDemoActiveRef.current = false;
+  }, []);
+
+  const clearIdleDemo = useCallback((stopSpeech = true, reason = "interaction") => {
+    const wasActive = demoActiveRef.current;
+    idleDemoTimersRef.current.forEach((timer) => clearTimeout(timer));
+    idleDemoTimersRef.current = [];
+    clearBaseMenuDemo();
+    demoActiveRef.current = false;
+    showModeRef.current = false;
+    setShowMode(false);
+    if (wasActive) {
+      logIdleDev(`cancelled by ${reason}`);
+      logShowDev(`cancelled by ${reason}`);
+    }
+
+    if (stopSpeech && wasActive && typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      setVoiceSpeaking(false);
+      setVoiceStatus("Ask AURA");
+    }
+  }, [clearBaseMenuDemo, logIdleDev, logShowDev]);
+
+  const stopShowMode = useCallback((reason = "voice command") => {
+    clearIdleDemo(true, reason);
+    inspectDragRef.current.active = false;
+    inspectDragRef.current.pointerId = -1;
+    inspectRotationRef.current.x = 0;
+    inspectRotationRef.current.y = 0;
+    inspectModeRef.current = false;
+    burgerExplodedRef.current = false;
+    explodedRef.current = true;
+    setInspectMode(false);
+    setBurgerExploded(false);
+    setExploded(true);
+    setVoiceStatus("Ask AURA");
+  }, [clearIdleDemo]);
 
   const stopInspectDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
     const wasActive = inspectDragRef.current.active;
@@ -4061,14 +4277,13 @@ export default function SpatialScene() {
     clearInspectTouchReturnTimer();
     clearVoiceShowcase();
     lastInteractionRef.current = Date.now();
-    demoActiveRef.current = false;
-    demoPhaseRef.current = null;
+    clearIdleDemo(true, "inspect drag");
     inspectDragRef.current.active = true;
     inspectDragRef.current.pointerId = event.pointerId;
     inspectDragRef.current.lastX = event.clientX;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
-  }, [clearInspectTouchReturnTimer, clearVoiceShowcase, exploded, inspectMode, requestImmersiveFullscreen]);
+  }, [clearIdleDemo, clearInspectTouchReturnTimer, clearVoiceShowcase, exploded, inspectMode, requestImmersiveFullscreen]);
 
   const handleInspectPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (
@@ -4212,9 +4427,9 @@ export default function SpatialScene() {
 
     const utterance = new SpeechSynthesisUtterance(answer);
     utterance.lang = "en-US";
-    utterance.rate = 0.94;
-    utterance.pitch = 1;
-    utterance.volume = 1;
+    utterance.rate = 0.9;
+    utterance.pitch = 0.98;
+    utterance.volume = 0.86;
     if (auraVoiceRef.current) utterance.voice = auraVoiceRef.current;
 
     utterance.onstart = () => {
@@ -4270,8 +4485,7 @@ export default function SpatialScene() {
     stopInspectDrag();
     inspectRotationRef.current.x = 0;
     inspectRotationRef.current.y = 0;
-    demoActiveRef.current = false;
-    demoPhaseRef.current = null;
+    clearIdleDemo(true, "voice showcase");
     lastInteractionRef.current = Date.now();
     setVoiceShowcasing(true);
     setVoiceStatus("SHOWCASING...");
@@ -4311,13 +4525,113 @@ export default function SpatialScene() {
   }, [
     clearInspectTouchReturnTimer,
     clearVoiceShowcase,
+    clearIdleDemo,
     speakAuraAnswer,
     stopInspectDrag,
+  ]);
+
+  const startShowMode = useCallback(() => {
+    if (
+      demoActiveRef.current ||
+      landingPhaseRef.current !== "menu" ||
+      !explodedRef.current ||
+      inspectModeRef.current ||
+      inspectDragRef.current.active
+    ) {
+      return;
+    }
+
+    clearIdleDemo(false, "show mode restart");
+    clearVoiceShowcase();
+    clearInspectTouchReturnTimer();
+    stopInspectDrag();
+    inspectRotationRef.current.x = 0;
+    inspectRotationRef.current.y = 0;
+    demoActiveRef.current = true;
+    showModeRef.current = true;
+    setShowMode(true);
+    setVoiceStatus("SHOW MODE");
+    logIdleDev("showcase start");
+    logShowDev("mode enabled");
+    logShowDev("sequence start");
+
+    const addIdleTimer = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        idleDemoTimersRef.current = idleDemoTimersRef.current.filter((item) => item !== timer);
+        callback();
+      }, delay);
+      idleDemoTimersRef.current.push(timer);
+      return timer;
+    };
+
+    const runStep = (sequenceIndex: number) => {
+      if (!showModeRef.current) return;
+
+      const partIndex = SHOW_MODE_PRODUCTS[sequenceIndex % SHOW_MODE_PRODUCTS.length];
+      idleDemoStepRef.current = sequenceIndex;
+      inspectModeRef.current = false;
+      burgerExplodedRef.current = false;
+      setBurgerExploded(false);
+      setInspectMode(false);
+      setExploded(true);
+      activePartIndexRef.current = partIndex;
+      setActivePartIndex(partIndex);
+      setVoiceStatus("SHOW MODE");
+      logIdleDev(`rotate to index ${partIndex}`);
+      logShowDev(`rotate to index ${partIndex}`);
+
+      addIdleTimer(() => {
+        if (!showModeRef.current || inspectDragRef.current.active) return;
+        inspectModeRef.current = true;
+        setInspectMode(true);
+        logIdleDev("enter inspect");
+      }, 1900);
+
+      addIdleTimer(() => {
+        if (!showModeRef.current || partIndex !== 0) return;
+        burgerExplodedRef.current = true;
+        setBurgerExploded(true);
+      }, 2750);
+
+      addIdleTimer(() => {
+        if (!showModeRef.current || inspectDragRef.current.active) return;
+
+        speakAuraAnswer(SHOW_MODE_NARRATION[partIndex], () => {
+          if (!showModeRef.current) return;
+          setVoiceStatus("SHOW MODE");
+
+          addIdleTimer(() => {
+            if (!showModeRef.current || inspectDragRef.current.active) return;
+            burgerExplodedRef.current = false;
+            inspectModeRef.current = false;
+            setBurgerExploded(false);
+            setInspectMode(false);
+          }, SHOW_MODE_EXIT_AFTER_NARRATION_MS);
+
+          addIdleTimer(() => {
+            if (!showModeRef.current || inspectDragRef.current.active) return;
+            runStep(sequenceIndex + 1);
+          }, SHOW_MODE_EXIT_AFTER_NARRATION_MS + SHOW_MODE_NEXT_PRODUCT_AFTER_RETURN_MS);
+        });
+      }, partIndex === 0 ? 3600 : 3000);
+    };
+
+    idleDemoStepRef.current = activePartIndexRef.current + 1;
+    runStep(idleDemoStepRef.current);
+  }, [
+    clearIdleDemo,
+    clearInspectTouchReturnTimer,
+    clearVoiceShowcase,
+    speakAuraAnswer,
+    stopInspectDrag,
+    logIdleDev,
+    logShowDev,
   ]);
 
   const openMenu = useCallback(() => {
     landingPhaseRef.current = "menu";
     explodedRef.current = true;
+    lastInteractionRef.current = Date.now();
     setIntroFading(true);
     setIntroVisible(false);
     setShowEnterMenuFallback(false);
@@ -4335,9 +4649,8 @@ export default function SpatialScene() {
 
     if (typeof window === "undefined") return;
     clearVoiceShowcase();
+    clearIdleDemo(true, "voice tap");
     lastInteractionRef.current = Date.now();
-    demoActiveRef.current = false;
-    demoPhaseRef.current = null;
 
     if (landingPhaseRef.current !== "menu") {
       openMenu();
@@ -4372,6 +4685,10 @@ export default function SpatialScene() {
         voiceOrderingModeRef.current
       );
 
+      if (command.startShowMode) {
+        logShowDev("show on matched");
+      }
+
       if (command.addPartIndex !== undefined) {
         addVoiceOrderItem(command.addPartIndex);
         clearVoiceOrderingMode();
@@ -4387,6 +4704,25 @@ export default function SpatialScene() {
 
       voiceActiveRef.current = false;
       if (command.showPartIndex !== undefined) return;
+      if (command.startShowMode) {
+        showModeRef.current = true;
+        setShowMode(true);
+        clearBaseMenuDemo();
+        setVoiceStatus("SHOW MODE");
+        speakAuraAnswer(command.answer, () => {
+          const timer = setTimeout(() => {
+            idleDemoTimersRef.current = idleDemoTimersRef.current.filter((item) => item !== timer);
+            if (showModeRef.current) startShowMode();
+          }, 700);
+          idleDemoTimersRef.current.push(timer);
+        });
+        return;
+      }
+      if (command.stopShowMode) {
+        stopShowMode("show off voice command");
+        speakAuraAnswer(command.answer);
+        return;
+      }
 
       speakAuraAnswer(
         command.answer,
@@ -4423,12 +4759,17 @@ export default function SpatialScene() {
     }
   }, [
     addVoiceOrderItem,
+    clearBaseMenuDemo,
+    clearIdleDemo,
     clearVoiceShowcase,
+    logShowDev,
     openMenu,
     requestImmersiveFullscreen,
     speakAuraAnswer,
     startVoiceShowcase,
+    startShowMode,
     stopAuraVoice,
+    stopShowMode,
     unlockAuraSpeech,
     armVoiceOrderingMode,
     clearVoiceOrderingMode,
@@ -4439,8 +4780,10 @@ export default function SpatialScene() {
   }, [startAuraRecognition]);
 
   const handleAskAuraClick = useCallback(() => {
+    unlockAuraAudio();
+    playAuraSound("voiceActivate");
     startAuraRecognition();
-  }, [startAuraRecognition]);
+  }, [playAuraSound, startAuraRecognition, unlockAuraAudio]);
 
   // "Added to order" toast — fires for ~1.8s whenever the total item count
   // goes UP (so increments via single-add, voice, or gesture all surface).
@@ -4449,6 +4792,7 @@ export default function SpatialScene() {
     const prev = prevTotalItemCountRef.current;
     prevTotalItemCountRef.current = totalItemCount;
     if (totalItemCount <= prev) return;
+    playAuraSound("orderConfirm");
     setOrderToastVisible(true);
     if (orderToastTimerRef.current) clearTimeout(orderToastTimerRef.current);
     orderToastTimerRef.current = setTimeout(() => {
@@ -4457,7 +4801,7 @@ export default function SpatialScene() {
     return () => {
       // No-op cleanup; clearing on every render would cancel an in-flight toast.
     };
-  }, [totalItemCount]);
+  }, [playAuraSound, totalItemCount]);
 
   const activePart = CAROUSEL_PARTS[activePartIndex];
 
@@ -4548,6 +4892,10 @@ export default function SpatialScene() {
       }
       voiceShowcaseTimersRef.current.forEach((timer) => clearTimeout(timer));
       voiceShowcaseTimersRef.current = [];
+      idleDemoTimersRef.current.forEach((timer) => clearTimeout(timer));
+      idleDemoTimersRef.current = [];
+      baseMenuDemoTimersRef.current.forEach((timer) => clearTimeout(timer));
+      baseMenuDemoTimersRef.current = [];
     };
   }, []);
 
@@ -4557,10 +4905,19 @@ export default function SpatialScene() {
   }, []);
 
   // Keep mirrors in sync
+  useEffect(() => { activePartIndexRef.current = activePartIndex; }, [activePartIndex]);
   useEffect(() => { explodedRef.current = exploded; }, [exploded]);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { burgerExplodedRef.current = burgerExploded; }, [burgerExploded]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
+
+  useEffect(() => {
+    const burgerRevealActive = burgerExploded && inspectMode && activePartIndex === 0;
+    if (burgerRevealActive && !previousBurgerRevealRef.current) {
+      playAuraSound("burgerReveal");
+    }
+    previousBurgerRevealRef.current = burgerRevealActive;
+  }, [activePartIndex, burgerExploded, inspectMode, playAuraSound]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
@@ -4599,6 +4956,7 @@ export default function SpatialScene() {
     if (!exploded) {
       clearVoiceOrderingMode();
       const id = setTimeout(() => {
+        clearIdleDemo(true, "assemble");
         clearVoiceShowcase();
         stopAuraVoice();
         setVoiceStatus("Ask AURA");
@@ -4606,13 +4964,15 @@ export default function SpatialScene() {
 
       return () => clearTimeout(id);
     }
-  }, [clearVoiceOrderingMode, clearVoiceShowcase, exploded, stopAuraVoice]);
+  }, [clearIdleDemo, clearVoiceOrderingMode, clearVoiceShowcase, exploded, stopAuraVoice]);
 
   useEffect(() => () => {
     voiceMountedRef.current = false;
     clearVoiceShowcase();
     clearVoiceOrderingMode();
     stopAuraVoice();
+    void auraAudioContextRef.current?.close();
+    auraAudioContextRef.current = null;
   }, [clearVoiceOrderingMode, clearVoiceShowcase, stopAuraVoice]);
 
   useEffect(() => {
@@ -4623,39 +4983,83 @@ export default function SpatialScene() {
     return () => clearTimeout(id);
   }, [inspectMode, activePartIndex]);
 
-  // Auto-demo loop — ticks every 120ms, driven entirely by refs
+  // Basic menu demo loop — lightweight silent browse/inspect/return.
+  // Show Mode owns narration; this loop never speaks.
   useEffect(() => {
+    const addBaseTimer = (callback: () => void, delay: number) => {
+      const timer = setTimeout(() => {
+        baseMenuDemoTimersRef.current = baseMenuDemoTimersRef.current.filter(
+          (item) => item !== timer
+        );
+        callback();
+      }, delay);
+      baseMenuDemoTimersRef.current.push(timer);
+    };
+
     const id = setInterval(() => {
       const now = Date.now();
-      const isCarousel = explodedRef.current && !inspectModeRef.current;
+      const isAvailable =
+        landingPhaseRef.current === "menu" &&
+        explodedRef.current &&
+        !inspectModeRef.current &&
+        !demoActiveRef.current &&
+        !baseMenuDemoActiveRef.current &&
+        !inspectDragRef.current.active &&
+        !voiceActiveRef.current &&
+        !voiceSpeaking;
 
-      if (!demoActiveRef.current) {
-        if (isCarousel && now - lastInteractionRef.current > 7000) {
-          demoActiveRef.current = true;
-          demoPhaseRef.current = "wait_inspect";
-          setActivePartIndex((v) => (v + 1) % CAROUSEL_PARTS.length);
-          demoPhaseDueRef.current = now + 2200;
-        }
-        return;
+      if (
+        isAvailable &&
+        now - lastInteractionRef.current > BASE_MENU_AUTO_ROTATE_MS &&
+        now - baseMenuAutoRotateRef.current > BASE_MENU_AUTO_ROTATE_MS
+      ) {
+        baseMenuAutoRotateRef.current = now;
+        baseMenuDemoActiveRef.current = true;
+        setBurgerExploded(false);
+        activePartIndexRef.current =
+          (activePartIndexRef.current + 1) % CAROUSEL_PARTS.length;
+        setActivePartIndex(activePartIndexRef.current);
+
+        addBaseTimer(() => {
+          if (
+            demoActiveRef.current ||
+            inspectDragRef.current.active ||
+            voiceActiveRef.current ||
+            voiceSpeaking
+          ) {
+            baseMenuDemoActiveRef.current = false;
+            return;
+          }
+
+          inspectModeRef.current = true;
+          setInspectMode(true);
+        }, 1900);
+
+        addBaseTimer(() => {
+          if (demoActiveRef.current || inspectDragRef.current.active) {
+            baseMenuDemoActiveRef.current = false;
+            return;
+          }
+
+          inspectModeRef.current = false;
+          burgerExplodedRef.current = false;
+          setBurgerExploded(false);
+          setInspectMode(false);
+        }, 1900 + BASE_MENU_INSPECT_HOLD_MS);
+
+        addBaseTimer(() => {
+          baseMenuDemoActiveRef.current = false;
+          baseMenuAutoRotateRef.current =
+            Date.now() - BASE_MENU_AUTO_ROTATE_MS + BASE_MENU_NEXT_PRODUCT_DELAY_MS;
+        }, 1900 + BASE_MENU_INSPECT_HOLD_MS + BASE_MENU_POST_INSPECT_RETURN_MS);
       }
+    }, 1000);
 
-      if (demoPhaseRef.current === "wait_inspect" && now >= demoPhaseDueRef.current && isCarousel) {
-        demoPhaseRef.current = "inspecting";
-        setInspectMode(true);
-        demoPhaseDueRef.current = now + 3800;
-      } else if (demoPhaseRef.current === "inspecting" && now >= demoPhaseDueRef.current && inspectModeRef.current) {
-        demoPhaseRef.current = "wait_next";
-        setInspectMode(false);
-        demoPhaseDueRef.current = now + 2000;
-      } else if (demoPhaseRef.current === "wait_next" && now >= demoPhaseDueRef.current && isCarousel) {
-        demoPhaseRef.current = "wait_inspect";
-        setActivePartIndex((v) => (v + 1) % CAROUSEL_PARTS.length);
-        demoPhaseDueRef.current = now + 2200;
-      }
-    }, 120);
-
-    return () => clearInterval(id);
-  }, []); // stable — only refs and stable setters
+    return () => {
+      clearInterval(id);
+      clearBaseMenuDemo();
+    };
+  }, [clearBaseMenuDemo, voiceSpeaking]);
 
   const showPreviousPart = useCallback(() => {
     resetInspectRotation();
@@ -4738,10 +5142,7 @@ export default function SpatialScene() {
   const applyGestureAction = useCallback((action: GestureAction) => {
     lastInteractionRef.current = Date.now();
     clearVoiceShowcase();
-    if (demoActiveRef.current) {
-      demoActiveRef.current = false;
-      demoPhaseRef.current = null;
-    }
+    clearIdleDemo(true, `gesture ${action}`);
 
     // Landing gate — any gesture during intro immediately opens the menu.
     // Refs are updated synchronously so the action also processes in this call.
@@ -4870,17 +5271,17 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-  }, [activePartIndex, addToOrder, clearInspectTouchReturnTimer, clearOrder, clearVoiceShowcase, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
+  }, [activePartIndex, addToOrder, clearIdleDemo, clearInspectTouchReturnTimer, clearOrder, clearVoiceShowcase, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       requestImmersiveFullscreen();
+      unlockAuraAudio();
 
       // Any key press interrupts demo and resets idle timer
       lastInteractionRef.current = Date.now();
-      demoActiveRef.current = false;
-      demoPhaseRef.current = null;
+      clearIdleDemo(true, `key ${event.key}`);
 
       // In review mode ESC exits review; all other keys are suppressed.
       if (reviewMode) {
@@ -4894,8 +5295,7 @@ export default function SpatialScene() {
       if (event.key === "Enter" && landingPhaseRef.current !== "menu") {
         event.preventDefault();
         lastInteractionRef.current = Date.now();
-        demoActiveRef.current = false;
-        demoPhaseRef.current = null;
+        clearIdleDemo(true, "enter menu key");
         openMenu();
         return;
       }
@@ -4928,7 +5328,7 @@ export default function SpatialScene() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [applyGestureAction, inspectMode, logIntroDev, openMenu, requestImmersiveFullscreen, reviewMode]);
+  }, [applyGestureAction, clearIdleDemo, inspectMode, logIntroDev, openMenu, requestImmersiveFullscreen, reviewMode, unlockAuraAudio]);
 
   const handleEnterMenuClick = useCallback(() => {
     if (!introManualClickLoggedRef.current) {
@@ -4951,11 +5351,17 @@ export default function SpatialScene() {
         : sceneLayout.mode === "phone-portrait"
           ? "right-4 top-[calc(env(safe-area-inset-top)+4.25rem)]"
           : "right-8 top-24";
+  const handleRootPointerDownCapture = useCallback(() => {
+    requestImmersiveFullscreen();
+    unlockAuraAudio();
+    lastInteractionRef.current = Date.now();
+    clearIdleDemo(true, "pointerdown");
+  }, [clearIdleDemo, requestImmersiveFullscreen, unlockAuraAudio]);
 
   return (
     <div
       className="absolute inset-0 overflow-hidden"
-      onPointerDownCapture={requestImmersiveFullscreen}
+      onPointerDownCapture={handleRootPointerDownCapture}
       onPointerDown={handleInspectPointerDown}
       onPointerMove={handleInspectPointerMove}
       onPointerUp={handleInspectPointerEnd}
@@ -5020,6 +5426,14 @@ export default function SpatialScene() {
           Enter Menu
         </button>
       )}
+
+      <div
+        className="pointer-events-none absolute inset-0 z-[1]"
+        style={{
+          background:
+            "radial-gradient(ellipse 86% 60% at 50% 42%, rgba(255,255,255,0.28), transparent 58%), radial-gradient(ellipse 92% 70% at 50% 100%, rgba(176,126,70,0.10), transparent 62%), linear-gradient(135deg, rgba(255,250,242,0.20), rgba(226,216,200,0.08) 46%, rgba(255,255,255,0.12))",
+        }}
+      />
 
       <Canvas
         camera={{ position: [0, 2.4, 7.2], fov: 40 }}
@@ -5138,11 +5552,13 @@ export default function SpatialScene() {
           generic "INSPECT" hides when burger label takes over.            */}
       <div
         className={`pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 transition-opacity duration-700 ${
-          (inspectMode && exploded) || voiceShowcasing ? "opacity-100" : "opacity-0"
+          (inspectMode && exploded) || voiceShowcasing || showMode ? "opacity-80" : "opacity-0"
         }`}
       >
-        <p className="text-[0.50rem] tracking-[0.62em] text-stone-400/55">
-          {voiceShowcasing
+        <p className="text-[0.46rem] font-light tracking-[0.56em] text-stone-500/38">
+          {showMode
+            ? "SHOW MODE"
+            : voiceShowcasing
             ? "SHOWCASING"
             : inspectMode && activePartIndex === 0 && burgerExploded
             ? "INGREDIENT REVEAL"
@@ -5160,9 +5576,9 @@ export default function SpatialScene() {
             : "-translate-y-1 opacity-0"
         }`}
       >
-        <div className="flex items-center gap-2 border border-amber-300/26 bg-white/55 px-3 py-1.5 shadow-md shadow-amber-200/20 backdrop-blur-xl">
-          <span className="h-[1.5px] w-2 bg-amber-500/60" />
-          <span className="text-[0.50rem] tracking-[0.36em] text-amber-800/80">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/32 px-3 py-1.5 shadow-sm shadow-stone-900/[0.025] backdrop-blur-2xl">
+          <span className="h-px w-2 bg-amber-600/42" />
+          <span className="text-[0.48rem] font-light tracking-[0.34em] text-amber-900/62">
             ADDED TO ORDER
           </span>
         </div>
@@ -5170,7 +5586,7 @@ export default function SpatialScene() {
 
       {/* ── Product info panel — Apple-style premium glass card ── */}
       <div
-        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto rounded-2xl border border-white/8 bg-white/13 text-left text-stone-800 shadow-lg shadow-stone-900/[0.03] backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${productInfoClassName} overflow-y-auto rounded-3xl border border-white/[0.055] bg-white/[0.105] text-left text-stone-800 shadow-md shadow-stone-900/[0.018] backdrop-blur-2xl transition-all duration-700 ${
           exploded
             ? "translate-y-0 opacity-100"
             : "translate-y-4 opacity-0"
@@ -5180,7 +5596,7 @@ export default function SpatialScene() {
         {FOOD_INSPECT_DATA[activePartIndex].special && (
           <div className="mb-3 inline-flex items-center gap-2">
             <span className="h-[2px] w-2.5 bg-amber-500/50" />
-            <span className="text-[0.44rem] tracking-[0.34em] text-amber-700/60">
+            <span className="text-[0.42rem] font-light tracking-[0.32em] text-amber-800/48">
               {FOOD_INSPECT_DATA[activePartIndex].special}
             </span>
           </div>
@@ -5189,13 +5605,13 @@ export default function SpatialScene() {
         {/* Name + price row */}
         <div className="flex items-start justify-between gap-4">
           <h2
-            className={`font-light leading-snug tracking-[0.10em] text-stone-800 transition-all duration-500 ${
+            className={`font-extralight leading-[1.22] tracking-[0.075em] text-stone-800/90 transition-all duration-500 ${
               inspectMode ? "text-lg" : "text-base"
             }`}
           >
             {activePart.name}
           </h2>
-          <span className="mt-0.5 shrink-0 text-[0.72rem] font-light tracking-[0.04em] text-amber-800/70">
+          <span className="mt-0.5 shrink-0 text-[0.68rem] font-light tracking-[0.055em] text-amber-900/52">
             ${ITEM_PRICES[activePartIndex].toFixed(2)}
           </span>
         </div>
@@ -5203,16 +5619,16 @@ export default function SpatialScene() {
         {inspectMode ? (
           <>
             {/* Nutritional grid — clean two-column */}
-            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-stone-100/60 pt-4">
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-stone-100/42 pt-4">
               <div>
-                <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">CALORIES</p>
-                <p className="mt-0.5 text-[0.70rem] font-light text-stone-700">
+                <p className="text-[0.40rem] font-light tracking-[0.22em] text-stone-400/45">CALORIES</p>
+                <p className="mt-0.5 text-[0.68rem] font-light tracking-[0.03em] text-stone-700/82">
                   {FOOD_INSPECT_DATA[activePartIndex].calories}
                 </p>
               </div>
               <div>
-                <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">PROTEIN</p>
-                <p className="mt-0.5 text-[0.70rem] font-light text-stone-700">
+                <p className="text-[0.40rem] font-light tracking-[0.22em] text-stone-400/45">PROTEIN</p>
+                <p className="mt-0.5 text-[0.68rem] font-light tracking-[0.03em] text-stone-700/82">
                   {FOOD_INSPECT_DATA[activePartIndex].protein}
                 </p>
               </div>
@@ -5220,36 +5636,36 @@ export default function SpatialScene() {
 
             {/* Allergens */}
             <div className="mt-3">
-              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">ALLERGENS</p>
-              <p className="mt-0.5 text-[0.60rem] font-light text-stone-500/80">
+              <p className="text-[0.40rem] font-light tracking-[0.22em] text-stone-400/45">ALLERGENS</p>
+              <p className="mt-0.5 text-[0.58rem] font-light leading-[1.55] text-stone-500/72">
                 {FOOD_INSPECT_DATA[activePartIndex].allergens}
               </p>
             </div>
 
             {/* Ingredients */}
-            <div className="mt-4 border-t border-stone-100/55 pt-4">
-              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">INGREDIENTS</p>
-              <p className="mt-1 text-[0.58rem] leading-[1.65] text-stone-600/78">
+            <div className="mt-4 border-t border-stone-100/40 pt-4">
+              <p className="text-[0.40rem] font-light tracking-[0.22em] text-stone-400/45">INGREDIENTS</p>
+              <p className="mt-1 text-[0.57rem] font-light leading-[1.72] text-stone-600/72">
                 {FOOD_INSPECT_DATA[activePartIndex].ingredients}
               </p>
             </div>
 
             {/* Flavor */}
             <div className="mt-3">
-              <p className="text-[0.44rem] tracking-[0.24em] text-stone-400/55">FLAVOR</p>
-              <p className="mt-0.5 text-[0.58rem] leading-[1.65] text-stone-500/70">
+              <p className="text-[0.40rem] font-light tracking-[0.22em] text-stone-400/45">FLAVOR</p>
+              <p className="mt-0.5 text-[0.57rem] font-light leading-[1.72] text-stone-500/66">
                 {FOOD_INSPECT_DATA[activePartIndex].flavorProfile}
               </p>
             </div>
 
             {/* Chef note — italic, quiet */}
-            <p className="mt-4 border-t border-stone-100/50 pt-4 text-[0.56rem] italic leading-[1.7] text-amber-800/45">
+            <p className="mt-4 border-t border-stone-100/38 pt-4 text-[0.55rem] italic leading-[1.78] text-amber-900/36">
               {FOOD_INSPECT_DATA[activePartIndex].chefNote}
             </p>
 
           </>
         ) : (
-          <p className="mt-3 text-[0.76rem] leading-[1.65] text-stone-500/68">
+          <p className="mt-3 text-[0.72rem] font-light leading-[1.72] tracking-[0.018em] text-stone-500/62">
             {activePart.description}
           </p>
         )}
@@ -5260,13 +5676,13 @@ export default function SpatialScene() {
           <button
             type="button"
             onClick={handleAskAuraClick}
-            className="rounded-2xl border border-white/10 bg-white/16 px-3.5 py-2 text-left shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-500 hover:bg-white/24"
+            className="rounded-3xl border border-white/[0.07] bg-white/[0.12] px-3.5 py-2 text-left shadow-md shadow-stone-900/[0.02] backdrop-blur-2xl transition-all duration-500 hover:bg-white/[0.18]"
             aria-label="Ask AURA voice concierge"
           >
-            <span className="block text-[0.48rem] font-light tracking-[0.34em] text-stone-700/78">
+            <span className="block text-[0.46rem] font-light tracking-[0.32em] text-stone-700/66">
               Ask AURA
             </span>
-            <span className="mt-1 block max-w-[9.5rem] text-[0.48rem] font-light leading-snug tracking-[0.14em] text-stone-500/62">
+            <span className="mt-1 block max-w-[9.5rem] text-[0.46rem] font-light leading-snug tracking-[0.12em] text-stone-500/54">
               {voiceStatus === "Ask AURA" ? "TAP TO SPEAK" : voiceStatus}
             </span>
           </button>
@@ -5275,37 +5691,37 @@ export default function SpatialScene() {
 
       {/* ── Ingredient HUD — premium tasting note card, burger exploded only ── */}
       <div
-        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden rounded-2xl border border-amber-200/10 bg-white/13 shadow-lg shadow-stone-900/[0.035] backdrop-blur-2xl transition-all duration-700 ${
+        className={`pointer-events-none absolute ${sceneLayout.ingredientCardClassName} overflow-hidden rounded-3xl border border-amber-100/[0.07] bg-white/[0.105] shadow-md shadow-stone-900/[0.02] backdrop-blur-2xl transition-all duration-700 ${
           burgerExploded && inspectMode && activePartIndex === 0
             ? "opacity-100"
             : "opacity-0"
         }`}
       >
         {/* Warm amber top accent bar */}
-        <div className="h-[2px] w-full bg-gradient-to-r from-amber-500/0 via-amber-500/40 to-amber-500/0" />
+        <div className="h-px w-full bg-gradient-to-r from-amber-500/0 via-amber-500/28 to-amber-500/0" />
         <div className="p-4 md:p-5">
-          <p className="mb-1 text-[0.40rem] tracking-[0.50em] text-amber-700/50">
+          <p className="mb-1 text-[0.38rem] font-light tracking-[0.46em] text-amber-800/42">
             TASTING NOTES
           </p>
-          <p className="mb-4 text-[0.64rem] font-light tracking-[0.12em] text-stone-700/80">
+          <p className="mb-4 text-[0.62rem] font-light tracking-[0.11em] text-stone-700/72">
             Signature Burger
           </p>
           <ul className="space-y-3">
             {BURGER_INGREDIENTS.map((ingredient) => (
-              <li key={ingredient.name} className="border-b border-stone-200/35 pb-3 last:border-0 last:pb-0">
+              <li key={ingredient.name} className="border-b border-stone-200/24 pb-3 last:border-0 last:pb-0">
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[0.68rem] font-light tracking-[0.06em] text-stone-800/90">
+                  <span className="text-[0.66rem] font-light tracking-[0.045em] text-stone-800/82">
                     {ingredient.name}
                   </span>
-                  <span className="shrink-0 text-[0.48rem] tracking-[0.10em] text-amber-700/44">
+                  <span className="shrink-0 text-[0.46rem] font-light tracking-[0.10em] text-amber-800/36">
                     {ingredient.cal}
                   </span>
                 </div>
-                <p className="mt-0.5 text-[0.54rem] leading-[1.55] text-stone-500/68">
+                <p className="mt-0.5 text-[0.53rem] font-light leading-[1.62] text-stone-500/60">
                   {ingredient.flavor}
                 </p>
                 {ingredient.allergen !== "None" && (
-                  <p className="mt-0.5 text-[0.46rem] tracking-[0.06em] text-amber-800/32">
+                  <p className="mt-0.5 text-[0.44rem] font-light tracking-[0.06em] text-amber-900/28">
                     {ingredient.allergen}
                   </p>
                 )}
@@ -5314,13 +5730,13 @@ export default function SpatialScene() {
           </ul>
         </div>
         {/* Warm bottom fade */}
-        <div className="h-[1px] w-full bg-gradient-to-r from-stone-300/0 via-stone-300/28 to-stone-300/0" />
+        <div className="h-px w-full bg-gradient-to-r from-stone-300/0 via-stone-300/18 to-stone-300/0" />
       </div>
 
       {/* ── Bottom branding + contextual hint ── */}
       <div className="pointer-events-none absolute bottom-5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-center">
         {/* Gesture hint — visible in menu phase */}
-        <p className={`whitespace-nowrap text-[0.44rem] tracking-[0.28em] text-stone-400/28 transition-opacity duration-700 ${landingPhase === "menu" && exploded ? "opacity-100" : "opacity-0"}`}>
+        <p className={`whitespace-nowrap text-[0.40rem] font-light tracking-[0.24em] text-stone-500/20 transition-opacity duration-700 ${landingPhase === "menu" && exploded ? "opacity-100" : "opacity-0"}`}>
           {inspectMode && activePartIndex === 0
             ? burgerExploded
               ? "Fist → open palm to assemble  ·  E"
@@ -5329,34 +5745,34 @@ export default function SpatialScene() {
               ? "Open hand to add  ·  Swipe to return"
               : "Swipe to explore  ·  Open hand to inspect"}
         </p>
-        <p className="text-[0.54rem] tracking-[0.52em] text-stone-500/38">AURA ONE</p>
+        <p className="text-[0.50rem] font-light tracking-[0.48em] text-stone-500/30">AURA ONE</p>
       </div>
 
       {/* ── Spatial Order Tray ── */}
       <div
         ref={trayRef}
-        className={`pointer-events-auto absolute right-4 top-1/2 z-10 w-52 -translate-y-1/2 border p-4 backdrop-blur-md transition-all duration-700 md:right-6 md:w-56 ${
+        className={`pointer-events-auto absolute right-4 top-1/2 z-10 w-52 -translate-y-1/2 rounded-3xl border p-4 backdrop-blur-2xl transition-all duration-700 md:right-6 md:w-56 ${
           orderItems.length > 0
             ? "translate-x-0 opacity-100"
             : "pointer-events-none translate-x-4 opacity-0"
         } ${
           trayGlow
-            ? "border-amber-400/48 bg-white/55 shadow-lg shadow-amber-300/32"
-            : "border-stone-300/28 bg-white/38 shadow-md shadow-stone-200/18"
+            ? "border-amber-300/30 bg-white/38 shadow-md shadow-amber-300/16"
+            : "border-white/[0.07] bg-white/[0.16] shadow-md shadow-stone-900/[0.02]"
         }`}
       >
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-[0.56rem] tracking-[0.42em] text-amber-700/60">
+          <p className="text-[0.52rem] font-light tracking-[0.38em] text-amber-800/48">
             DEMO ORDER
           </p>
           <button
             onClick={clearOrder}
-            className="text-[0.48rem] tracking-[0.22em] text-stone-400/55 transition hover:text-rose-500/70"
+            className="text-[0.46rem] font-light tracking-[0.20em] text-stone-400/45 transition hover:text-rose-500/62"
           >
             CLEAR ALL
           </button>
         </div>
-        <p className="mb-3 truncate text-[0.58rem] font-light tracking-[0.08em] text-stone-500/75">
+        <p className="mb-3 truncate text-[0.56rem] font-light tracking-[0.07em] text-stone-500/66">
           {demoOrderSummary}
         </p>
 
