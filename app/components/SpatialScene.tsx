@@ -3880,6 +3880,8 @@ export default function SpatialScene() {
   const [landingPhase, setLandingPhase] = useState<LandingPhase>("intro");
   const [showEnterMenuFallback, setShowEnterMenuFallback] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Ask AURA");
+  const [voiceShowcasing, setVoiceShowcasing] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const landingPhaseRef = useRef<LandingPhase>("intro");
   const inspectRotationRef = useRef({ x: 0, y: 0 });
   const inspectDragRef = useRef({
@@ -3894,6 +3896,7 @@ export default function SpatialScene() {
   const auraVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const voiceFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceOrderingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceShowcaseTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const startAuraRecognitionRef = useRef<() => void>(() => undefined);
   const trayRef = useRef<HTMLDivElement>(null);
   const introFallbackLoggedRef = useRef(false);
@@ -3934,6 +3937,7 @@ export default function SpatialScene() {
             return `${shortName} x${qty}`;
           })
           .join(" · ")}`;
+  const voiceAuraVisible = voiceSpeaking || voiceStatus.includes("Speaking");
 
   const logIntroDev = useCallback((message: string) => {
     if (process.env.NODE_ENV === "development") {
@@ -3958,6 +3962,12 @@ export default function SpatialScene() {
     inspectTouchReturnTimerRef.current = null;
     logInspectDev("touch return cancelled");
   }, [logInspectDev]);
+
+  const clearVoiceShowcase = useCallback(() => {
+    voiceShowcaseTimersRef.current.forEach((timer) => clearTimeout(timer));
+    voiceShowcaseTimersRef.current = [];
+    setVoiceShowcasing(false);
+  }, []);
 
   const stopInspectDrag = useCallback((event?: ReactPointerEvent<HTMLDivElement>) => {
     const wasActive = inspectDragRef.current.active;
@@ -3997,6 +4007,7 @@ export default function SpatialScene() {
 
   const armInspectTouchReturnTimer = useCallback(() => {
     clearInspectTouchReturnTimer();
+    clearVoiceShowcase();
     lastInteractionRef.current = Date.now();
     logInspectDev("touch return timer armed");
 
@@ -4029,6 +4040,7 @@ export default function SpatialScene() {
   }, [
     activePartIndex,
     burgerExploded,
+    clearVoiceShowcase,
     clearInspectTouchReturnTimer,
     inspectMode,
     logInspectDev,
@@ -4047,6 +4059,7 @@ export default function SpatialScene() {
     }
 
     clearInspectTouchReturnTimer();
+    clearVoiceShowcase();
     lastInteractionRef.current = Date.now();
     demoActiveRef.current = false;
     demoPhaseRef.current = null;
@@ -4055,7 +4068,7 @@ export default function SpatialScene() {
     inspectDragRef.current.lastX = event.clientX;
     event.currentTarget.setPointerCapture?.(event.pointerId);
     event.preventDefault();
-  }, [clearInspectTouchReturnTimer, exploded, inspectMode, requestImmersiveFullscreen]);
+  }, [clearInspectTouchReturnTimer, clearVoiceShowcase, exploded, inspectMode, requestImmersiveFullscreen]);
 
   const handleInspectPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (
@@ -4136,6 +4149,7 @@ export default function SpatialScene() {
 
   const stopAuraVoice = useCallback(() => {
     voiceActiveRef.current = false;
+    setVoiceSpeaking(false);
     clearVoiceFallbackTimer();
     const recognition = voiceRecognitionRef.current;
 
@@ -4182,6 +4196,7 @@ export default function SpatialScene() {
 
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       setVoiceStatus(answer);
+      setVoiceSpeaking(false);
       voiceFallbackTimerRef.current = setTimeout(() => {
         onDone?.();
         if (!onDone && voiceMountedRef.current) setVoiceStatus("Ask AURA");
@@ -4193,6 +4208,7 @@ export default function SpatialScene() {
     const voices = synth.getVoices();
     auraVoiceRef.current = selectAuraVoice(voices) ?? auraVoiceRef.current;
     synth.cancel();
+    setVoiceSpeaking(false);
 
     const utterance = new SpeechSynthesisUtterance(answer);
     utterance.lang = "en-US";
@@ -4202,10 +4218,14 @@ export default function SpatialScene() {
     if (auraVoiceRef.current) utterance.voice = auraVoiceRef.current;
 
     utterance.onstart = () => {
-      if (voiceMountedRef.current) setVoiceStatus("Speaking...");
+      if (voiceMountedRef.current) {
+        setVoiceSpeaking(true);
+        setVoiceStatus("Speaking...");
+      }
     };
 
     utterance.onend = () => {
+      if (voiceMountedRef.current) setVoiceSpeaking(false);
       if (onDone) {
         onDone();
         return;
@@ -4215,10 +4235,12 @@ export default function SpatialScene() {
 
     utterance.onerror = () => {
       if (voiceMountedRef.current) {
+        setVoiceSpeaking(false);
         setVoiceStatus("Audio unavailable. Please check iPad volume.");
       }
     };
 
+    setVoiceSpeaking(true);
     setVoiceStatus("Speaking...");
     synth.speak(utterance);
   }, [clearVoiceFallbackTimer]);
@@ -4242,6 +4264,57 @@ export default function SpatialScene() {
     }, 900);
   }, []);
 
+  const startVoiceShowcase = useCallback((partIndex: number) => {
+    clearVoiceShowcase();
+    clearInspectTouchReturnTimer();
+    stopInspectDrag();
+    inspectRotationRef.current.x = 0;
+    inspectRotationRef.current.y = 0;
+    demoActiveRef.current = false;
+    demoPhaseRef.current = null;
+    lastInteractionRef.current = Date.now();
+    setVoiceShowcasing(true);
+    setVoiceStatus("SHOWCASING...");
+    setBurgerExploded(false);
+    setInspectMode(false);
+    setExploded(true);
+    explodedRef.current = true;
+    setActivePartIndex(partIndex);
+
+    const inspectTimer = setTimeout(() => {
+      inspectModeRef.current = true;
+      setInspectMode(true);
+    }, 760);
+
+    const revealTimer = setTimeout(() => {
+      if (partIndex === 0) {
+        burgerExplodedRef.current = true;
+        setBurgerExploded(true);
+      }
+    }, 1280);
+
+    const speakTimer = setTimeout(() => {
+      const explanation =
+        partIndex === 0
+          ? "This is our signature spatial burger experience."
+          : partIndex === 1
+            ? "Our Louisiana Po' Boy is served with crispy fried seafood and fresh ingredients."
+            : partIndex === 2
+              ? "Our dessert experience is designed to feel light, elegant, and premium."
+              : `${CAROUSEL_PARTS[partIndex].name} is ready to inspect.`;
+
+      speakAuraAnswer(explanation);
+      setVoiceShowcasing(false);
+    }, partIndex === 0 ? 1850 : 1500);
+
+    voiceShowcaseTimersRef.current = [inspectTimer, revealTimer, speakTimer];
+  }, [
+    clearInspectTouchReturnTimer,
+    clearVoiceShowcase,
+    speakAuraAnswer,
+    stopInspectDrag,
+  ]);
+
   const openMenu = useCallback(() => {
     landingPhaseRef.current = "menu";
     explodedRef.current = true;
@@ -4261,6 +4334,7 @@ export default function SpatialScene() {
     requestImmersiveFullscreen();
 
     if (typeof window === "undefined") return;
+    clearVoiceShowcase();
     lastInteractionRef.current = Date.now();
     demoActiveRef.current = false;
     demoPhaseRef.current = null;
@@ -4290,6 +4364,7 @@ export default function SpatialScene() {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
+      setVoiceStatus("PROCESSING...");
       const lastResult = event.results[event.results.length - 1];
       const transcript = lastResult?.[0]?.transcript ?? "";
       const command = resolveAuraVoiceCommand(
@@ -4303,9 +4378,7 @@ export default function SpatialScene() {
       }
 
       if (command.showPartIndex !== undefined) {
-        setBurgerExploded(false);
-        setActivePartIndex(command.showPartIndex);
-        if (!explodedRef.current) setExploded(true);
+        startVoiceShowcase(command.showPartIndex);
       }
 
       if (command.startOrderingMode) {
@@ -4313,6 +4386,8 @@ export default function SpatialScene() {
       }
 
       voiceActiveRef.current = false;
+      if (command.showPartIndex !== undefined) return;
+
       speakAuraAnswer(
         command.answer,
         command.startOrderingMode
@@ -4348,9 +4423,11 @@ export default function SpatialScene() {
     }
   }, [
     addVoiceOrderItem,
+    clearVoiceShowcase,
     openMenu,
     requestImmersiveFullscreen,
     speakAuraAnswer,
+    startVoiceShowcase,
     stopAuraVoice,
     unlockAuraSpeech,
     armVoiceOrderingMode,
@@ -4469,6 +4546,8 @@ export default function SpatialScene() {
         clearTimeout(voiceOrderingTimerRef.current);
         voiceOrderingTimerRef.current = null;
       }
+      voiceShowcaseTimersRef.current.forEach((timer) => clearTimeout(timer));
+      voiceShowcaseTimersRef.current = [];
     };
   }, []);
 
@@ -4482,6 +4561,15 @@ export default function SpatialScene() {
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
   useEffect(() => { burgerExplodedRef.current = burgerExploded; }, [burgerExploded]);
   useEffect(() => { landingPhaseRef.current = landingPhase; }, [landingPhase]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+
+    console.info("[AURA VOICE] aura visible", voiceAuraVisible, {
+      voiceStatus,
+      voiceSpeaking,
+    });
+  }, [voiceAuraVisible, voiceSpeaking, voiceStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -4510,20 +4598,22 @@ export default function SpatialScene() {
   useEffect(() => {
     if (!exploded) {
       clearVoiceOrderingMode();
-      stopAuraVoice();
       const id = setTimeout(() => {
+        clearVoiceShowcase();
+        stopAuraVoice();
         setVoiceStatus("Ask AURA");
       }, 0);
 
       return () => clearTimeout(id);
     }
-  }, [clearVoiceOrderingMode, exploded, stopAuraVoice]);
+  }, [clearVoiceOrderingMode, clearVoiceShowcase, exploded, stopAuraVoice]);
 
   useEffect(() => () => {
     voiceMountedRef.current = false;
+    clearVoiceShowcase();
     clearVoiceOrderingMode();
     stopAuraVoice();
-  }, [clearVoiceOrderingMode, stopAuraVoice]);
+  }, [clearVoiceOrderingMode, clearVoiceShowcase, stopAuraVoice]);
 
   useEffect(() => {
     const id = setTimeout(() => {
@@ -4647,6 +4737,7 @@ export default function SpatialScene() {
   // All state reads use refs so the closure is never stale.
   const applyGestureAction = useCallback((action: GestureAction) => {
     lastInteractionRef.current = Date.now();
+    clearVoiceShowcase();
     if (demoActiveRef.current) {
       demoActiveRef.current = false;
       demoPhaseRef.current = null;
@@ -4779,7 +4870,7 @@ export default function SpatialScene() {
     if (action === "ROTATE_INSPECT_LEFT")  inspectRotationRef.current.y += INSPECT_ROTATION_STEP;
     if (action === "ROTATE_INSPECT_RIGHT") inspectRotationRef.current.y -= INSPECT_ROTATION_STEP;
 
-  }, [activePartIndex, addToOrder, clearInspectTouchReturnTimer, clearOrder, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
+  }, [activePartIndex, addToOrder, clearInspectTouchReturnTimer, clearOrder, clearVoiceShowcase, openMenu, resetInspectRotation, showNextPart, showPreviousPart, stopInspectDrag]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -4883,6 +4974,14 @@ export default function SpatialScene() {
           0%, 100% { opacity: 1; transform: scaleX(1); }
           50%      { opacity: 0.55; transform: scaleX(0.78); }
         }
+        @keyframes auraVoiceBorderBreathe {
+          0%, 100% { opacity: 0.62; transform: scale(1); filter: blur(10px); }
+          50%      { opacity: 0.82; transform: scale(1.012); filter: blur(15px); }
+        }
+        @keyframes auraVoiceBorderDrift {
+          0%, 100% { background-position: 0% 50%; }
+          50%      { background-position: 100% 50%; }
+        }
       `}</style>
       {introVisible && (
         <div
@@ -4973,6 +5072,60 @@ export default function SpatialScene() {
         className={`pointer-events-none absolute inset-0 transition-opacity duration-[1400ms] ${inspectMode ? "opacity-100" : "opacity-0"}`}
         style={{ background: "linear-gradient(to top, rgba(14,9,3,0.26) 0%, transparent 42%)" }}
       />
+      <div
+        className={`pointer-events-none fixed inset-0 z-[60] overflow-hidden transition-opacity duration-700 ${
+          voiceAuraVisible ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <div
+          className="absolute inset-x-[-6vw] top-[-3vw] h-[14vw] min-h-20 max-h-44"
+          style={{
+            background:
+              "radial-gradient(ellipse 72% 100% at 18% 0%, rgba(122,176,255,0.36), transparent 64%), radial-gradient(ellipse 76% 100% at 54% 0%, rgba(218,116,255,0.42), transparent 68%), radial-gradient(ellipse 70% 100% at 86% 0%, rgba(255,118,202,0.36), transparent 64%), linear-gradient(to bottom, rgba(210,230,255,0.30), rgba(180,128,255,0.18) 42%, rgba(255,132,212,0.08) 64%, transparent 100%)",
+            backgroundSize: "190% 100%, 190% 100%, 190% 100%, 100% 100%",
+            mixBlendMode: "screen",
+            boxShadow: "0 0 54px rgba(158,178,255,0.22), 0 0 92px rgba(255,132,210,0.12)",
+            animation:
+              "auraVoiceBorderBreathe 5.8s ease-in-out infinite, auraVoiceBorderDrift 14s ease-in-out infinite",
+          }}
+        />
+        <div
+          className="absolute inset-x-[-6vw] bottom-[-3vw] h-[14vw] min-h-20 max-h-44"
+          style={{
+            background:
+              "radial-gradient(ellipse 74% 100% at 12% 100%, rgba(255,116,198,0.34), transparent 66%), radial-gradient(ellipse 78% 100% at 52% 100%, rgba(116,170,255,0.42), transparent 68%), radial-gradient(ellipse 72% 100% at 88% 100%, rgba(198,130,255,0.36), transparent 66%), linear-gradient(to top, rgba(222,214,255,0.24), rgba(255,126,204,0.14) 44%, rgba(126,210,255,0.07) 66%, transparent 100%)",
+            backgroundSize: "190% 100%, 190% 100%, 190% 100%, 100% 100%",
+            mixBlendMode: "screen",
+            boxShadow: "0 0 54px rgba(190,130,255,0.18), 0 0 92px rgba(96,190,255,0.12)",
+            animation:
+              "auraVoiceBorderBreathe 5.8s ease-in-out infinite 0.4s, auraVoiceBorderDrift 15s ease-in-out infinite reverse",
+          }}
+        />
+        <div
+          className="absolute inset-y-[-6vw] left-[-3vw] w-[12vw] min-w-16 max-w-36"
+          style={{
+            background:
+              "radial-gradient(ellipse 100% 72% at 0% 16%, rgba(118,176,255,0.34), transparent 66%), radial-gradient(ellipse 100% 78% at 0% 52%, rgba(210,124,255,0.34), transparent 70%), radial-gradient(ellipse 100% 72% at 0% 86%, rgba(255,126,206,0.28), transparent 66%), linear-gradient(to right, rgba(170,214,255,0.22), rgba(214,152,255,0.12) 42%, rgba(255,132,210,0.06) 64%, transparent 100%)",
+            backgroundSize: "100% 190%, 100% 190%, 100% 190%, 100% 100%",
+            mixBlendMode: "screen",
+            boxShadow: "0 0 46px rgba(132,184,255,0.18), 0 0 78px rgba(220,130,255,0.10)",
+            animation:
+              "auraVoiceBorderBreathe 6.2s ease-in-out infinite 0.2s, auraVoiceBorderDrift 15.5s ease-in-out infinite",
+          }}
+        />
+        <div
+          className="absolute inset-y-[-6vw] right-[-3vw] w-[12vw] min-w-16 max-w-36"
+          style={{
+            background:
+              "radial-gradient(ellipse 100% 72% at 100% 14%, rgba(255,126,206,0.30), transparent 66%), radial-gradient(ellipse 100% 78% at 100% 50%, rgba(116,170,255,0.38), transparent 70%), radial-gradient(ellipse 100% 72% at 100% 86%, rgba(142,238,255,0.24), transparent 66%), linear-gradient(to left, rgba(226,202,255,0.20), rgba(116,184,255,0.13) 42%, rgba(255,132,210,0.06) 64%, transparent 100%)",
+            backgroundSize: "100% 190%, 100% 190%, 100% 190%, 100% 100%",
+            mixBlendMode: "screen",
+            boxShadow: "0 0 46px rgba(255,132,210,0.16), 0 0 78px rgba(112,188,255,0.11)",
+            animation:
+              "auraVoiceBorderBreathe 6.2s ease-in-out infinite 0.6s, auraVoiceBorderDrift 16s ease-in-out infinite reverse",
+          }}
+        />
+      </div>
       <CameraGestureLayer
         onGesture={applyGestureAction}
         inspectMode={inspectMode}
@@ -4985,11 +5138,13 @@ export default function SpatialScene() {
           generic "INSPECT" hides when burger label takes over.            */}
       <div
         className={`pointer-events-none absolute left-1/2 top-5 -translate-x-1/2 transition-opacity duration-700 ${
-          inspectMode && exploded ? "opacity-100" : "opacity-0"
+          (inspectMode && exploded) || voiceShowcasing ? "opacity-100" : "opacity-0"
         }`}
       >
         <p className="text-[0.50rem] tracking-[0.62em] text-stone-400/55">
-          {inspectMode && activePartIndex === 0 && burgerExploded
+          {voiceShowcasing
+            ? "SHOWCASING"
+            : inspectMode && activePartIndex === 0 && burgerExploded
             ? "INGREDIENT REVEAL"
             : inspectMode && activePartIndex === 0
               ? "BURGER DETAIL"
