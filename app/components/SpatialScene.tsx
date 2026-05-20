@@ -1140,9 +1140,34 @@ function Part({
   useFrame(({ clock }, delta) => {
     if (!groupRef.current) return;
 
-    const t = clock.getElapsedTime();
     const rawProgress = progressRef.current;
     const previousRawProgress = previousRawProgressRef.current;
+    const slot = wrappedSlot(partIndex, activePartIndex, totalParts);
+    const slotDistance = Math.abs(slot);
+    const cullTarget = carouselEnabled
+      ? inspectMode
+        ? slot === 0
+          ? 1
+          : 0
+        : slotDistance <= CAROUSEL_VISIBLE_SLOT_DISTANCE
+          ? 1
+          : 0
+      : 1;
+
+    if (
+      cullTarget === 0 &&
+      cullVisibilityRef.current < 0.01 &&
+      Math.abs(rawProgress - previousRawProgress) < 0.0005
+    ) {
+      groupRef.current.visible = false;
+      if (activeLightRef.current) {
+        setAnimatedLightIntensity(activeLightRef.current, 0);
+      }
+      previousRawProgressRef.current = rawProgress;
+      return;
+    }
+
+    const t = clock.getElapsedTime();
     const assembling = rawProgress < previousRawProgress;
     const localProgress = assembling
       ? 1 - phasedPathProgress(1 - rawProgress, assembleDelay)
@@ -1161,7 +1186,6 @@ function Part({
       p
     );
     const dockThreshold = 0.045;
-    const slot = wrappedSlot(partIndex, activePartIndex, totalParts);
     const isInspectActive = inspectMode && slot === 0;
     const parentRotationFrozen =
       freezeParentRotation && isInspectActive && separatedProgress > 0.1;
@@ -1171,16 +1195,6 @@ function Part({
     const inspectPresence = inspectMode && carouselEnabled ? separatedProgress : 0;
     const depth = Math.cos(angle);
     const side = Math.abs(Math.sin(angle));
-    const slotDistance = Math.abs(slot);
-    const cullTarget = carouselEnabled
-      ? inspectMode
-        ? slot === 0
-          ? 1
-          : 0
-        : slotDistance <= CAROUSEL_VISIBLE_SLOT_DISTANCE
-          ? 1
-          : 0
-      : 1;
     cullVisibilityRef.current = THREE.MathUtils.lerp(
       cullVisibilityRef.current,
       cullTarget,
@@ -1926,11 +1940,22 @@ function BurgerExplodedView({
     new Array(BURGER_LAYERS.length).fill(null)
   );
   const layerRot = useRef<number[]>(new Array(BURGER_LAYERS.length).fill(0));
+  const closedLayoutInitializedRef = useRef(false);
 
   useFrame(({ clock }, delta) => {
-    if (settledClosedRef.current && !active && progressRef.current < 0.001) {
+    if (
+      !active &&
+      closedLayoutInitializedRef.current &&
+      progressRef.current < 0.003
+    ) {
       progressRef.current = 0;
+      settledClosedRef.current = true;
       return;
+    }
+
+    settledClosedRef.current = false;
+    if (active) {
+      closedLayoutInitializedRef.current = false;
     }
 
     // Asymmetric lerp dynamics:
@@ -1972,8 +1997,9 @@ function BurgerExplodedView({
       );
     }
 
-    if (settledClosedRef.current && !active && progress < 0.001) {
+    if (!active && closedLayoutInitializedRef.current && progress < 0.003) {
       progressRef.current = 0;
+      settledClosedRef.current = true;
       return;
     }
 
@@ -2034,6 +2060,7 @@ function BurgerExplodedView({
     });
 
     settledClosedRef.current = !active && progress < 0.001;
+    closedLayoutInitializedRef.current = !active && progress < 0.003;
   });
 
   return (
@@ -2604,7 +2631,7 @@ function AmbientParticles() {
   useFrame((_, delta) => {
     if (!pointsRef.current) return;
     deltaAccumulatorRef.current += delta;
-    frameSkipRef.current = (frameSkipRef.current + 1) % 2;
+    frameSkipRef.current = (frameSkipRef.current + 1) % 6;
     if (frameSkipRef.current !== 0) return;
     pointsRef.current.rotation.y += deltaAccumulatorRef.current * 0.025;
     deltaAccumulatorRef.current = 0;
@@ -2631,11 +2658,21 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
   const progressRef = useRef(0);
   const frameSkipRef = useRef(0);
   const deltaAccumulatorRef = useRef(0);
+  const settledTargetRef = useRef<number | null>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const particles = useMemo(() => createLogoParticles(), []);
 
   useFrame(({ clock }, delta) => {
     if (!meshRef.current) return;
+    const targetProgress = exploded ? 1 : 0;
+
+    if (
+      settledTargetRef.current === targetProgress &&
+      Math.abs(progressRef.current - targetProgress) < 0.001
+    ) {
+      return;
+    }
+
     deltaAccumulatorRef.current += delta;
     frameSkipRef.current = (frameSkipRef.current + 1) % 2;
     if (frameSkipRef.current !== 0) return;
@@ -2646,9 +2683,15 @@ function AuraLogoParticles({ exploded }: { exploded: boolean }) {
 
     progressRef.current = THREE.MathUtils.lerp(
       progressRef.current,
-      exploded ? 1 : 0,
+      targetProgress,
       1 - Math.exp(-effectiveDelta * 2.35)
     );
+    if (Math.abs(progressRef.current - targetProgress) < 0.001) {
+      progressRef.current = targetProgress;
+      settledTargetRef.current = targetProgress;
+    } else {
+      settledTargetRef.current = null;
+    }
 
     const t = clock.getElapsedTime();
     const p = smoothStep(progressRef.current);
